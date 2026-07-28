@@ -1,0 +1,16 @@
+# Web Framework & API Server
+fastapi>=0.110.0
+uvicorn>=0.28.0
+python-multipart>=0.0.9
+
+# LLM Framework & RAG Integration
+langchain>=0.1.13
+langchain-community>=0.0.29
+langchain-chroma>=0.1.0
+
+# Vector DB
+chromadb>=0.4.24
+
+# Data Validation & Parsing
+pydantic>=2.6.4
+python-pptx>=0.6.23
