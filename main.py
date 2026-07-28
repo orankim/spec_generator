@@ -1,10 +1,13 @@
 import os
 import uuid
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, BackgroundTask
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+# 폐쇄망 보안 정책: 외부(HuggingFace Hub 등) 네트워크 통신 원천 차단
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 # 앞서 작성한 파이프라인 모듈 임포트
 from generator import SpecGenerator

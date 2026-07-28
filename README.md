@@ -30,6 +30,7 @@ CPU: AMD Threadripper Pro 5965WX (24 Cores) 이상 권장
 GPU: NVIDIA GeForce RTX 4080 (VRAM 16GB) 이상 필수
 RAM: 64GB 이상
 OS: Windows 11 / Windows Server / Ubuntu Linux
+Python: 3.11 이상
 📂 프로젝트 폴더 구조
 spec-generator/
 ├── sample_specs/          # [입력] RAG 학습용 기존 PPTX 사양서 파일 저장 폴더
@@ -112,3 +113,21 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 🛡️ 사내 방화벽 설정 안내
 사내 다른 직원 PC에서 웹 접속이 안 될 경우, 서버 PC의 윈도우 방화벽 인바운드 규칙에서 8000번 포트(TCP)를 허용하도록 설정하세요.
+
+🔒 폐쇄망(완전 오프라인) 환경 설치 가이드
+인터넷이 연결된 외부 PC에서 아래 자료를 미리 준비한 뒤, USB 등으로 사내 폐쇄망 서버 PC에 이관합니다.
+
+1. Python 패키지 오프라인 이관
+```
+# (외부 PC) 프로젝트에 필요한 wheel 파일을 모두 다운로드
+python -m pip download -r requirements.txt -d ./offline_wheels
+
+# (폐쇄망 서버 PC) 네트워크 접속 없이 wheel 폴더에서 설치
+python -m pip install --no-index --find-links=./offline_wheels -r requirements.txt
+```
+
+2. Ollama 모델 오프라인 이관
+외부 PC에서 `ollama pull qwen2.5:14b`, `ollama pull bge-m3` 실행 후 생성되는 모델 데이터 폴더(`blobs`, `manifests`)를 통째로 복사하여 폐쇄망 서버 PC의 동일 Ollama 데이터 경로에 붙여넣습니다.
+
+3. 외부 네트워크 통신 완전 차단
+본 프로젝트는 `main.py`, `build_rag_ollama.py` 실행 시 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` 환경변수를 자동으로 설정하여, LangChain/ChromaDB 관련 라이브러리가 HuggingFace Hub 등 외부로 통신을 시도하지 않도록 원천 차단합니다. 필요 시 시스템 환경변수로도 동일하게 설정해 이중으로 보안을 강화할 수 있습니다.
