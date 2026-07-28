@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from typing import Dict, Any, List
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -33,6 +34,14 @@ class PPTXBuilder:
                     paragraph.font.size = Pt(14)
                     paragraph.font.name = "맑은 고딕"
 
+    def _add_table_row(self, table):
+        """
+        python-pptx는 기존 표에 행을 추가하는 공개 API(add_row)를 제공하지 않으므로,
+        마지막 행의 XML(<a:tr>)을 복제하여 서식을 유지한 채 행을 추가합니다.
+        """
+        new_tr = deepcopy(table._tbl.tr_lst[-1])
+        table._tbl.append(new_tr)
+
     def _populate_spec_table(self, slide, spec_items: List[Dict[str, str]]):
         """
         슬라이드에 있는 기존 표(Table)를 찾아 사양 데이터를 채워 넣습니다.
@@ -56,8 +65,7 @@ class PPTXBuilder:
 
         # 행이 부족하면 추가
         while len(table.rows) < needed_rows:
-            # 마지막 행의 높이를 복사하여 새 행 추가
-            table.add_row()
+            self._add_table_row(table)
 
         # 데이터 채우기 (row_idx = 0 은 헤더)
         for idx, item in enumerate(spec_items, start=1):
