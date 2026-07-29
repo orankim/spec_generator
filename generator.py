@@ -53,7 +53,10 @@ class SpecGenerator:
         self.llm = Ollama(
             model="qwen2.5:14b",
             base_url=self.ollama_url,
-            temperature=0.2  # 정확한 값 생성을 위해 낮은 온도 설정
+            temperature=0.2,  # 정확한 값 생성을 위해 낮은 온도 설정
+            format="json",    # Ollama가 순수 JSON만 생성하도록 강제 (설명/인삿말 등 잡텍스트 방지)
+            num_ctx=8192,     # 기본 2048 토큰으로는 RAG 참고자료+스키마 예시가 넘쳐 응답이 중간에 잘릴 수 있음
+            num_predict=2048  # 사양표가 긴 경우에도 JSON이 끝까지 생성되도록 출력 토큰 여유 확보
         )
         print("=== 초기화 완료 ===")
 
@@ -112,6 +115,41 @@ class SpecGenerator:
         cleaned_json = self._clean_and_parse_json(raw_response)
         return cleaned_json
 
+    def extract_spec_from_document(self, document_text: str) -> Dict[str, Any]:
+        """
+        형식이 제각각인 기존 PPTX 사양서(슬라이드 텍스트+표 전체)를 읽어,
+        표준 스키마(SpecDocumentData)에 맞는 JSON으로 정규화/추출합니다.
+        generate_spec_json과 달리 새 내용을 만들어내지 않고, 문서에 실제로
+        적힌 값만 그대로 옮겨 담는 것이 목표입니다. (템플릿 전처리용)
+        """
+        prompt_template = f"""
+당신은 설비 사양서를 정리하는 문서 정규화 전문가입니다.
+아래 [원본 문서]는 사내에 흩어져 있던 기존 설비 사양서 PPTX에서 추출한 텍스트/표 데이터이며,
+슬라이드 레이아웃이 표준 양식과 다를 수 있습니다.
+
+이 문서의 내용을 읽고, 아래 [JSON 출력 형식]에 맞춰 표준 형식으로 옮겨 담으세요.
+- 문서에 실제로 있는 값만 사용하세요. 없는 정보를 지어내지 마세요.
+- 사양 표에 들어갈 항목이 여러 슬라이드에 나뉘어 있다면 모두 spec_table 하나로 합치세요.
+- 반드시 완벽한 JSON 문자열만 출력하세요. 설명, 인삿말, 마크다운 등 JSON 이외의 텍스트는 절대 포함하지 마세요.
+
+[원본 문서]
+{document_text}
+
+[JSON 출력 형식 예시]
+{{
+  "equipment_name": "300mm 고진공 플라즈마 식각 설비",
+  "overview": "본 설비는 300mm 웨이퍼 표면의 미세 패턴을 고진공 환경에서 식각하기 위한 전용 장비입니다.",
+  "target_capacity": "시간당 30장 (30 wph)",
+  "spec_table": [
+    {{"category": "전기/전력", "item": "정격 전압", "value": "3Phi 380V 60Hz", "note": "전압 변동률 ±5% 이내"}}
+  ]
+}}
+
+[JSON 응답]:
+"""
+        raw_response = self.llm.invoke(prompt_template)
+        return self._clean_and_parse_json(raw_response)
+
     def _clean_and_parse_json(self, response_text: str) -> Dict[str, Any]:
         """
         LLM 출력물에서 pure JSON 문자열만 파싱하고 검증합니다.
@@ -119,11 +157,14 @@ class SpecGenerator:
         try:
             # ```json ... ``` 같은 마크다운 코드 블록 제거
             json_str = re.sub(r"```(?:json)?", "", response_text).strip()
-            
+
             # 첫 시작 '{' 부터 마지막 '}' 까지만 추출
             match = re.search(r"\{.*\}", json_str, re.DOTALL)
             if match:
                 json_str = match.group(0)
+
+            # 일부 모델이 생성하는 trailing comma(마지막 항목 뒤 ,) 제거
+            json_str = re.sub(r",(\s*[}\]])", r"\1", json_str)
 
             # JSON 객체 파싱
             data_dict = json.loads(json_str)
@@ -139,6 +180,7 @@ class SpecGenerator:
             # 에러 발생 시 디버깅을 위한 기본 딕셔너리 반환
             return {
                 "error": "JSON 파싱 실패",
+                "reason": str(e),
                 "raw_response": response_text
             }
 

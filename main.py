@@ -104,15 +104,16 @@ async def read_root():
                         body: JSON.stringify({ prompt: prompt })
                     });
 
+                    const data = await response.json();
+
                     if (!response.ok) {
-                        throw new Error('생성 실패');
+                        throw new Error(data.detail || '생성 실패');
                     }
 
-                    const data = await response.json();
                     document.getElementById('downloadLink').href = data.download_url;
                     result.style.display = 'block';
                 } catch (err) {
-                    alert('사양서 생성 중 오류가 발생했습니다. 로그를 확인하세요.');
+                    alert('사양서 생성 중 오류가 발생했습니다:\n\n' + err.message);
                 } finally {
                     btn.disabled = false;
                     loading.style.display = 'none';
@@ -139,7 +140,12 @@ async def generate_spec_api(req: SpecRequest):
         spec_json = generator.generate_spec_json(req.prompt)
 
         if "error" in spec_json:
-            raise HTTPException(status_code=500, detail="JSON 생성 실패")
+            reason = spec_json.get("reason", "알 수 없는 오류")
+            raw = spec_json.get("raw_response", "")[:500]
+            raise HTTPException(
+                status_code=500,
+                detail=f"JSON 생성 실패: {reason} | LLM 원문 응답: {raw}"
+            )
 
         # 2) 고유한 파일명 생성
         file_id = str(uuid.uuid4())[:8]
