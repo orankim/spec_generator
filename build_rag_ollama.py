@@ -142,13 +142,20 @@ def test_search(query: str, db_save_path: str):
 # 실행부
 # ==========================================
 if __name__ == "__main__":
-    PPTX_FOLDER = "./sample_specs"   # 파싱할 사양서 PPTX 폴더
-    DB_PATH = "./chroma_db_specs"    # 저장할 DB 폴더
+    import argparse
 
-    os.makedirs(PPTX_FOLDER, exist_ok=True)
+    parser = argparse.ArgumentParser(description="PPTX 사양서로 RAG Vector DB 구축")
+    parser.add_argument(
+        "--pptx-folder", default="./sample_specs",
+        help="파싱할 사양서 PPTX 폴더 (전처리를 거쳤다면 sample_specs_normalized 등으로 지정)"
+    )
+    parser.add_argument("--db-path", default="./chroma_db_specs", help="저장할 Vector DB 폴더")
+    args = parser.parse_args()
+
+    os.makedirs(args.pptx_folder, exist_ok=True)
 
     # 1. DB 구축 실행
-    build_vector_db_with_ollama(PPTX_FOLDER, DB_PATH)
+    build_vector_db_with_ollama(args.pptx_folder, args.db_path)
 
     # 2. 검색 테스트 (원하는 사양 단어로 검색해보세요)
-    # test_search("전력 및 전압 사양", DB_PATH)
+    # test_search("전력 및 전압 사양", args.db_path)

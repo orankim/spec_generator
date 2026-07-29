@@ -45,18 +45,20 @@
 
 ```
 spec-generator/
-├── sample_specs/          # [입력] RAG 학습용 기존 PPTX 사양서 파일 저장 폴더
-├── chroma_db_specs/       # [생성] RAG용 Vector DB 저장 폴더
-├── generated_files/       # [생성] 사용자가 다운로드할 완성된 PPTX 저장 폴더
-├── .venv/                 # Python 가상환경 폴더
-├── template.pptx          # 마스터 PPTX 템플릿 파일
-├── build_rag_ollama.py    # 1단계: 기존 사양서 PPTX 파싱 및 Vector DB 구축 스크립트
-├── generator.py           # 2단계: RAG 검색 및 Ollama 기반 사양서 JSON 생성 모듈
-├── pptx_builder.py        # 3단계: JSON 데이터를 PPTX 템플릿에 채워넣는 모듈
-├── make_template.py       # [보조] 테스트용 template.pptx 자동 생성 스크립트
-├── main.py                # 4단계: FastAPI 웹 서버 및 UI 메인 실행 파일
-├── requirements.txt       # 의존성 패키지 목록
-└── README.md              # 프로젝트 안내 문서
+├── sample_specs/              # [입력] RAG 학습용 기존(형식 제각각) PPTX 사양서 파일 저장 폴더
+├── sample_specs_normalized/   # [생성] 전처리를 거쳐 표준 템플릿 형식으로 정규화된 PPTX 저장 폴더
+├── chroma_db_specs/           # [생성] RAG용 Vector DB 저장 폴더
+├── generated_files/           # [생성] 사용자가 다운로드할 완성된 PPTX 저장 폴더
+├── .venv/                     # Python 가상환경 폴더
+├── template.pptx              # 마스터 PPTX 템플릿 파일
+├── preprocess_specs.py        # 0단계: 형식이 제각각인 기존 사양서를 표준 템플릿으로 정규화(전처리)
+├── build_rag_ollama.py        # 1단계: 사양서 PPTX 파싱 및 Vector DB 구축 스크립트
+├── generator.py               # 2단계: RAG 검색 및 Ollama 기반 사양서 JSON 생성/추출 모듈
+├── pptx_builder.py            # 3단계: JSON 데이터를 PPTX 템플릿에 채워넣는 모듈
+├── make_template.py           # [보조] 테스트용 template.pptx 자동 생성 스크립트
+├── main.py                    # 4단계: FastAPI 웹 서버 및 UI 메인 실행 파일
+├── requirements.txt           # 의존성 패키지 목록
+└── README.md                  # 프로젝트 안내 문서
 ```
 
 ## 🚀 빠른 시작 가이드 (Quick Start)
@@ -112,15 +114,31 @@ python make_template.py
 
 (실제 운영 시에는 디자인된 사내 표준 `template.pptx` 파일로 교체하세요.)
 
-### 4. RAG Vector DB 구축
+### 4. (필요 시) 기존 사양서 전처리 — 표준 템플릿으로 정규화
 
-`sample_specs/` 폴더에 학습시킬 기존 사양서 PPTX 파일들을 넣고 실행합니다.
+사내에 흩어져 있던 기존 사양서 PPTX들은 레이아웃이 표준 양식과 다른 경우가 대부분입니다.
+`sample_specs/`에 그 원본 파일들을 넣고 아래를 실행하면, 각 파일의 내용을 LLM으로 읽어
+표준 `template.pptx` 형식에 맞춰 재작성한 뒤 `sample_specs_normalized/`에 저장합니다.
+(원본은 그대로 보존되며, 추출에 실패한 파일은 건너뛰고 마지막에 실패 목록으로 안내합니다.)
 
 ```powershell
-python build_rag_ollama.py
+python preprocess_specs.py
 ```
 
-### 5. 웹 서버 실행 (사내망 서비스 개방)
+- `--input` : 원본 PPTX 폴더 (기본값 `./sample_specs`)
+- `--output` : 정규화 결과 저장 폴더 (기본값 `./sample_specs_normalized`)
+
+### 5. RAG Vector DB 구축
+
+정규화된 사양서(또는 이미 표준 형식인 사양서) PPTX 파일들을 대상으로 Vector DB를 구축합니다.
+
+```powershell
+python build_rag_ollama.py --pptx-folder ./sample_specs_normalized
+```
+
+(전처리 단계를 건너뛰고 `sample_specs/` 원본을 바로 학습시키려면 `--pptx-folder` 옵션 없이 실행하면 됩니다.)
+
+### 6. 웹 서버 실행 (사내망 서비스 개방)
 
 ```powershell
 python main.py
