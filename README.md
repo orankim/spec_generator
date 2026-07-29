@@ -147,6 +147,10 @@ python main.py
 - 서버 PC 접속: http://localhost:8000
 - 사내망 접속: http://<서버PC_IP_주소>:8000
 
+웹 화면 상단 탭으로 두 페이지를 오갈 수 있습니다.
+- **사양서 제작하기** (`/`): 자연어 요구사항으로 새 사양서 PPTX 생성 (기존 기능)
+- **사양서 업로드하기** (`/upload`): 클라이언트 PC에서 기존 사양서 PPTX를 서버로 업로드 → `sample_specs/`에 저장. 업로드만으로는 검색에 바로 반영되지 않으며, 서버 관리자가 `python preprocess_specs.py` → `python build_rag_ollama.py`를 실행해야 RAG 검색에 반영됩니다.
+
 ## 🛠️ 자주 발생하는 오류 및 해결 방법
 
 ### 1. `Fatal error in launcher` 오류 발생 시
