@@ -24,6 +24,7 @@ from langchain_core.documents import Document
 
 from . import ollama_client
 from .schemas import RequirementSchema, SourcedNumber, SpecificationSchema
+from .spec_retriever import source_label
 
 GENERATE_PROMPT = """당신은 전극 검사기(계측 설비) 사양서를 작성하는 베테랑 엔지니어입니다.
 아래 [사용자 요구사항]과 [사내 참고 자료]를 바탕으로 [현재까지 채워진 사양서]의
@@ -134,7 +135,7 @@ def generate_specification(
     if partial_spec.defect_detection.minimum_defect_size_um is not None:
         merged.defect_detection.minimum_defect_size_um = partial_spec.defect_detection.minimum_defect_size_um
 
-    merged.sources = sorted({doc.metadata.get("source", "") for doc in retrieved_docs if doc.metadata.get("source")})
+    merged.sources = sorted({source_label(doc) for doc in retrieved_docs if doc.metadata.get("source")})
     merged.needs_confirmation = _collect_needs_confirmation(merged)
 
     return merged
