@@ -43,6 +43,17 @@ def _default_embeddings(host: str) -> OllamaEmbeddings:
     return OllamaEmbeddings(model=model, base_url=host)
 
 
+def get_embeddings(host: Optional[str] = None) -> OllamaEmbeddings:
+    """
+    RAG 구축(build_rag_ollama.py)과 검색(retrieve_for_requirement) 양쪽에서 반드시
+    같은 임베딩 모델/서버를 쓰도록 하는 단일 소스. 두 곳이 각자 하드코딩한 값을
+    쓰면 벡터 공간이 어긋나 검색이 조용히 실패하므로, 이 함수 하나만 공유한다.
+    OLLAMA_HOST/EMBEDDING_MODEL 환경변수를 따른다(.env로 설정 가능).
+    """
+    resolved_host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    return _default_embeddings(resolved_host)
+
+
 def _build_queries(requirement: RequirementSchema) -> List[str]:
     """요구사항에서 여러 개의 타겟 검색 질의를 만든다 (항목 단위 검색)."""
     queries: List[str] = []
@@ -101,13 +112,31 @@ def retrieve_for_requirement(
     return results
 
 
+def source_label(doc: Document) -> str:
+    """
+    참고 자료 출처를 사람이 읽을 짧은 형태로 만든다. 항상 짧은 파일명(filename)을
+    우선하고, 없으면 source(과거 PPTX 문서는 filename 없이 source만 있을 수 있음)로
+    폴백한다 — "sample_specs/spec_01.md" 같은 전체 경로가 아니라 "spec_01.md"만
+    사용자/LLM에게 노출한다 (요청서 11절).
+    """
+    return doc.metadata.get("filename") or doc.metadata.get("source", "Unknown")
+
+
 def format_context(docs: List[Document]) -> str:
-    """검색 결과를 프롬프트에 넣을 수 있는 텍스트로 변환한다."""
+    """검색 결과를 프롬프트에 넣을 수 있는 텍스트로 변환한다. Markdown(category/item)과
+    PPTX(slide_number) 두 출처 형식을 모두 지원한다."""
     parts = []
     for i, doc in enumerate(docs, start=1):
-        source = doc.metadata.get("source", "Unknown")
-        slide = doc.metadata.get("slide_number", "?")
-        parts.append(f"\n[참고 자료 {i} (출처: {source} Slide {slide})]\n{doc.page_content}\n")
+        source = source_label(doc)
+        if doc.metadata.get("source_type") == "markdown":
+            location = doc.metadata.get("category") or doc.metadata.get("item") or ""
+            if doc.metadata.get("item"):
+                location = f"{doc.metadata.get('category', '')} > {doc.metadata['item']}"
+            header = f"{source} ({location})" if location else source
+        else:
+            slide = doc.metadata.get("slide_number", "?")
+            header = f"{source} Slide {slide}"
+        parts.append(f"\n[참고 자료 {i} (출처: {header})]\n{doc.page_content}\n")
     return "".join(parts)
 
 
