@@ -41,8 +41,61 @@ def parse_requirement_text(
     prompt = PARSE_PROMPT.format(user_text=user_text)
     requirement = ollama_client.parse_structured(prompt, RequirementSchema, model=model, host=host)
     requirement.raw_text = user_text
+    # LLM이 사용자가 언급하지 않은 검사 항목을 임의로 추가하는 경우(실제로 관찰됨 —
+    # "표면 결함"을 언급하지 않았는데도 surface_defect가 채워짐)를 여기서만(최초
+    # LLM 파싱 직후) 걸러낸다. 후속 질문 답변 라운드(existing_requirement 경로)에서는
+    # 사용자가 직접 입력/수정한 inspection_items를 건드리면 안 되므로 다시 적용하지 않는다.
+    requirement.inspection_items = _filter_hallucinated_items(requirement.inspection_items, user_text)
     apply_deterministic_extraction(requirement)
     return requirement
+
+
+# ==========================================
+# 검사 항목 hallucination 방지 — LLM이 사용자가 말하지 않은 검사 항목을 임의로
+# 추가하지 못하게 raw_text에 실제 근거(키워드)가 있는지 확인한다.
+#
+# "thickness"는 이 앱의 도메인(전극 검사기)에서 가장 기본적인 검사 항목이고,
+# 사용자가 보고한 실제 사례("0~200 μm 측정 범위와 ±1 μm 이하 정확도가 필요한 전극
+# 검사기를 찾아줘.")에서도 리터럴 키워드("두께") 없이 LLM이 thickness를 채운 것
+# 자체는 문제로 지적되지 않았다(오히려 후속 흐름에서 정상 전제로 쓰임) — 그래서
+# thickness는 이 필터에서 제외하고, 텍스트 근거 없이 추가되기 쉬운 나머지 항목
+# (surface_defect 등)만 걸러낸다.
+# ==========================================
+_ALWAYS_TRUSTED_ITEMS = {"thickness"}
+_INSPECTION_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "surface_defect": (
+        "표면 결함", "표면결함", "결함", "이물", "크랙", "핀홀", "긁힘", "스크래치",
+        "defect", "scratch", "crack", "pinhole",
+    ),
+    "profile_3d": ("3d", "프로파일", "profile", "형상", "높이"),
+    "coating": ("코팅", "coating", "도포", "loading"),
+    "edge_defect": ("엣지", "edge", "가장자리", "버", "burr"),
+}
+
+
+def _filter_hallucinated_items(items: list, raw_text: str) -> list:
+    """
+    raw_text에 해당 검사 항목을 가리키는 키워드가 전혀 없으면 그 항목을 제거한다.
+    키워드 목록이 없는(알 수 없는) 항목이나 _ALWAYS_TRUSTED_ITEMS는 안전하게 그대로
+    유지한다(과도한 필터링으로 정당한 항목까지 지우지 않기 위함).
+
+    안전장치: 필터링 결과 inspection_items가 통째로 비어버리면(raw_text가 짧은
+    placeholder이거나 키워드 사전에 없는 표현만 쓰인 경우 등) 필터링 자체를
+    신뢰할 수 없다는 뜻이므로 원본 목록을 그대로 유지한다 — "전부 삭제"가
+    "일부 오탐 유지"보다 더 나쁜 실패이기 때문이다.
+    """
+    text_lower = (raw_text or "").lower()
+    filtered = []
+    for item in items:
+        if item in _ALWAYS_TRUSTED_ITEMS:
+            filtered.append(item)
+            continue
+        keywords = _INSPECTION_ITEM_KEYWORDS.get(item)
+        if keywords is None or any(kw.lower() in text_lower for kw in keywords):
+            filtered.append(item)
+    if items and not filtered:
+        return items
+    return filtered
 
 
 def requirement_from_selection(selection: Dict[str, Any]) -> RequirementSchema:
