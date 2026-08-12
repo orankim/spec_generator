@@ -5,17 +5,19 @@ renderers/markdown_renderer.render_markdown()가 만드는 포맷) -> Specificat
 임의의 마크다운을 일반적으로 파싱하려고 하지 않는다. 오직 우리가 정의한 표준
 포맷(라벨-필드 매핑은 renderers/common.py의 build_sections()가 유일한 소스)만
 대상으로 한다. 표준 포맷이 아닌 라벨/구조는 조용히 무시한다(에러 없이 건너뜀).
+
+"13. Requirement Compliance" / "12. Validation / Acceptance" 섹션은 SpecificationSchema에
+저장되는 필드가 없는 파생 정보이므로 역파싱 대상에서 제외한다.
 """
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List, Optional
 
-from agent.schemas import SourcedNumber, SpecificationSchema
+from agent.schemas import SourcedNumber, SourceRef, SpecificationSchema, Status
 
 from renderers.common import build_notes_section, build_sections
 
-_KNOWN_SOURCE_TYPES = {"user_requirement", "inferred", "default", "document"}
+_KNOWN_STATUS: set = {"USER_DEFINED", "VERIFIED", "INFERRED", "UNKNOWN"}
 
 # 한 행(row)에 값 하나가 콤마로 join된 리스트 필드 (예: "핀홀, 크랙")
 _LIST_PATHS = {
@@ -32,13 +34,26 @@ _LIST_PATHS = {
 _APPEND_LIST_PATHS = {"notes", "assumptions"}
 
 _BOOL_PATHS = {
-    "interfaces.ethernet",
-    "interfaces.digital_io",
     "interfaces.plc",
     "interfaces.mes",
     "interfaces.opc_ua",
+    "interfaces.ethernet_ip",
+    "interfaces.profinet",
+    "interfaces.modbus",
+    "interfaces.ethernet",
+    "interfaces.digital_io",
+    "interfaces.analog_io",
+    "interfaces.api",
     "safety.interlock",
     "safety.emergency_stop",
+    "safety.safety_sensor",
+    "safety.protective_cover",
+    "defect_detection.defect_detection",
+    "defect_detection.classification",
+    "optical_system.interferometry",
+    "optical_system.reflectometry",
+    "optical_system.oct",
+    "optical_system.laser",
 }
 
 # 일반(non-SourcedNumber) 필드 중 숫자 타입인 것들 - 문자열로 잘못 세팅되지 않도록 별도 처리
@@ -46,16 +61,31 @@ _FLOAT_PLAIN_PATHS = {
     "inspection_target.width_mm",
     "inspection_target.length_mm",
     "inspection_target.thickness_um",
+    "inspection_target.coating_thickness_um",
+    "inspection_requirements.inspection_width_mm",
+    "inspection_requirements.inspection_length_mm",
 }
 
 
 def _label_to_path_map() -> Dict[str, str]:
-    """빈 SpecificationSchema로 build_sections()를 한 번 돌려 라벨->필드경로 맵을 얻는다."""
+    """빈 SpecificationSchema로 build_sections()를 한 번 돌려 라벨->필드경로 맵을 얻는다.
+
+    라벨은 전체 섹션을 통틀어 유일해야 한다 — 두 필드가 같은 라벨을 쓰면 나중 필드가
+    앞 필드를 조용히 덮어써서 역파싱(roundtrip)이 엉뚱한 필드에 값을 채운다(과거 실제로
+    발생했던 버그: "Line Speed"가 inspection_target/inspection_performance 양쪽에 있었음).
+    renderers/common.py에서 라벨을 지을 때 이 제약을 지켜야 한다.
+    """
     mapping: Dict[str, str] = {}
     blank = SpecificationSchema()
     for section in build_sections(blank):
         for row in section.rows:
             if row.field_path:
+                if row.label in mapping and mapping[row.label] != row.field_path:
+                    raise ValueError(
+                        f"Duplicate render label {row.label!r} maps to both "
+                        f"{mapping[row.label]!r} and {row.field_path!r} — "
+                        "renderers/common.py must use a unique label per field."
+                    )
                 mapping[row.label] = row.field_path
     # build_notes_section은 리스트가 비어 있으면 행 자체를 만들지 않으므로(데이터
     # 기반 생성), 빈 스펙으로는 "Note"/"Assumption" 등의 라벨을 얻을 수 없다.
@@ -98,12 +128,7 @@ def _parse_tables(markdown_text: str) -> List[Dict[str, Any]]:
             cells = [c.strip() for c in line.strip("|").split("|")]
             if len(cells) == len(header_cols):
                 data_rows.append(cells)
-        sources = {}
-        for line in block["lines"]:
-            m = re.match(r"^>\s*Source:\s*(.+?)\s*—\s*(.+)$", line.strip())
-            if m:
-                sources[m.group(2).strip()] = m.group(1).strip()
-        parsed.append({"header": block["header"], "columns": header_cols, "rows": data_rows, "sources": sources})
+        parsed.append({"header": block["header"], "columns": header_cols, "rows": data_rows})
     return parsed
 
 
@@ -142,11 +167,16 @@ def markdown_to_spec(markdown_text: str) -> SpecificationSchema:
     label_to_path = _label_to_path_map()
     spec = SpecificationSchema()
 
+    # "12. Validation / Acceptance"와 "13. Requirement Compliance"는 파생 정보라 역파싱하지 않는다.
+    skip_headers = {"12. Validation / Acceptance", "13. Requirement Compliance"}
+
     for block in _parse_tables(markdown_text):
+        if block["header"] in skip_headers:
+            continue
         columns = block["columns"]
         if not columns:
             continue
-        has_requirement_col = columns == ["Item", "Unit", "Requirement", "Specification", "Result"]
+        is_numeric_table = columns == ["Item", "Unit", "Specification", "Status", "Source"]
 
         for row_cells in block["rows"]:
             label = row_cells[0]
@@ -157,8 +187,8 @@ def markdown_to_spec(markdown_text: str) -> SpecificationSchema:
             # "Defect Inspection" 같은 섹션은 SourcedNumber 필드와 plain 필드(예:
             # Defect Types)가 같은 5열 표를 공유하므로, 표 모양이 아니라 필드
             # 종류(path)로 파싱 방식을 결정한다. "Specification" 열 위치는 표
-            # 모양에 따라 다르므로(5열이면 인덱스 3, 2열이면 인덱스 1) 먼저 통일한다.
-            value_text = row_cells[3] if has_requirement_col else row_cells[1]
+            # 모양에 따라 다르므로(5열이면 인덱스 2, 2열이면 인덱스 1) 먼저 통일한다.
+            value_text = row_cells[2] if is_numeric_table else row_cells[1]
 
             if path in _APPEND_LIST_PATHS:
                 if value_text != "UNKNOWN" and value_text:
@@ -179,23 +209,18 @@ def markdown_to_spec(markdown_text: str) -> SpecificationSchema:
                 _set_by_path(spec, path, _parse_float(value_text))
                 continue
 
-            if has_requirement_col:
-                unit_text = row_cells[1]
+            if is_numeric_table:
+                unit_text, status_text, source_text = row_cells[1], row_cells[3], row_cells[4]
                 value = _parse_float(value_text)
-                source_type = None
-                source = None
-                source_text = block["sources"].get(label)
-                if source_text:
-                    if source_text in _KNOWN_SOURCE_TYPES:
-                        source_type = source_text
-                    else:
-                        source_type = "document"
-                        source = source_text
+                status: Status = status_text if status_text in _KNOWN_STATUS else "UNKNOWN"
+                source_ref = None
+                if source_text and source_text not in ("-", "UNKNOWN", ""):
+                    source_ref = SourceRef(document=source_text)
                 sourced = SourcedNumber(
                     value=value,
                     unit=(unit_text if unit_text != "-" else None),
-                    source_type=source_type,
-                    source=source,
+                    status=status,
+                    source=source_ref,
                 )
                 _set_by_path(spec, path, sourced if value is not None else None)
             else:
