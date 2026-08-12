@@ -62,7 +62,7 @@ def retrieve_and_generate(
     db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
     model: Optional[str] = None,
-    k_per_query: int = 3,
+    k_per_query: int = 5,
 ) -> Tuple[SpecificationSchema, ValidationResult, List[Document]]:
     """SpecRetriever -> SpecificationGenerator -> SpecificationValidator."""
     host = ollama_host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")

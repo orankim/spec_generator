@@ -117,6 +117,15 @@ def parse_value_unit(text: str) -> Optional[Tuple[float, str]]:
     return float(m.group(1)), normalize_unit(m.group(2))
 
 
+def iter_value_units(text: str):
+    """텍스트에서 발견되는 모든 (숫자, 단위) 쌍을 순서대로 yield한다.
+    parse_value_unit()은 첫 번째만 반환하는 반면, 이 함수는 사양서 표(테이블) 한
+    청크 안에 여러 항목의 수치가 섞여 있을 때 그 값들을 문서 원문과 하나씩
+    대조해야 하는 용도(예: SourcedNumber 검증)로 쓰인다."""
+    for m in _VALUE_UNIT_RE.finditer(text):
+        yield float(m.group(1)), normalize_unit(m.group(2))
+
+
 _RANGE_RE = re.compile(
     rf"([+-]?\d+(?:\.\d+)?)\s*(?:~|-|to|부터)\s*([+-]?\d+(?:\.\d+)?)\s*({_UNIT_ALTERNATION})\b"
 )

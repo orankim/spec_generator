@@ -29,6 +29,7 @@ from pptx import Presentation
 from .chroma_store import SimpleChromaStore
 from .paths import DEFAULT_CHROMA_DB_PATH, resolve_db_path
 from .schemas import RequirementSchema
+from .units import UnitError, convert, parse_range
 
 _RAG_DEBUG = os.environ.get("RAG_DEBUG", "").lower() in ("1", "true", "yes")
 
@@ -76,11 +77,59 @@ def _build_queries(requirement: RequirementSchema) -> List[str]:
         hint = _ITEM_QUERY_HINTS.get(item, item)
         queries.append(f"{' '.join(base_terms)} {hint}".strip())
 
+    if requirement.raw_text and requirement.raw_text not in queries:
+        # material/inspection_items가 이미 있어 의미기반 질의가 만들어지더라도,
+        # 사용자 원문(예: "0~200 μm 측정 범위와 ±1 μm 이하 정확도")에 담긴 구체적
+        # 수치는 의미기반 질의만으로는 근접하지 않는 문서를 놓칠 수 있다 — 이전에는
+        # base_terms/inspection_items가 둘 다 없을 때만 fallback으로 썼는데, 그러면
+        # 대부분의 실제 요청에서 raw_text가 전혀 검색에 쓰이지 않는 문제가 있었다.
+        queries.append(requirement.raw_text)
+
     if not queries:
-        # 정보가 거의 없으면 raw_text라도 사용
-        queries.append(requirement.raw_text or "전극 검사 설비 사양")
+        queries.append("전극 검사 설비 사양")
 
     return queries
+
+
+def _range_boost_docs(requirement: RequirementSchema, vector_store: SimpleChromaStore) -> List[Document]:
+    """
+    요구사항 원문(raw_text)에 명시된 범위 조건(예: "0~200 μm")을 실제로 포함하는
+    문서를, 의미 유사도 순위와 무관하게 컬렉션 전체에서 찾아온다.
+
+    의미기반 벡터 검색은 "비슷한 뜻"은 잘 찾지만 "이 구체적인 수치 범위를 만족하는가"
+    같은 구조적 조건은 원래 취약하다 — top-k 밖으로 밀려나면 관련 문서라도 누락된다.
+    이 함수는 raw_text에서 파싱한 (min, max, unit)을 각 chunk 원문에서 파싱한
+    범위와 직접 비교해(agent.units 재사용, LLM 없음) chunk의 범위가 요구 범위를
+    포함하면 결과에 강제로 포함시킨다 — 순위 기반 검색을 대체하는 것이 아니라 보강한다.
+    """
+    if not requirement.raw_text:
+        return []
+    range_condition = parse_range(requirement.raw_text)
+    if not range_condition:
+        return []
+    req_lo, req_hi, req_unit = range_condition
+
+    try:
+        all_docs = vector_store.get(include=["documents", "metadatas"])
+    except Exception:
+        return []
+
+    matched: List[Document] = []
+    for text, meta in zip(all_docs.get("documents", []) or [], all_docs.get("metadatas", []) or []):
+        if not text:
+            continue
+        doc_range = parse_range(text)
+        if not doc_range:
+            continue
+        d_lo, d_hi, d_unit = doc_range
+        try:
+            d_lo_c = convert(d_lo, d_unit, req_unit)
+            d_hi_c = convert(d_hi, d_unit, req_unit)
+        except UnitError:
+            continue
+        if d_lo_c <= req_lo and d_hi_c >= req_hi:
+            matched.append(Document(page_content=text, metadata=meta or {}))
+    return matched
 
 
 class RetrievedChunk(Document):
@@ -91,7 +140,7 @@ def retrieve_for_requirement(
     requirement: RequirementSchema,
     db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
-    k_per_query: int = 3,
+    k_per_query: int = 5,
 ) -> List[Document]:
     """
     요구사항 기반 다중 질의 검색을 수행하고, (source, content) 기준으로
@@ -124,6 +173,25 @@ def retrieve_for_requirement(
         if _RAG_DEBUG:
             print(f"[RAG DEBUG] query: {query!r} -> {len(hits)}개 hit (db_path={resolved_db_path})")
 
+    for doc in _range_boost_docs(requirement, vector_store):
+        key = (doc.metadata.get("source"), doc.page_content[:80])
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(doc)
+        if _RAG_DEBUG:
+            print(f"[RAG DEBUG] range_boost -> 추가됨: {source_label(doc)!r}")
+
+    matched_filenames = {doc.metadata.get("filename") for doc in results if doc.metadata.get("filename")}
+    for doc in _pull_identity_chunks(vector_store, matched_filenames):
+        key = (doc.metadata.get("source"), doc.page_content[:80])
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(doc)
+        if _RAG_DEBUG:
+            print(f"[RAG DEBUG] identity_chunk -> 추가됨: {source_label(doc)!r}")
+
     if _RAG_DEBUG:
         try:
             collection_count = vector_store._collection.count()
@@ -139,6 +207,36 @@ def retrieve_for_requirement(
             print(f"[RAG DEBUG]       content: {doc.page_content[:120]!r}")
 
     return results
+
+
+def _pull_identity_chunks(vector_store: SimpleChromaStore, filenames: set) -> List[Document]:
+    """
+    검색 결과에 이미 포함된 문서들의 "식별 정보" chunk(markdown 소스는 chunk_id=0 —
+    build_rag_ollama.parse_markdown_file()의 관례상 "# Equipment Specification" 바로
+    다음 "## General" 절이 항상 첫 chunk다)를 명시적으로 함께 끌어온다.
+
+    의미 검색은 수치 성능 표(Measurement Performance 등)에 강하게 반응하는 반면,
+    정작 Manufacturer/Model이 적힌 General 절은 top-k 밖으로 밀려나기 쉽다 — 그러면
+    문서 자체는 검색됐는데도 spec_generator._fallback_equipment_identity()가 근거로
+    쓸 chunk가 없어 equipment.name을 못 채우는 상황이 생긴다. PPTX 소스(chunk_id
+    메타데이터 없음)에 대해서는 조건에 맞는 chunk가 없어 조용히 빈 결과를 반환한다.
+    """
+    identity_docs: List[Document] = []
+    for filename in filenames:
+        if not filename:
+            continue
+        try:
+            # chromadb는 where에 키가 2개 이상이면 명시적 $and가 필요하다(단일 dict에
+            # 여러 키를 그냥 나열하면 "Expected where to have exactly one operator" 오류).
+            raw = vector_store.get(
+                where={"$and": [{"filename": filename}, {"chunk_id": 0}]},
+                include=["documents", "metadatas"],
+            )
+        except Exception:
+            continue
+        for text, meta in zip(raw.get("documents", []) or [], raw.get("metadatas", []) or []):
+            identity_docs.append(Document(page_content=text, metadata=meta or {}))
+    return identity_docs
 
 
 def source_label(doc: Document) -> str:

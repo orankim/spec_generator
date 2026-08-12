@@ -144,11 +144,13 @@ def main() -> int:
     for q in queries:
         print(f"  - {q!r}")
     print(
-        "\n주의: 현재 _build_queries()는 target.material / measurement_principle / "
-        "measurement_method / inspection_items만 사용하고, required_accuracy_um이나 "
-        "측정 범위(0~200 μm) 같은 구체적 수치는 검색 질의 문자열에 포함되지 않는다. "
-        "즉 '0~200 μm ±1 μm' 자체가 아니라 '양극 두께 측정 두께 정확도 두께 분해능' 같은 "
-        "의미 기반 질의로 검색된다 — 이것이 의도한 설계인지 확인이 필요하다."
+        "\n참고: _build_queries()는 target.material / measurement_principle / "
+        "measurement_method / inspection_items 기반 의미 질의에 더해, raw_text가 있으면 "
+        "그 원문 자체도 항상 추가 질의로 포함한다(위 목록의 마지막 항목). 다만 raw_text에 "
+        "담긴 구체적 범위 조건(예: '0~200 μm')은 의미 검색만으로는 top-k 안에 들지 못할 "
+        "수 있어, retrieve_for_requirement()가 별도로 range_boost(agent.spec_retriever."
+        "_range_boost_docs)를 통해 그 범위를 실제로 포함하는 chunk를 순위와 무관하게 "
+        "추가로 병합한다."
     )
 
     # ---------------------------------------------------------------
