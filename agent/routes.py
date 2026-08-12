@@ -18,6 +18,7 @@ from . import ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, retrieve_and_generate
 from .pptx_electrode_builder import ElectrodeSpecPPTXBuilder
+from .requirement_parser import apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import RequirementSchema, SpecificationSchema
 
@@ -55,6 +56,7 @@ async def analyze_requirement_api(req: AnalyzeRequest):
     try:
         if req.existing_requirement is not None:
             requirement = RequirementSchema(**req.existing_requirement)
+            apply_deterministic_extraction(requirement)
             validation = validate_requirement(requirement)
         else:
             if not req.user_text and not req.selection:

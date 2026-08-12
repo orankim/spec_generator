@@ -17,7 +17,7 @@ RequirementSchema/SpecificationSchema 양쪽에서 안전하게 재사용할 수
 from __future__ import annotations
 
 import re
-from typing import Literal, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 Dimension = Literal["length", "speed", "time", "ratio"]
 
@@ -105,16 +105,27 @@ _UNIT_ALTERNATION = "|".join(
 _VALUE_UNIT_RE = re.compile(rf"([+-]?\d+(?:\.\d+)?)\s*({_UNIT_ALTERNATION})\b")
 
 
+def parse_value_unit_with_span(text: str) -> Optional[Tuple[float, str, int, int]]:
+    """parse_value_unit()과 동일하지만 매치된 (start, end) span도 함께 반환한다 —
+    호출부가 그 구간을 마스킹해서 다른 필드를 이어서 파싱할 때 같은 숫자가 중복으로
+    잡히지 않게 하려는 용도(예: agent.requirement_parser)."""
+    m = _VALUE_UNIT_RE.search(text)
+    if not m:
+        return None
+    return float(m.group(1)), normalize_unit(m.group(2)), m.start(), m.end()
+
+
 def parse_value_unit(text: str) -> Optional[Tuple[float, str]]:
     """
     자연어/사양서 텍스트에서 첫 번째 (숫자, 단위) 쌍을 뽑는다. 없으면 None.
     "±"는 부호가 아니라 오차 표기이므로 숫자 파싱에는 영향을 주지 않는다
     (정규식이 [+-]? 하나만 소비하고 ±의 나머지 문자는 무시됨).
     """
-    m = _VALUE_UNIT_RE.search(text)
-    if not m:
+    result = parse_value_unit_with_span(text)
+    if result is None:
         return None
-    return float(m.group(1)), normalize_unit(m.group(2))
+    value, unit, _start, _end = result
+    return value, unit
 
 
 def iter_value_units(text: str):
@@ -131,14 +142,91 @@ _RANGE_RE = re.compile(
 )
 
 
-def parse_range(text: str) -> Optional[Tuple[float, float, str]]:
-    """"0~200 μm", "0-200um", "0 to 200 mm" 등에서 (min, max, unit)을 뽑는다."""
+def parse_range_with_span(text: str) -> Optional[Tuple[float, float, str, int, int]]:
+    """parse_range()와 동일하지만 매치된 (start, end) span도 함께 반환한다 — 호출부가
+    그 구간을 마스킹해서 이후 다른 필드(정확도 등)를 파싱할 때 범위의 숫자가 섞여
+    들어가지 않게 하려는 용도(예: agent.requirement_parser)."""
     m = _RANGE_RE.search(text)
     if not m:
         return None
     lo, hi = float(m.group(1)), float(m.group(2))
     unit = normalize_unit(m.group(3))
-    return (lo, hi, unit) if lo <= hi else (hi, lo, unit)
+    if lo > hi:
+        lo, hi = hi, lo
+    return lo, hi, unit, m.start(), m.end()
+
+
+def parse_range(text: str) -> Optional[Tuple[float, float, str]]:
+    """"0~200 μm", "0-200um", "0 to 200 mm" 등에서 (min, max, unit)을 뽑는다."""
+    result = parse_range_with_span(text)
+    if result is None:
+        return None
+    lo, hi, unit, _start, _end = result
+    return lo, hi, unit
+
+
+def range_covers(
+    candidate_range: Tuple[float, float, str],
+    required_range: Tuple[float, float, str],
+) -> bool:
+    """
+    candidate_range(예: 후보 장비가 실제로 측정 가능한 범위)가 required_range(요구
+    범위)를 완전히 포함하면 True. 서로 단위가 달라도(예: mm vs um) canonical 변환
+    후 비교한다. PASS/FAIL 판정을 LLM에게 맡기지 않고 코드로 수행하기 위한 함수다.
+    """
+    c_lo, c_hi, c_unit = candidate_range
+    r_lo, r_hi, r_unit = required_range
+    c_lo_conv = convert(c_lo, c_unit, r_unit)
+    c_hi_conv = convert(c_hi, c_unit, r_unit)
+    return c_lo_conv <= r_lo and c_hi_conv >= r_hi
+
+
+def evaluate_hard_requirements(
+    required_range: Optional[Tuple[float, float, str]] = None,
+    required_accuracy: Optional[Tuple[float, str, str]] = None,
+    candidate_range: Optional[Tuple[float, float, str]] = None,
+    candidate_accuracy: Optional[Tuple[float, str]] = None,
+) -> Tuple[bool, List[str]]:
+    """
+    측정 범위/정확도 같은 hard requirement를 LLM 판단이 아니라 Python 코드로
+    PASS/FAIL 판정한다(요청서: "이 비교는 가능하면 LLM 판단이 아니라 Python 코드로
+    수행해라"). required_accuracy는 (value, unit, operator) — operator는
+    candidate_accuracy가 만족해야 하는 방향(예: "<="이면 candidate <= required).
+    검사할 조건이 주어지지 않으면(None) 그 조건은 건너뛴다.
+
+    반환값: (모든 주어진 조건을 충족하면 True, 실패 사유 목록 — 비어 있으면 전부 충족).
+    """
+    reasons: List[str] = []
+    ok = True
+
+    if required_range is not None:
+        if candidate_range is None:
+            ok = False
+            reasons.append("측정 범위 조건 불충족: 후보의 측정 범위 정보가 없습니다.")
+        elif not range_covers(candidate_range, required_range):
+            ok = False
+            c_lo, c_hi, c_unit = candidate_range
+            r_lo, r_hi, r_unit = required_range
+            reasons.append(
+                f"측정 범위 조건 불충족: 후보 {c_lo}~{c_hi}{c_unit}는 요구 범위 "
+                f"{r_lo}~{r_hi}{r_unit}를 포함하지 못합니다."
+            )
+
+    if required_accuracy is not None:
+        req_value, req_unit, operator = required_accuracy
+        if candidate_accuracy is None:
+            ok = False
+            reasons.append("정확도 조건 불충족: 후보의 정확도 정보가 없습니다.")
+        else:
+            cand_value, cand_unit = candidate_accuracy
+            if not compare_values(cand_value, cand_unit, req_value, req_unit, operator):
+                ok = False
+                reasons.append(
+                    f"정확도 조건 불충족: 후보 {cand_value}{cand_unit}는 요구 조건 "
+                    f"{operator} {req_value}{req_unit}를 만족하지 못합니다."
+                )
+
+    return ok, reasons
 
 
 def compare_values(

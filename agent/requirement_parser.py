@@ -7,10 +7,10 @@ RequirementParser — 자연어 또는 조건 선택 UI 입력을 RequirementSch
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
-from . import ollama_client
-from .schemas import RequirementSchema
+from . import ollama_client, units
+from .schemas import RequirementRange, RequirementSchema, RequirementValue
 
 PARSE_PROMPT = """당신은 전극 검사기(인라인 계측 설비) 요구사항 분석 전문가입니다.
 아래 [사용자 입력]을 읽고 요구사항을 구조화된 JSON으로 정리하세요.
@@ -22,6 +22,10 @@ PARSE_PROMPT = """당신은 전극 검사기(인라인 계측 설비) 요구사�
   (thickness, surface_defect, profile_3d, coating, edge_defect 등 중 해당하는 것만)
 - measurement_method는 "비접촉/무접촉"이면 non_contact, "접촉식"이면 contact, 언급이 없으면 null로 두세요.
 - measurement_principle은 레이저/OCT/간섭계/비전 중 사용자가 명시한 것만 채우고, 아니면 null로 두세요.
+- "0~200 μm", "0-200um", "0 to 200 mm" 처럼 측정 범위가 언급되면 measurement_range에
+  {{"min": 0, "max": 200, "unit": "um"}} 형태로 채우세요.
+- "±1 μm 이하", "1um 이하 정확도" 처럼 정확도가 언급되면 accuracy에
+  {{"value": 1.0, "unit": "um", "operator": "<="}} 형태로 채우세요(required_accuracy_um도 동일한 값으로 채우세요).
 
 [사용자 입력]
 {user_text}
@@ -37,6 +41,7 @@ def parse_requirement_text(
     prompt = PARSE_PROMPT.format(user_text=user_text)
     requirement = ollama_client.parse_structured(prompt, RequirementSchema, model=model, host=host)
     requirement.raw_text = user_text
+    apply_deterministic_extraction(requirement)
     return requirement
 
 
@@ -46,4 +51,113 @@ def requirement_from_selection(selection: Dict[str, Any]) -> RequirementSchema:
     LLM을 거치지 않는 결정론적 매핑이며, selection의 키는 RequirementSchema 필드와
     1:1로 대응하도록 UI에서 구성한다 (예: {"target": {...}, "inspection_items": [...]}).
     """
-    return RequirementSchema(**selection)
+    requirement = RequirementSchema(**selection)
+    apply_deterministic_extraction(requirement)
+    return requirement
+
+
+# ==========================================
+# 결정론적(코드 기반) 수치 추출 — LLM 결과와 무관하게 raw_text에서 직접 뽑는다.
+#
+# 배경: 소형 LLM(예: qwen2.5:3b)은 "0~200 μm 측정 범위와 ±1 μm 이하 정확도가
+# 필요한 전극 검사기를 찾아줘." 같은 문장에서 measurement_range/accuracy를
+# 놓치는 경우가 실제로 관찰되었다. 이 값들은 이후 후보 장비를 PASS/FAIL로
+# 비교하는 hard requirement로 쓰이므로(agent.units.evaluate_hard_requirements),
+# LLM의 자연어 이해에만 의존하지 않고 agent.units의 정규식/단위 파싱으로
+# 직접 재확인한다 — 이미 채워진 값(사용자가 조건 선택 UI로 명시했거나 LLM이
+# 이미 채운 값)은 덮어쓰지 않는다(LLM이 맞게 채웠다면 그 값을 신뢰).
+# ==========================================
+_ACCURACY_KEYWORDS: Tuple[str, ...] = ("정확도", "accuracy")
+_RESOLUTION_KEYWORDS: Tuple[str, ...] = ("분해능", "resolution")
+_DEFECT_KEYWORDS: Tuple[str, ...] = ("결함 크기", "결함크기", "defect size", "결함")
+_RANGE_KEYWORDS: Tuple[str, ...] = ("측정 범위", "측정범위", "measurement range", "범위")
+
+_KEYWORD_WINDOW = 20
+
+
+def _find_keyword_value(
+    text: str, keywords: Tuple[str, ...]
+) -> Optional[Tuple[float, str, Optional[str], int, int]]:
+    """
+    text에서 keywords 중 하나가 처음 등장하는 위치 주변(앞뒤 _KEYWORD_WINDOW자)에서
+    가장 먼저 발견되는 (value, unit)과 operator를 찾는다. 못 찾으면 None. "정확도 1um
+    이하"처럼 값이 키워드 뒤에 오는 경우와 "1um 이하 정확도"처럼 앞에 오는 경우를
+    모두 지원한다. 매치된 (value, unit)의 절대 span(start, end)도 함께 반환해,
+    호출부가 그 구간을 마스킹하고 다음 키워드를 이어서 찾을 수 있게 한다 — 이렇게
+    하지 않으면 같은 숫자가 range/accuracy 등 여러 필드에 중복으로 잡힐 수 있다.
+    """
+    for kw in keywords:
+        idx = text.find(kw)
+        if idx == -1:
+            continue
+        window_start = max(0, idx - _KEYWORD_WINDOW)
+        window = text[window_start : idx + len(kw) + _KEYWORD_WINDOW]
+        value_unit = units.parse_value_unit_with_span(window)
+        if value_unit is None:
+            continue
+        value, unit, rel_start, rel_end = value_unit
+        operator = units.parse_operator(window)
+        return value, unit, operator, window_start + rel_start, window_start + rel_end
+    return None
+
+
+def _mask(text: str, start: int, end: int) -> str:
+    return text[:start] + (" " * (end - start)) + text[end:]
+
+
+def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
+    """
+    raw_text에 담긴 구체적 수치(측정 범위/정확도/분해능/최소 결함 크기)를 LLM 결과와
+    무관하게 agent.units의 정규식/단위 파싱으로 직접 뽑아 채운다. 이미 값이 채워진
+    필드는 건드리지 않는다(다른 경로로 이미 확정된 값을 덮어쓰지 않음). 마지막에
+    RequirementSchema.sync_legacy_fields()를 호출해 레거시 float 필드
+    (required_accuracy_um 등)도 함께 채워, RequirementValidator/기존 코드가
+    그대로 동작하도록 한다.
+    """
+    text = requirement.raw_text
+    if not text:
+        return
+
+    working_text = text
+
+    if requirement.measurement_range is None:
+        range_result = units.parse_range_with_span(text)
+        if range_result is not None:
+            lo, hi, unit, start, end = range_result
+            requirement.measurement_range = RequirementRange(min=lo, max=hi, unit=unit)
+            # 이후 정확도 등을 찾을 때 범위의 숫자(예: "200")가 섞여 들어가지 않도록
+            # 매치된 구간을 공백으로 마스킹한다(문자열 길이/위치는 그대로 유지).
+            working_text = _mask(working_text, start, end)
+        else:
+            # "0~200 μm" 같은 완전한 범위가 없으면 "200 μm 이하"/"최대 200 μm"처럼
+            # 상한만 있는 표현을 "측정 범위" 키워드 근처에서 찾는다(하한은 0으로 간주
+            # — 두께/갭 계열 측정 범위는 관례상 0부터 시작하므로 안전한 가정이다).
+            bound = _find_keyword_value(text, _RANGE_KEYWORDS)
+            if bound is not None:
+                value, unit, operator, start, end = bound
+                if operator in (None, "<="):
+                    requirement.measurement_range = RequirementRange(min=0.0, max=value, unit=unit)
+                    working_text = _mask(working_text, start, end)
+
+    if requirement.accuracy is None and requirement.required_accuracy_um is None:
+        found = _find_keyword_value(working_text, _ACCURACY_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.accuracy = RequirementValue(value=value, unit=unit, operator=operator or "<=")
+            working_text = _mask(working_text, start, end)
+
+    if requirement.resolution is None and requirement.required_resolution_um is None:
+        found = _find_keyword_value(working_text, _RESOLUTION_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.resolution = RequirementValue(value=value, unit=unit, operator=operator or "<=")
+            working_text = _mask(working_text, start, end)
+
+    if requirement.minimum_defect_size is None and requirement.minimum_defect_size_um is None:
+        found = _find_keyword_value(working_text, _DEFECT_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.minimum_defect_size = RequirementValue(value=value, unit=unit, operator=operator or "<=")
+            working_text = _mask(working_text, start, end)
+
+    requirement.sync_legacy_fields()

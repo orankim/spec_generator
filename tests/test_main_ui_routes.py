@@ -61,3 +61,16 @@ def test_agent_api_routes_untouched(client):
     resp = client.post("/api/agent/analyze-requirement", json={})
     assert resp.status_code == 400  # user_text/selection 둘 다 없어서 400 — 라우트 자체는 살아있음
     assert resp.status_code != 404
+
+
+def test_agent_page_displays_measurement_range_and_accuracy(client):
+    """
+    회귀: "AI가 이해한 요구사항" 화면에 measurement_range/accuracy가 표시되지 않던
+    문제 — renderRequirementSummary()가 이 필드들을 렌더링하는지 확인한다.
+    """
+    resp = client.get("/agent")
+    body = resp.text
+    assert "측정 범위" in body
+    assert "요구 정확도" in body
+    assert "req.measurement_range" in body
+    assert "req.accuracy" in body
