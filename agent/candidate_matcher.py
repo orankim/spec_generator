@@ -1,0 +1,234 @@
+"""
+CandidateMatcher — RAG 검색 결과(retrieved_docs)를 문서(장비) 단위로 그룹화하고,
+측정 범위/정확도 같은 hard requirement를 실제 원문에서 추출해 agent.units의 순수
+비교 함수(evaluate_hard_requirements/range_covers)로 PASS/FAIL을 판정한다.
+
+핵심 원칙: LLM은 이 판정에 전혀 관여하지 않는다. 이미 agent.spec_retriever가
+retrieved_docs를 만드는 과정에서 range_boost/identity_chunk 로직으로 각 후보 문서의
+관련 chunk를 모아 놓았으므로, 여기서 벡터 DB를 다시 스캔하지 않고 그 결과를 그대로
+입력으로 받는다(중복 구현 방지) — 평가에 필요한 chunk가 retrieved_docs에 없으면
+evaluate_hard_requirements가 UNKNOWN으로 정직하게 표시한다.
+"""
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
+
+from langchain_core.documents import Document
+
+from . import units
+from .schemas import CandidateEquipment, CandidateFieldMatch, RequirementSchema, SourceRef
+from .spec_retriever import source_label
+
+_MANUFACTURER_RE = re.compile(r"(?:Manufacturer|제조사)\s*[:：]\s*(.+)", re.IGNORECASE)
+_MODEL_RE = re.compile(r"(?:^|\n)[-*]?\s*Model\s*[:：]\s*(.+)", re.IGNORECASE)
+
+_RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
+_ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
+
+
+def extract_manufacturer_model(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    문서 원문에서 "Manufacturer: X"/"Model: Y" 같은 명시적 라인을 정규식으로 뽑는다.
+    LLM 없이 결정론적으로 동작하며, spec_generator._fallback_equipment_identity()와
+    이 모듈의 후보 식별 양쪽에서 공유해 동일한 로직을 중복 구현하지 않는다.
+    """
+    manufacturer = None
+    model = None
+    m = _MANUFACTURER_RE.search(text)
+    if m:
+        manufacturer = m.group(1).strip()
+    m = _MODEL_RE.search(text)
+    if m:
+        model = m.group(1).strip()
+    return manufacturer, model
+
+
+def _extract_table_rows(text: str) -> List[Tuple[str, str]]:
+    """
+    "| Item | Specification |" 형식의 markdown 표 행을 (label, value) 쌍으로 뽑는다.
+    헤더 행("Item"/"구분")과 구분선 행("---")은 제외한다.
+    """
+    rows: List[Tuple[str, str]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not (line.startswith("|") and line.endswith("|")):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) != 2:
+            continue
+        label, value = cells
+        if not label or not value:
+            continue
+        if label.lower() in ("item", "구분", "항목"):
+            continue
+        if set(value) <= {"-"}:
+            continue
+        rows.append((label, value))
+    return rows
+
+
+class _CandidateFact:
+    """후보 문서 하나에서 추출한 값과, 그 값이 어느 chunk(Document)에서 나왔는지."""
+
+    def __init__(self) -> None:
+        self.manufacturer: Optional[str] = None
+        self.model: Optional[str] = None
+        self.range: Optional[Tuple[float, float, str]] = None
+        self.range_doc: Optional[Document] = None
+        self.range_text: Optional[str] = None
+        self.accuracy: Optional[Tuple[float, str]] = None
+        self.accuracy_doc: Optional[Document] = None
+        self.accuracy_text: Optional[str] = None
+
+
+def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
+    fact = _CandidateFact()
+    for doc in docs:
+        text = doc.page_content
+        if fact.manufacturer is None or fact.model is None:
+            manufacturer, model = extract_manufacturer_model(text)
+            fact.manufacturer = fact.manufacturer or manufacturer
+            fact.model = fact.model or model
+
+        for label, value in _extract_table_rows(text):
+            label_lower = label.lower()
+            if fact.range is None and any(h in label_lower for h in _RANGE_LABEL_HINTS):
+                range_result = units.parse_range(value)
+                if range_result is not None:
+                    fact.range = range_result
+                    fact.range_doc = doc
+                    fact.range_text = f"{label}: {value}"
+            if fact.accuracy is None and any(h in label_lower for h in _ACCURACY_LABEL_HINTS):
+                value_unit = units.parse_value_unit(value)
+                if value_unit is not None:
+                    fact.accuracy = value_unit
+                    fact.accuracy_doc = doc
+                    fact.accuracy_text = f"{label}: {value}"
+    return fact
+
+
+def _source_ref(doc: Document) -> SourceRef:
+    return SourceRef(
+        document=source_label(doc),
+        section=doc.metadata.get("item") or doc.metadata.get("category"),
+        chunk_id=doc.metadata.get("chunk_id"),
+        source_type=doc.metadata.get("source_type"),
+    )
+
+
+def _required_range(requirement: RequirementSchema) -> Optional[Tuple[float, float, str]]:
+    r = requirement.measurement_range
+    if r is None or r.min is None or r.max is None:
+        return None
+    return r.min, r.max, r.unit or "um"
+
+
+def _required_accuracy(requirement: RequirementSchema) -> Optional[Tuple[float, str, str]]:
+    if requirement.accuracy is not None and requirement.accuracy.value is not None:
+        return requirement.accuracy.value, requirement.accuracy.unit or "um", requirement.accuracy.operator or "<="
+    if requirement.required_accuracy_um is not None:
+        return requirement.required_accuracy_um, "um", "<="
+    return None
+
+
+def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Document]) -> List[CandidateEquipment]:
+    """
+    retrieved_docs를 문서(장비) 단위로 그룹화하고, 각 후보의 측정 범위/정확도를
+    hard requirement로 PASS/FAIL 판정한다 — "LLM이 PASS/FAIL을 임의로 판단해서는
+    안 된다"는 원칙에 따라 agent.units.evaluate_hard_requirements를 그대로 재사용한다.
+    """
+    by_source: Dict[str, List[Document]] = defaultdict(list)
+    for doc in retrieved_docs:
+        by_source[source_label(doc)].append(doc)
+
+    required_range = _required_range(requirement)
+    required_accuracy = _required_accuracy(requirement)
+
+    candidates: List[CandidateEquipment] = []
+    for idx, (source, docs) in enumerate(sorted(by_source.items()), start=1):
+        fact = _extract_candidate_fact(docs)
+        matches: List[CandidateFieldMatch] = []
+
+        if required_range is not None:
+            candidate_range = fact.range
+            ok, _reasons = units.evaluate_hard_requirements(required_range=required_range, candidate_range=candidate_range)
+            result = "PASS" if ok else ("UNKNOWN" if candidate_range is None else "FAIL")
+            matches.append(
+                CandidateFieldMatch(
+                    item="Measurement Range",
+                    field_key="measurement_range",
+                    hard=True,
+                    requirement_value=required_range[1],
+                    requirement_unit=required_range[2],
+                    operator="<=",
+                    found_value=candidate_range[1] if candidate_range else None,
+                    found_min=candidate_range[0] if candidate_range else None,
+                    found_unit=candidate_range[2] if candidate_range else None,
+                    result=result,
+                    evidence_text=fact.range_text,
+                    source=_source_ref(fact.range_doc) if fact.range_doc else None,
+                )
+            )
+
+        if required_accuracy is not None:
+            candidate_accuracy = fact.accuracy
+            req_value, req_unit, operator = required_accuracy
+            ok, _reasons = units.evaluate_hard_requirements(
+                required_accuracy=required_accuracy, candidate_accuracy=candidate_accuracy
+            )
+            result = "PASS" if ok else ("UNKNOWN" if candidate_accuracy is None else "FAIL")
+            matches.append(
+                CandidateFieldMatch(
+                    item="Accuracy",
+                    field_key="accuracy",
+                    hard=True,
+                    requirement_value=req_value,
+                    requirement_unit=req_unit,
+                    operator=operator,
+                    found_value=candidate_accuracy[0] if candidate_accuracy else None,
+                    found_unit=candidate_accuracy[1] if candidate_accuracy else None,
+                    result=result,
+                    evidence_text=fact.accuracy_text,
+                    source=_source_ref(fact.accuracy_doc) if fact.accuracy_doc else None,
+                )
+            )
+
+        pass_count = sum(1 for m in matches if m.result == "PASS")
+        fail_count = sum(1 for m in matches if m.result == "FAIL")
+        unknown_count = sum(1 for m in matches if m.result == "UNKNOWN")
+        # "Hard Requirement 항목 중 FAIL이 하나도 없으면 True" (CandidateEquipment 독스트링) —
+        # 검사할 hard requirement가 아예 없는 경우도 공허하게(vacuously) True다.
+        hard_requirements_pass = fail_count == 0
+        match_score = 100.0 * pass_count / len(matches) if matches else 0.0
+
+        candidates.append(
+            CandidateEquipment(
+                candidate_id=f"cand-{idx}",
+                manufacturer=fact.manufacturer,
+                model=fact.model,
+                source_document=source,
+                matches=matches,
+                match_score=match_score,
+                hard_requirements_pass=hard_requirements_pass,
+                unknown_count=unknown_count,
+                fail_count=fail_count,
+                pass_count=pass_count,
+            )
+        )
+
+    return candidates
+
+
+def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[CandidateEquipment]:
+    """
+    PASS 후보(hard_requirements_pass=True)를 우선 선정하고, 그중에서도 pass_count가
+    높은 후보를 고른다. PASS한 후보가 하나도 없으면(전부 FAIL/UNKNOWN) 그래도
+    상대적으로 가장 나은 후보를 반환한다 — 반환된 후보가 hard_requirements_pass=False일
+    수 있으므로, 호출부는 이 값을 반드시 확인하고 사용자에게 투명하게 보여줘야 한다
+    (LLM이 조용히 부적합한 후보를 골라 감추는 상황을 막기 위함).
+    """
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda c: (not c.hard_requirements_pass, -c.pass_count, c.fail_count))[0]

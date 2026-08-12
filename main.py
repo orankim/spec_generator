@@ -87,6 +87,7 @@ PAGE_STYLE = """
     .issue-list li.error { background: #fff5f5; color: #9b2c2c; border-left: 3px solid #e53e3e; }
     .issue-list li.warning { background: #fffaf0; color: #9c4221; border-left: 3px solid #dd6b20; }
     .issue-list li.info { background: #ebf8ff; color: #2c5282; border-left: 3px solid #3182ce; }
+    .issue-list li.success { background: #f0fff4; color: #276749; border-left: 3px solid #38a169; }
     .tab-toggle { display: flex; gap: 8px; margin-bottom: 15px; }
     .tab-toggle button { width: auto; flex: 1; background: #e8eef5; color: #2b6cb0; margin-top: 0; }
     .tab-toggle button.active { background: #2b6cb0; color: white; }
@@ -224,6 +225,11 @@ async def agent_page():
             <div id="step3" class="step">
                 <h3>생성된 사양서 (검토 후 PPTX로 만드세요)</h3>
                 <div id="specSummary" class="summary-box"></div>
+
+                <div id="hardReqWrap">
+                    <p><strong>사용자 요구조건 검증 (Hard Requirement)</strong></p>
+                    <ul id="hardReqList" class="issue-list"></ul>
+                </div>
 
                 <div id="issuesWrap">
                     <p><strong>자동 검증 결과</strong></p>
@@ -417,7 +423,7 @@ async def agent_page():
                         if (!res.ok) throw new Error(data.detail || '사양서 생성 실패');
                         state.specification = data.specification;
                         state.specValidation = data.validation;
-                        renderSpecSummary(data.retrieved_sources || []);
+                        renderSpecSummary(data.retrieved_sources || [], data.hard_requirement_report || []);
                         goToStep('step3');
                     } catch (err) {
                         alert('사양서 생성 중 오류가 발생했습니다:\\n\\n' + err.message);
@@ -432,9 +438,32 @@ async def agent_page():
                     return `${sn.value}${sn.unit ? ' ' + sn.unit : ''} (${statusLabel})`;
                 }
 
-                function renderSpecSummary(retrievedSources) {
+                function fmtSourcedRange(sr) {
+                    if (!sr || sr.min === null || sr.min === undefined || sr.max === null || sr.max === undefined) return 'N/A';
+                    const statusLabel = {USER_DEFINED: '사용자 요구사항', VERIFIED: (sr.source && sr.source.document) || '문서', INFERRED: 'AI 추정', UNKNOWN: '근거 없음'}[sr.status] || sr.status || '-';
+                    return `${sr.min} ~ ${sr.max} ${sr.unit || ''} (${statusLabel})`.replace('  (', ' (');
+                }
+
+                function renderHardRequirementReport(records) {
+                    const list = document.getElementById('hardReqList');
+                    list.innerHTML = '';
+                    if (!records || records.length === 0) {
+                        list.innerHTML = '<li class="info">평가할 hard requirement가 없습니다(요구사항에 측정 범위/정확도가 지정되지 않음).</li>';
+                        return;
+                    }
+                    const cls = { PASS: 'success', FAIL: 'error', UNKNOWN: 'warning' };
+                    records.forEach(r => {
+                        const li = document.createElement('li');
+                        li.className = cls[r.result] || 'info';
+                        li.textContent = `[${r.item}] ${r.reason} → 판정: ${r.result}`;
+                        list.appendChild(li);
+                    });
+                }
+
+                function renderSpecSummary(retrievedSources, hardRequirementReport) {
                     const spec = state.specification;
                     const val = state.specValidation;
+                    const req = state.requirement || {};
 
                     const noResultsWarning = retrievedSources.length === 0
                         ? `<div style="margin-top:8px; padding:8px 10px; background:#fff5f5; border:1px solid #feb2b2; border-radius:4px; color:#822727;">
@@ -442,16 +471,28 @@ async def agent_page():
                            </div>`
                         : '';
 
+                    const requiredAccuracyDisplay = req.accuracy
+                        ? fmtReqValue(req.accuracy, true)
+                        : (req.required_accuracy_um != null ? `±${req.required_accuracy_um} um 이하` : '미정');
+
+                    const primarySources = (spec.primary_sources && spec.primary_sources.length > 0)
+                        ? spec.primary_sources
+                        : (spec.sources || []);
+
                     document.getElementById('specSummary').innerHTML = `
                         <strong>설비명:</strong> ${spec.equipment.name || 'N/A'}<br>
                         <strong>검사 대상:</strong> ${spec.inspection_target.material || 'N/A'} (${spec.inspection_target.width_mm ?? '?'} mm)<br>
                         <strong>검사 항목:</strong> ${(spec.inspection_items || []).join(', ') || 'N/A'}<br>
-                        <strong>정확도:</strong> ${fmtSourced(spec.measurement_performance.accuracy_um)}<br>
+                        <strong>측정 범위:</strong> ${fmtSourcedRange(spec.measurement_performance.measurement_range_full)}<br>
+                        <strong>요구 정확도:</strong> ${requiredAccuracyDisplay}<br>
+                        <strong>장비 정확도:</strong> ${fmtSourced(spec.measurement_performance.equipment_accuracy_um)}<br>
                         <strong>분해능:</strong> ${fmtSourced(spec.measurement_performance.resolution_um)}<br>
                         <strong>최소 검출 결함 크기:</strong> ${fmtSourced(spec.defect_detection.minimum_defect_size_um)}<br>
-                        <strong>참고 문서:</strong> ${(spec.sources || []).join(', ') || '없음'} (검색된 chunk ${retrievedSources.length}개)
+                        <strong>참고 문서:</strong> ${primarySources.join(', ') || '없음'} (검색된 chunk ${retrievedSources.length}개)
                         ${noResultsWarning}
                     `;
+
+                    renderHardRequirementReport(hardRequirementReport);
 
                     const issuesList = document.getElementById('issuesList');
                     issuesList.innerHTML = '';

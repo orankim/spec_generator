@@ -18,13 +18,19 @@ top-level `needs_confirmation`에 자동으로 채운다 — LLM이 스스로 �
 from __future__ import annotations
 
 import os
-import re
 from typing import List, Optional
 
 from langchain_core.documents import Document
 
-from . import ollama_client, units
-from .schemas import RequirementSchema, SourceRef, SourcedNumber, SpecificationSchema
+from . import candidate_matcher, ollama_client, units
+from .schemas import (
+    CandidateEquipment,
+    RequirementSchema,
+    SourcedNumber,
+    SourceRef,
+    SourcedRange,
+    SpecificationSchema,
+)
 from .spec_retriever import source_label
 
 GENERATE_PROMPT = """당신은 전극 검사기(계측 설비) 사양서를 작성하는 베테랑 엔지니어입니다.
@@ -78,12 +84,6 @@ def _prefill_from_requirement(requirement: RequirementSchema) -> SpecificationSc
         )
 
     return spec
-
-
-_IDENTITY_PATTERNS = {
-    "manufacturer": re.compile(r"(?:Manufacturer|제조사)\s*[:：]\s*(.+)", re.IGNORECASE),
-    "model": re.compile(r"(?:^|\n)[-*]?\s*Model\s*[:：]\s*(.+)", re.IGNORECASE),
-}
 
 
 def _find_matching_doc(sourced: SourcedNumber, retrieved_docs: List[Document]) -> Optional[Document]:
@@ -181,17 +181,9 @@ def _fallback_equipment_identity(spec: SpecificationSchema, retrieved_docs: List
     confirmed = _confirmed_source_documents(spec)
     ordered_docs = sorted(retrieved_docs, key=lambda d: 0 if source_label(d) in confirmed else 1)
     for doc in ordered_docs:
-        text = doc.page_content
-        manufacturer = spec.equipment.manufacturer
-        model = spec.equipment.model
-        if not manufacturer:
-            m = _IDENTITY_PATTERNS["manufacturer"].search(text)
-            if m:
-                manufacturer = m.group(1).strip()
-        if not model:
-            m = _IDENTITY_PATTERNS["model"].search(text)
-            if m:
-                model = m.group(1).strip()
+        manufacturer, model = candidate_matcher.extract_manufacturer_model(doc.page_content)
+        manufacturer = spec.equipment.manufacturer or manufacturer
+        model = spec.equipment.model or model
         if not (manufacturer or model):
             continue
         spec.equipment.manufacturer = spec.equipment.manufacturer or manufacturer
@@ -200,6 +192,70 @@ def _fallback_equipment_identity(spec: SpecificationSchema, retrieved_docs: List
         if spec.equipment.name:
             spec.notes.append(f"설비명이 문서({source_label(doc)})에서 자동 추출되었습니다 — 정확한지 확인하세요.")
             return
+
+
+def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[CandidateEquipment]) -> None:
+    """
+    candidate_matcher.select_best_candidate()가 고른 "가장 나은 후보"의 값을 최종
+    사양서에 반영한다. LLM이 measurement_range_full/equipment_accuracy_um을 스스로
+    채웠더라도, 실제 후보 문서 원문에서 결정론적으로 추출/판정한 이 값이 항상
+    우선한다 — hard requirement(측정 범위 포함 여부/정확도 충족 여부) PASS/FAIL을
+    LLM 판단에 맡기지 않기 위함이다.
+    """
+    if chosen is None:
+        return
+
+    if not spec.equipment.name and (chosen.manufacturer or chosen.model):
+        spec.equipment.manufacturer = spec.equipment.manufacturer or chosen.manufacturer
+        spec.equipment.model = spec.equipment.model or chosen.model
+        spec.equipment.name = " ".join(x for x in (chosen.manufacturer, chosen.model) if x)
+        if spec.equipment.name:
+            spec.notes.append(f"설비명이 후보 문서({chosen.source_document})에서 자동 추출되었습니다 — 정확한지 확인하세요.")
+
+    for match in chosen.matches:
+        if match.found_value is None or match.source is None:
+            continue
+        if match.field_key == "measurement_range" and match.found_min is not None:
+            spec.measurement_performance.measurement_range_full = SourcedRange(
+                min=match.found_min,
+                max=match.found_value,
+                unit=match.found_unit,
+                status="VERIFIED",
+                source=match.source,
+            )
+        elif match.field_key == "accuracy":
+            spec.measurement_performance.equipment_accuracy_um = SourcedNumber(
+                value=match.found_value,
+                unit=match.found_unit,
+                status="VERIFIED",
+                source=match.source,
+            )
+
+
+def _collect_verified_source_documents(spec: SpecificationSchema) -> List[str]:
+    """
+    모든 확인된(VERIFIED) SourcedNumber/SourcedRange의 근거 문서명을 모은다 — 검색된
+    문서 전체(sources)가 아니라, 최종 사양의 각 필드값을 실제로 뒷받침하는 문서만
+    primary_sources에 담아 UI에 우선 노출하기 위함이다.
+    """
+    documents = set()
+    for section_name in (
+        "measurement_performance",
+        "spatial_performance",
+        "inspection_performance",
+        "defect_detection",
+    ):
+        section = getattr(spec, section_name)
+        for field_name in type(section).model_fields:
+            value = getattr(section, field_name)
+            if (
+                isinstance(value, (SourcedNumber, SourcedRange))
+                and value.status == "VERIFIED"
+                and value.source
+                and value.source.document
+            ):
+                documents.add(value.source.document)
+    return sorted(documents)
 
 
 def _collect_needs_confirmation(spec: SpecificationSchema) -> List[str]:
@@ -259,9 +315,14 @@ def generate_specification(
         merged.defect_detection.minimum_defect_size_um = partial_spec.defect_detection.minimum_defect_size_um
 
     _verify_sourced_numbers(merged, retrieved_docs)
+    candidates = candidate_matcher.build_candidates(requirement, retrieved_docs)
+    chosen_candidate = candidate_matcher.select_best_candidate(candidates)
+    _apply_chosen_candidate(merged, chosen_candidate)
+
     _fallback_equipment_identity(merged, retrieved_docs)
 
     merged.sources = sorted({source_label(doc) for doc in retrieved_docs if doc.metadata.get("source")})
+    merged.primary_sources = _collect_verified_source_documents(merged)
     merged.needs_confirmation = _collect_needs_confirmation(merged)
 
     return merged

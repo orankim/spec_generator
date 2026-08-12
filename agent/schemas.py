@@ -61,6 +61,24 @@ class SourceRef(BaseModel):
     )
 
 
+class SourcedRange(BaseModel):
+    """
+    근거가 있는 "범위" 필드(예: 측정 범위 0~200um). SourcedNumber는 값 하나만 담을 수
+    있어 "장비가 실제로 커버하는 범위"를 표현하기에 부족하다 — 예: 요구 범위
+    0~200um를 장비가 0~300um로 충족(포함)하는지는 min/max 둘 다 있어야 판정 가능하다
+    (agent.units.range_covers). 기존 measurement_range(SourcedNumber, 하위호환 유지)와
+    별도 필드로 둔다.
+    """
+
+    min: Optional[float] = None
+    max: Optional[float] = None
+    unit: Optional[str] = None
+    status: Status = "UNKNOWN"
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    source: Optional[SourceRef] = None
+    reasoning: Optional[str] = None
+
+
 class SourcedNumber(BaseModel):
     """근거가 있는 수치 필드. 문서에서 못 찾았고 사용자도 명시하지 않았다면 value=None으로 남긴다."""
 
@@ -267,8 +285,19 @@ class InspectionRequirements(BaseModel):
 
 class MeasurementPerformance(BaseModel):
     measurement_range: Optional[SourcedNumber] = None
+    measurement_range_full: Optional[SourcedRange] = Field(
+        default=None,
+        description="측정 범위(min~max). measurement_range(단일 값, 하위호환 유지)와 별도로, "
+        "요구 범위 포함 여부 판정(agent.units.range_covers)과 UI의 '0~200 μm' 표시에 쓰인다.",
+    )
     resolution_um: Optional[SourcedNumber] = None
     accuracy_um: Optional[SourcedNumber] = None
+    equipment_accuracy_um: Optional[SourcedNumber] = Field(
+        default=None,
+        description="후보 문서(장비)에서 실제로 확인된 정확도. accuracy_um은 사용자가 요구사항에서 "
+        "명시하면 SpecGenerator가 그 값으로 고정하는 필드(요구값 보호)이므로, 요구값과 장비의 "
+        "실측값을 혼동하지 않도록 별도 필드에 둔다.",
+    )
     repeatability_um: Optional[SourcedNumber] = None
     reproducibility_um: Optional[SourcedNumber] = None
     linearity: Optional[SourcedNumber] = None
@@ -408,6 +437,11 @@ class SpecificationSchema(BaseModel):
     notes: List[str] = Field(default_factory=list)
     assumptions: List[str] = Field(default_factory=list)
     sources: List[str] = Field(default_factory=list, description="이 사양서 생성에 참고한 문서 파일명 목록")
+    primary_sources: List[str] = Field(
+        default_factory=list,
+        description="검색된 문서 전체(sources)가 아니라, 최종 사양의 각 필드값을 실제로 뒷받침하는"
+        "(VERIFIED로 확인되었거나 후보 선정에 쓰인) 문서만 모은 목록 — UI에 우선 노출한다.",
+    )
     needs_confirmation: List[str] = Field(
         default_factory=list,
         description="INFERRED/UNKNOWN으로 채워져 사용자 확인이 필요한 필드의 dotted path 목록",
@@ -463,6 +497,9 @@ class CandidateFieldMatch(BaseModel):
     requirement_unit: Optional[str] = None
     operator: Optional[Operator] = None
     found_value: Optional[float] = None
+    found_min: Optional[float] = Field(
+        default=None, description="item이 범위(예: Measurement Range)일 때만 채움 — found_value는 그 범위의 max."
+    )
     found_unit: Optional[str] = None
     result: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
     evidence_text: Optional[str] = Field(default=None, description="근거로 삼은 원문 발췌")

@@ -21,6 +21,7 @@ from .pptx_electrode_builder import ElectrodeSpecPPTXBuilder
 from .requirement_parser import apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import RequirementSchema, SpecificationSchema
+from .spec_validator import build_hard_requirement_report
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ async def generate_spec_api(req: GenerateSpecRequest):
     try:
         requirement = RequirementSchema(**req.requirement)
         specification, validation, retrieved_docs = retrieve_and_generate(requirement, db_path=DB_PATH)
+        hard_requirement_report = build_hard_requirement_report(specification, requirement)
         return {
             "specification": specification.model_dump(),
             "validation": validation.model_dump(),
@@ -89,6 +91,7 @@ async def generate_spec_api(req: GenerateSpecRequest):
                 {"source": spec_retriever.source_label(d), "excerpt": d.page_content[:200]}
                 for d in retrieved_docs
             ],
+            "hard_requirement_report": [r.model_dump() for r in hard_requirement_report],
         }
     except ollama_client.OllamaError as e:
         logger.exception("사양서 생성 중 Ollama 오류")

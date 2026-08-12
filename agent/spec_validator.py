@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from . import units
 from .schemas import (
     ComplianceRecord,
     Operator,
@@ -245,6 +246,94 @@ def build_compliance_report(
                 source=sourced.source if sourced else None,
             )
         )
+    return records
+
+
+# ==========================================
+# Hard Requirement 검증 — 요구 범위/정확도를 장비의 "실측값"(candidate_matcher가
+# 후보 문서에서 직접 추출한 값)과 비교한다.
+#
+# build_compliance_report()와 의도적으로 분리한다: 그쪽은 measurement_performance.
+# accuracy_um(=사용자 요구값을 보호하기 위해 SpecGenerator._prefill_from_requirement가
+# 그대로 고정해 넣는 필드, 요청서: 요구값/장비값 혼동 금지)과 requirement를 비교하므로
+# 요구값끼리 비교하는 셈이라 hard requirement 판정에는 쓸 수 없다. 이 함수는 대신
+# equipment_accuracy_um/measurement_range_full(candidate_matcher가 채우는, 장비의
+# 실제 확인된 값)을 사용해 진짜 "요구 vs 실측" PASS/FAIL을 코드로 판정한다.
+# ==========================================
+def _range_hard_requirement_record(spec: SpecificationSchema, requirement: RequirementSchema) -> Optional[ComplianceRecord]:
+    req_range = requirement.measurement_range
+    if req_range is None or req_range.min is None or req_range.max is None:
+        return None
+    req_unit = req_range.unit or "um"
+    required = (req_range.min, req_range.max, req_unit)
+
+    range_full = spec.measurement_performance.measurement_range_full
+    if range_full is None or range_full.min is None or range_full.max is None:
+        return ComplianceRecord(
+            item="Measurement Range", unit=req_unit, requirement=req_range.max, specification=None,
+            operator="<=", result="UNKNOWN", reason="장비의 측정 범위를 확인하지 못했습니다.", hard=True,
+        )
+
+    candidate = (range_full.min, range_full.max, range_full.unit or req_unit)
+    ok = units.range_covers(candidate, required)
+    result = "PASS" if ok else "FAIL"
+    reason = (
+        f"요구 범위 {required[0]:g}~{required[1]:g}{required[2]} / "
+        f"장비 범위 {candidate[0]:g}~{candidate[1]:g}{candidate[2]} → {result}"
+    )
+    return ComplianceRecord(
+        item="Measurement Range", unit=req_unit, requirement=req_range.max, specification=range_full.max,
+        operator="<=", result=result, reason=reason, source=range_full.source, hard=True,
+    )
+
+
+def _accuracy_hard_requirement_record(spec: SpecificationSchema, requirement: RequirementSchema) -> Optional[ComplianceRecord]:
+    if requirement.accuracy is not None and requirement.accuracy.value is not None:
+        req_value = requirement.accuracy.value
+        req_unit = requirement.accuracy.unit or "um"
+        operator: Operator = requirement.accuracy.operator or "<="
+    elif requirement.required_accuracy_um is not None:
+        req_value, req_unit, operator = requirement.required_accuracy_um, "um", "<="
+    else:
+        return None
+
+    equipment_accuracy = spec.measurement_performance.equipment_accuracy_um
+    if equipment_accuracy is None or equipment_accuracy.value is None:
+        return ComplianceRecord(
+            item="Accuracy", unit=req_unit, requirement=req_value, specification=None,
+            operator=operator, result="UNKNOWN", reason="장비의 실제 정확도를 확인하지 못했습니다.", hard=True,
+        )
+
+    spec_value = equipment_accuracy.value
+    spec_unit = equipment_accuracy.unit or req_unit
+    ok = units.compare_values(spec_value, spec_unit, req_value, req_unit, operator)
+    result = "PASS" if ok else "FAIL"
+    reason = f"요구 정확도 {operator} {req_value:g}{req_unit} / 장비 정확도 {spec_value:g}{spec_unit} → {result}"
+    return ComplianceRecord(
+        item="Accuracy", unit=req_unit, requirement=req_value, specification=spec_value,
+        operator=operator, result=result, reason=reason, source=equipment_accuracy.source, hard=True,
+    )
+
+
+def build_hard_requirement_report(
+    spec: SpecificationSchema,
+    requirement: Optional[RequirementSchema],
+) -> List[ComplianceRecord]:
+    """
+    측정 범위/정확도 hard requirement를 요구값 대 "장비 실측값"으로 PASS/FAIL
+    판정한다(LLM이 아니라 agent.units의 순수 함수로 판정 — candidate_matcher.
+    build_candidates()가 이미 채운 measurement_range_full/equipment_accuracy_um을
+    그대로 재사용하므로 비교 로직을 중복 구현하지 않는다).
+    """
+    if requirement is None:
+        return []
+    records: List[ComplianceRecord] = []
+    range_record = _range_hard_requirement_record(spec, requirement)
+    if range_record is not None:
+        records.append(range_record)
+    accuracy_record = _accuracy_hard_requirement_record(spec, requirement)
+    if accuracy_record is not None:
+        records.append(accuracy_record)
     return records
 
 
