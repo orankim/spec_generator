@@ -20,9 +20,26 @@ from typing import Optional
 from pptx import Presentation
 from pptx.util import Inches, Pt
 
-from agent.schemas import RequirementSchema, SpecificationSchema, ValidationResult
+from agent.schemas import ComplianceRecord, RequirementSchema, SpecificationSchema, ValidationResult
+from agent.spec_validator import build_compliance_report
 
-from .common import RenderSection, build_notes_section, build_sections, build_validation_section
+from .common import (
+    COMPLIANCE_SECTION_EMPTY_NOTE,
+    COMPLIANCE_SECTION_TITLE,
+    RenderSection,
+    build_notes_section,
+    build_sections,
+    build_validation_section,
+)
+
+_NUMERIC_SECTION_IDS = {
+    "inspection_target",
+    "inspection_requirements",
+    "measurement_performance",
+    "spatial_performance",
+    "inspection_performance",
+    "defect_inspection",
+}
 
 
 def _default_template_path() -> Optional[str]:
@@ -32,6 +49,70 @@ def _default_template_path() -> Optional[str]:
     기본값으로 두지 않는다.
     """
     return os.environ.get("PPT_TEMPLATE_PATH") or None
+
+
+def _add_compliance_slide(prs: Presentation, blank, records):
+    slide = prs.slides.add_slide(blank)
+    title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.3), Inches(9), Inches(0.7))
+    tp = title_box.text_frame.paragraphs[0]
+    tp.text = COMPLIANCE_SECTION_TITLE
+    tp.font.size = Pt(22)
+    tp.font.bold = True
+
+    if not records:
+        note_box = slide.shapes.add_textbox(Inches(0.4), Inches(1.3), Inches(9), Inches(1))
+        note_box.text_frame.text = COMPLIANCE_SECTION_EMPTY_NOTE
+        return slide
+
+    headers = ["Item", "Unit", "Requirement", "Specification", "Result", "Reason"]
+    table_shape = slide.shapes.add_table(len(records) + 1, len(headers), Inches(0.4), Inches(1.2), Inches(9.2), Inches(5.8))
+    table = table_shape.table
+    for c, header in enumerate(headers):
+        table.rows[0].cells[c].text = header
+    for r_idx, record in enumerate(records, start=1):
+        values = [
+            record.item,
+            record.unit or "-",
+            "UNKNOWN" if record.requirement is None else str(record.requirement),
+            "UNKNOWN" if record.specification is None else str(record.specification),
+            record.result,
+            record.reason,
+        ]
+        for c, val in enumerate(values):
+            cell = table.rows[r_idx].cells[c]
+            cell.text = str(val)
+            for para in cell.text_frame.paragraphs:
+                para.font.size = Pt(11)
+    return slide
+
+
+def _add_data_table_slide(prs: Presentation, blank, section: RenderSection, headers, row_to_values):
+    slide = prs.slides.add_slide(blank)
+    title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.3), Inches(9), Inches(0.7))
+    tp = title_box.text_frame.paragraphs[0]
+    tp.text = section.title
+    tp.font.size = Pt(22)
+    tp.font.bold = True
+
+    if not section.rows:
+        note_box = slide.shapes.add_textbox(Inches(0.4), Inches(1.3), Inches(9), Inches(1))
+        note_box.text_frame.text = section.note or "No data."
+        return slide
+
+    n_rows = len(section.rows) + 1
+    table_shape = slide.shapes.add_table(n_rows, len(headers), Inches(0.4), Inches(1.2), Inches(9.2), Inches(5.8))
+    table = table_shape.table
+    for c, header in enumerate(headers):
+        table.rows[0].cells[c].text = header
+
+    for r, row in enumerate(section.rows, start=1):
+        values = row_to_values(row)
+        for c, val in enumerate(values):
+            cell = table.rows[r].cells[c]
+            cell.text = str(val)
+            for para in cell.text_frame.paragraphs:
+                para.font.size = Pt(11)
+    return slide
 
 
 def _build_default_presentation(
@@ -55,45 +136,27 @@ def _build_default_presentation(
     sub.text_frame.text = specification.equipment.name or "(장비명 미정)"
     sub.text_frame.paragraphs[0].font.size = Pt(18)
 
-    def add_table_slide(section: RenderSection, has_requirement_col: bool):
-        slide = prs.slides.add_slide(blank)
-        title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.3), Inches(9), Inches(0.7))
-        tp = title_box.text_frame.paragraphs[0]
-        tp.text = section.title
-        tp.font.size = Pt(22)
-        tp.font.bold = True
+    for section in build_sections(specification):
+        if section.id in _NUMERIC_SECTION_IDS:
+            headers = ["Item", "Unit", "Specification", "Status", "Source"]
+            row_to_values = lambda row: [row.label, row.unit or "-", row.value_display, row.status or "-", row.source or "-"]
+        else:
+            headers = ["Item", "Specification"]
+            row_to_values = lambda row: [row.label, row.value_display]
+        _add_data_table_slide(prs, blank, section, headers, row_to_values)
 
-        if not section.rows:
-            note_box = slide.shapes.add_textbox(Inches(0.4), Inches(1.3), Inches(9), Inches(1))
-            note_box.text_frame.text = section.note or "No data."
-            return
+    _add_data_table_slide(
+        prs, blank, build_validation_section(validation),
+        ["Level / Field", "Message"], lambda row: [row.label, row.value_display],
+    )
 
-        cols = 5 if has_requirement_col else 2
-        n_rows = len(section.rows) + 1
-        table_shape = slide.shapes.add_table(n_rows, cols, Inches(0.4), Inches(1.2), Inches(9.2), Inches(5.8))
-        table = table_shape.table
-        headers = ["Item", "Unit", "Requirement", "Specification", "Result"] if has_requirement_col else ["Item", "Specification"]
-        for c, header in enumerate(headers):
-            table.rows[0].cells[c].text = header
+    compliance_records = build_compliance_report(specification, requirement)
+    _add_compliance_slide(prs, blank, compliance_records)
 
-        for r, row in enumerate(section.rows, start=1):
-            values = (
-                [row.label, row.unit or "-", row.requirement_display or "-", row.value_display, row.result or "-"]
-                if has_requirement_col
-                else [row.label, row.value_display]
-            )
-            for c, val in enumerate(values):
-                cell = table.rows[r].cells[c]
-                cell.text = str(val)
-                for para in cell.text_frame.paragraphs:
-                    para.font.size = Pt(11)
-
-    for section in build_sections(specification, requirement=requirement):
-        has_req_col = any(row.requirement_display is not None or row.result is not None for row in section.rows)
-        add_table_slide(section, has_req_col)
-
-    add_table_slide(build_validation_section(validation), has_requirement_col=False)
-    add_table_slide(build_notes_section(specification), has_requirement_col=False)
+    _add_data_table_slide(
+        prs, blank, build_notes_section(specification),
+        ["Item", "Specification"], lambda row: [row.label, row.value_display],
+    )
 
     return prs
 
