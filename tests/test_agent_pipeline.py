@@ -100,8 +100,8 @@ def test_spec_validator_flags_repeatability_worse_than_accuracy():
     spec.inspection_target.material = "전극"
     spec.inspection_items = ["thickness"]
     spec.equipment.name = "테스트 장비"
-    spec.measurement_performance.accuracy_um = SourcedNumber(value=1.0, unit="um", source_type="document", source="a.pptx")
-    spec.measurement_performance.repeatability_um = SourcedNumber(value=5.0, unit="um", source_type="document", source="a.pptx")
+    spec.measurement_performance.accuracy_um = SourcedNumber.from_legacy(value=1.0, unit="um", source_type="document", source="a.pptx")
+    spec.measurement_performance.repeatability_um = SourcedNumber.from_legacy(value=5.0, unit="um", source_type="document", source="a.pptx")
 
     result = validate_specification(spec)
     messages = [i.message for i in result.issues]
@@ -169,7 +169,7 @@ def test_case_1_width_thickness_surface_defect_non_contact():
         stub_spec,
     )
     assert specification.measurement_performance.accuracy_um.value == 1.0
-    assert specification.measurement_performance.accuracy_um.source_type == "user_requirement"
+    assert specification.measurement_performance.accuracy_um.status == "USER_DEFINED"
 
 
 def test_case_2_thickness_range_and_accuracy():
