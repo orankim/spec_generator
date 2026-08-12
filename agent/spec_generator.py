@@ -5,13 +5,13 @@ SpecificationGenerator — Requirement + 검색된 사내 문서를 바탕으로
 핵심 원칙(기획안 12절)을 코드로 강제하기 위해 두 단계로 나눈다:
 
 1. **결정론적 사전 채움(pre-fill)**: 사용자가 요구사항에서 명시한 값은
-   LLM을 거치지 않고 파이썬 코드로 그대로 옮겨 담고 source_type을
-   "user_requirement"로 고정한다. LLM이 이 값을 덮어쓸 수 없다.
+   LLM을 거치지 않고 파이썬 코드로 그대로 옮겨 담고 status를
+   "USER_DEFINED"로 고정한다. LLM이 이 값을 덮어쓸 수 없다.
 2. **LLM 보강**: 나머지 빈 필드만, 검색된 사내 문서를 근거로
    Ollama 구조화 출력으로 채운다. 문서에 없는 값은 null로 두거나
-   "inferred"로 표시하도록 프롬프트에서 명시적으로 요구한다.
+   "INFERRED"로 표시하도록 프롬프트에서 명시적으로 요구한다.
 
-생성 후 SourcedNumber 중 source_type이 inferred/default인 필드를 모아
+생성 후 SourcedNumber 중 status가 INFERRED/UNKNOWN인 필드를 모아
 top-level `needs_confirmation`에 자동으로 채운다 — LLM이 스스로 이
 목록을 정확히 관리할 것이라고 신뢰하지 않기 위함이다.
 """
@@ -31,9 +31,9 @@ GENERATE_PROMPT = """당신은 전극 검사기(계측 설비) 사양서를 작�
 
 반드시 지켜야 할 규칙:
 - [사내 참고 자료]에 실제로 나온 수치만 채우세요. 문서에 없는 수치를 지어내지 마세요.
-- 문서에서 가져온 값은 source_type을 "document"로, source에는 참고 자료의 출처(파일명)를 적으세요.
+- 문서에서 가져온 값은 status를 "VERIFIED"로, source.document에는 참고 자료의 출처(파일명)를 적으세요.
 - 문서에도 없고 사용자도 말하지 않았지만 업계 통념상 합리적으로 추정 가능한 값이 있다면
-  source_type을 "inferred"로 표시하고, 그렇지 않다면 반드시 null로 남기세요.
+  status를 "INFERRED"로 표시하고, 그렇지 않다면 반드시 null로 남기고 status를 "UNKNOWN"으로 두세요.
 - 서로 다른 문서에서 값이 충돌하면 임의로 하나를 고르지 말고 null로 남기고
   notes에 "문서 간 값 충돌: ..." 형태로 기록하세요.
 - 이미 값이 채워져 있는 필드는 절대 변경하지 마세요.
@@ -64,15 +64,15 @@ def _prefill_from_requirement(requirement: RequirementSchema) -> SpecificationSc
 
     if requirement.required_accuracy_um is not None:
         spec.measurement_performance.accuracy_um = SourcedNumber(
-            value=requirement.required_accuracy_um, unit="um", source_type="user_requirement"
+            value=requirement.required_accuracy_um, unit="um", operator="<=", status="USER_DEFINED"
         )
     if requirement.minimum_defect_size_um is not None:
         spec.defect_detection.minimum_defect_size_um = SourcedNumber(
-            value=requirement.minimum_defect_size_um, unit="um", source_type="user_requirement"
+            value=requirement.minimum_defect_size_um, unit="um", operator="<=", status="USER_DEFINED"
         )
     if requirement.required_resolution_um is not None:
         spec.measurement_performance.resolution_um = SourcedNumber(
-            value=requirement.required_resolution_um, unit="um", source_type="user_requirement"
+            value=requirement.required_resolution_um, unit="um", operator="<=", status="USER_DEFINED"
         )
 
     return spec
@@ -89,7 +89,7 @@ def _collect_needs_confirmation(spec: SpecificationSchema) -> List[str]:
         section = getattr(spec, section_name)
         for field_name in type(section).model_fields:
             value = getattr(section, field_name)
-            if isinstance(value, SourcedNumber) and value.source_type in ("inferred", "default"):
+            if isinstance(value, SourcedNumber) and value.status in ("INFERRED", "UNKNOWN") and value.value is not None:
                 needs_confirmation.append(f"{section_name}.{field_name}")
     return needs_confirmation
 
