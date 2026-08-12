@@ -734,6 +734,16 @@ async def upload_specs_api(files: List[UploadFile] = File(...)):
 # 실행부 (서버 개방)
 # ==========================================
 if __name__ == "__main__":
+    import sys
+
+    from cli_commands import run_cli
+
+    # `python main.py render-md ...` 같은 서브커맨드면 CLI로 처리하고 종료한다.
+    # 인자가 없거나 알려진 서브커맨드가 아니면(기존 `python main.py` 그대로)
+    # 아래로 내려가 기존과 동일하게 웹 서버를 띄운다.
+    if run_cli(sys.argv):
+        sys.exit(0)
+
     import uvicorn
     # host="0.0.0.0" 으로 지정해야 사내망 다른 PC에서 IP로 접속 가능
     # 포트는 AGENT_PORT 환경변수로 오버라이드 가능 (기본값 8000은 기존 동작과 동일)
