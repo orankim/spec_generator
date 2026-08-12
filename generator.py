@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -37,9 +38,9 @@ class SpecGenerator:
         self.db_path = db_path
         self.ollama_url = ollama_base_url
 
-        # 1) 임베딩 모델 (RAG 검색용)
+        # 1) 임베딩 모델 (RAG 검색용) - EMBEDDING_MODEL 환경변수로 오버라이드 가능 (기본값: 기존과 동일)
         self.embeddings = OllamaEmbeddings(
-            model="bge-m3",
+            model=os.environ.get("EMBEDDING_MODEL", "bge-m3"),
             base_url=self.ollama_url
         )
 
@@ -49,9 +50,9 @@ class SpecGenerator:
             embedding_function=self.embeddings
         )
 
-        # 3) Ollama LLM 연결 (Qwen2.5 14b 권장)
+        # 3) Ollama LLM 연결 - OLLAMA_MODEL 환경변수로 오버라이드 가능 (기본값: 기존과 동일한 qwen2.5:14b)
         self.llm = Ollama(
-            model="qwen2.5:14b",
+            model=os.environ.get("OLLAMA_MODEL", "qwen2.5:14b"),
             base_url=self.ollama_url,
             temperature=0.2,  # 정확한 값 생성을 위해 낮은 온도 설정
             format="json",    # Ollama가 순수 JSON만 생성하도록 강제 (설명/인삿말 등 잡텍스트 방지)
