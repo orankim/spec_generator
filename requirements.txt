@@ -7,6 +7,13 @@ requests>=2.31.0
 # LLM Framework & RAG Integration
 langchain>=0.1.13
 langchain-community>=0.0.29
+# langchain-text-splitters는 명시하지 않아도 langchain-community -> langchain-classic
+# 경유로 이미 설치된다(확인됨). langchain-chroma는 build_rag_ollama.py/agent/spec_retriever.py
+# 에서는 더 이상 쓰지 않는다(agent/chroma_store.py가 chromadb를 직접 씀 — langchain_chroma를
+# import하면 langchain_core.tracers -> langsmith -> xxhash까지 전부 로드되는데, LangSmith
+# 트레이싱은 이 프로젝트에서 쓰지 않는 기능이고 사내 Windows PC의 애플리케이션 제어 정책이
+# xxhash의 네이티브 DLL을 차단하는 사례가 있었다). generator.py/preprocess_specs.py(레거시,
+# RAG 핵심 경로 밖)가 여전히 이 패키지를 쓰므로 requirements.txt에서 완전히 빼지는 않는다.
 langchain-chroma>=0.1.0
 
 # Vector DB

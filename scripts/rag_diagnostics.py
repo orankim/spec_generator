@@ -80,7 +80,7 @@ def main() -> int:
     # A. Chroma collection 내용 확인
     # ---------------------------------------------------------------
     _section("A. ChromaDB 내용 확인")
-    from langchain_chroma import Chroma
+    from agent.chroma_store import SimpleChromaStore
 
     embeddings = get_embeddings(ollama_host)
     try:
@@ -91,7 +91,7 @@ def main() -> int:
         return 1
     print(f"임베딩 차원(probe)     : {len(probe_vec)}")
 
-    vector_store = Chroma(persist_directory=db_path, embedding_function=embeddings)
+    vector_store = SimpleChromaStore(persist_directory=db_path, embedding_function=embeddings)
     collection = vector_store._collection
     print(f"collection 이름        : {collection.name}")
     count = collection.count()

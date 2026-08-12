@@ -22,11 +22,11 @@ import os
 from glob import glob
 from typing import Dict, List, Optional
 
-from langchain_chroma import Chroma
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_core.documents import Document
 from pptx import Presentation
 
+from .chroma_store import SimpleChromaStore
 from .paths import DEFAULT_CHROMA_DB_PATH, resolve_db_path
 from .schemas import RequirementSchema
 
@@ -108,7 +108,7 @@ def retrieve_for_requirement(
     resolved_db_path = resolve_db_path(db_path)
     host = ollama_host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     embeddings = _default_embeddings(host)
-    vector_store = Chroma(persist_directory=resolved_db_path, embedding_function=embeddings)
+    vector_store = SimpleChromaStore(persist_directory=resolved_db_path, embedding_function=embeddings)
 
     queries = _build_queries(requirement)
     seen = set()
@@ -234,6 +234,6 @@ def index_spec_rows_from_folder(
     if not all_rows:
         return 0
 
-    vector_store = Chroma(persist_directory=resolve_db_path(db_path), embedding_function=embeddings)
+    vector_store = SimpleChromaStore(persist_directory=resolve_db_path(db_path), embedding_function=embeddings)
     vector_store.add_documents(all_rows)
     return len(all_rows)

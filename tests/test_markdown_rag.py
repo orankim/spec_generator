@@ -116,10 +116,10 @@ def test_chunk_metadata_has_required_keys():
 
 
 def test_build_vector_db_indexes_all_markdown_files(markdown_db):
-    from langchain_chroma import Chroma
+    from agent.chroma_store import SimpleChromaStore
 
     embeddings = spec_retriever.get_embeddings()
-    store = Chroma(persist_directory=markdown_db, embedding_function=embeddings)
+    store = SimpleChromaStore(persist_directory=markdown_db, embedding_function=embeddings)
     all_docs = store.get()
     assert len(all_docs["ids"]) > 10, "10개 파일에서 chunk가 10개 초과로 나와야 함(파일당 여러 chunk)"
     assert Path(markdown_db).is_dir()
@@ -129,10 +129,10 @@ def test_build_vector_db_indexes_all_markdown_files(markdown_db):
 # Test 4 & 5: RAG 검색 결과의 source가 .md이고, pptx가 섞이지 않는다
 # ---------------------------------------------------------------
 def test_search_results_are_markdown_only_no_pptx(markdown_db):
-    from langchain_chroma import Chroma
+    from agent.chroma_store import SimpleChromaStore
 
     embeddings = spec_retriever.get_embeddings()
-    store = Chroma(persist_directory=markdown_db, embedding_function=embeddings)
+    store = SimpleChromaStore(persist_directory=markdown_db, embedding_function=embeddings)
     results = store.similarity_search("두께 측정 정밀도", k=5)
     assert len(results) > 0
     for doc in results:
