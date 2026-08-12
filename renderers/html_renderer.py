@@ -9,11 +9,44 @@ markdown_renderer와 동일한 renderers/common.py의 섹션 모델을 사용하
 from __future__ import annotations
 
 import html as _html
-from typing import Optional
+from typing import List, Optional
 
-from agent.schemas import RequirementSchema, SpecificationSchema, ValidationResult
+from agent.schemas import ComplianceRecord, RequirementSchema, SpecificationSchema, ValidationResult
+from agent.spec_validator import build_compliance_report
 
-from .common import RenderRow, RenderSection, build_notes_section, build_sections, build_validation_section
+from .common import (
+    COMPLIANCE_SECTION_EMPTY_NOTE,
+    COMPLIANCE_SECTION_TITLE,
+    RenderRow,
+    RenderSection,
+    build_notes_section,
+    build_sections,
+    build_validation_section,
+)
+
+_SECTION_ORDER = [
+    "equipment",
+    "inspection_target",
+    "inspection_requirements",
+    "measurement_performance",
+    "spatial_performance",
+    "optical_system",
+    "defect_inspection",
+    "inspection_performance",
+    "system_configuration",
+    "interfaces",
+    "environment",
+    "safety",
+]
+
+_NUMERIC_SECTION_IDS = {
+    "inspection_target",
+    "inspection_requirements",
+    "measurement_performance",
+    "spatial_performance",
+    "inspection_performance",
+    "defect_inspection",
+}
 
 _STYLE = """
 body { font-family: -apple-system, 'Segoe UI', '맑은 고딕', sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #1a2530; background: #fff; }
@@ -27,16 +60,17 @@ td.unknown { color: #a0aec0; font-style: italic; }
 .badge-pass { background: #c6f6d5; color: #22543d; }
 .badge-fail { background: #fed7d7; color: #822727; }
 .badge-unknown, .badge-dash { background: #edf2f7; color: #718096; }
+.badge-verified { background: #c6f6d5; color: #22543d; }
+.badge-inferred { background: #feebc8; color: #7b341e; }
+.badge-user_defined { background: #bee3f8; color: #2a4365; }
 .badge-error { background: #fed7d7; color: #822727; }
 .badge-warning { background: #feebc8; color: #7b341e; }
 .badge-info { background: #bee3f8; color: #2a4365; }
-.sources { font-size: 13px; color: #718096; margin-top: 6px; }
-.sources div { margin: 2px 0; }
 .note { color: #718096; font-style: italic; }
 """
 
 
-def _esc(value: str) -> str:
+def _esc(value) -> str:
     return _html.escape(str(value))
 
 
@@ -44,10 +78,10 @@ def _badge(text: str, cls: str) -> str:
     return f'<span class="badge badge-{cls}">{_esc(text)}</span>'
 
 
-def _result_badge(result: Optional[str]) -> str:
-    if result is None:
+def _status_badge(status: Optional[str]) -> str:
+    if not status or status == "-":
         return '<span class="badge badge-dash">-</span>'
-    return _badge(result, result.lower())
+    return _badge(status, status.lower())
 
 
 def _cell(value: str) -> str:
@@ -56,7 +90,7 @@ def _cell(value: str) -> str:
     return f"<td>{_esc(value)}</td>"
 
 
-def _section_to_html(section: RenderSection) -> str:
+def _section_to_html(section: RenderSection, has_status_col: bool) -> str:
     parts = [f"<h2>{_esc(section.title)}</h2>"]
     if section.note:
         parts.append(f'<p class="note">{_esc(section.note)}</p>')
@@ -65,19 +99,17 @@ def _section_to_html(section: RenderSection) -> str:
             parts.append('<p class="note">No data.</p>')
         return "\n".join(parts)
 
-    has_requirement_col = any(r.requirement_display is not None or r.result is not None for r in section.rows)
     parts.append("<table>")
-    if has_requirement_col:
-        parts.append("<tr><th>Item</th><th>Unit</th><th>Requirement</th><th>Specification</th><th>Result</th></tr>")
+    if has_status_col:
+        parts.append("<tr><th>Item</th><th>Unit</th><th>Specification</th><th>Status</th><th>Source</th></tr>")
         for row in section.rows:
-            req = row.requirement_display if row.requirement_display is not None else "-"
             parts.append(
                 "<tr>"
                 f"<td>{_esc(row.label)}</td>"
                 f"<td>{_esc(row.unit or '-')}</td>"
-                f"<td>{_esc(req)}</td>"
                 + _cell(row.value_display)
-                + f"<td>{_result_badge(row.result)}</td>"
+                + f"<td>{_status_badge(row.status)}</td>"
+                f"<td>{_esc(row.source or '-')}</td>"
                 "</tr>"
             )
     else:
@@ -85,14 +117,31 @@ def _section_to_html(section: RenderSection) -> str:
         for row in section.rows:
             parts.append(f"<tr><td>{_esc(row.label)}</td>" + _cell(row.value_display) + "</tr>")
     parts.append("</table>")
+    return "\n".join(parts)
 
-    source_rows = [row for row in section.rows if row.source_type is not None]
-    if source_rows:
-        parts.append('<div class="sources">')
-        for row in source_rows:
-            parts.append(f"<div>Source: {_esc(row.source or row.source_type)} — {_esc(row.label)}</div>")
-        parts.append("</div>")
 
+def _fmt_opt(value) -> str:
+    return "UNKNOWN" if value is None else str(value)
+
+
+def _compliance_records_to_html(records: List[ComplianceRecord]) -> str:
+    parts = [f"<h2>{_esc(COMPLIANCE_SECTION_TITLE)}</h2>"]
+    if not records:
+        parts.append(f'<p class="note">{_esc(COMPLIANCE_SECTION_EMPTY_NOTE)}</p>')
+        return "\n".join(parts)
+    parts.append("<table><tr><th>Item</th><th>Unit</th><th>Requirement</th><th>Specification</th><th>Result</th><th>Reason</th></tr>")
+    for r in records:
+        parts.append(
+            "<tr>"
+            f"<td>{_esc(r.item)}</td>"
+            f"<td>{_esc(r.unit or '-')}</td>"
+            + _cell(_fmt_opt(r.requirement))
+            + _cell(_fmt_opt(r.specification))
+            + f"<td>{_status_badge(r.result)}</td>"
+            f"<td>{_esc(r.reason)}</td>"
+            "</tr>"
+        )
+    parts.append("</table>")
     return "\n".join(parts)
 
 
@@ -117,27 +166,19 @@ def render_html(
     validation: Optional[ValidationResult] = None,
     title: str = "Electrode Inspection Equipment Specification",
 ) -> str:
-    sections = build_sections(specification, requirement=requirement)
+    sections = build_sections(specification)
     by_id = {s.id: s for s in sections}
-    order = [
-        "equipment",
-        "inspection_target",
-        "inspection_requirements",
-        "measurement_performance",
-        "spatial_performance",
-        "optical_system",
-        "defect_inspection",
-        "inspection_performance",
-        "system_configuration",
-        "interfaces",
-        "environment",
-        "safety",
-    ]
+
     body_parts = [f"<h1>{_esc(title)}</h1>"]
-    for key in order:
-        body_parts.append(_section_to_html(by_id[key]))
+    for key in _SECTION_ORDER:
+        body_parts.append(_section_to_html(by_id[key], has_status_col=key in _NUMERIC_SECTION_IDS))
+
     body_parts.append(_validation_section_to_html(build_validation_section(validation)))
-    body_parts.append(_section_to_html(build_notes_section(specification)))
+
+    compliance_records = build_compliance_report(specification, requirement)
+    body_parts.append(_compliance_records_to_html(compliance_records))
+
+    body_parts.append(_section_to_html(build_notes_section(specification), has_status_col=False))
 
     body = "\n".join(body_parts)
     return f"""<!doctype html>
