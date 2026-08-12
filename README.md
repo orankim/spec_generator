@@ -1,36 +1,45 @@
-# ⚙️ 사내망 설비 사양서 자동 생성 시스템 (Spec PPTX Generator)
+# ⚙️ 전극 검사기 사양서 자동 생성 AI (Spec PPTX Generator)
 
-로컬 LLM과 RAG(검색 증강 생성) 기술을 활용하여, 기존 사내 PPT 사양서 데이터를 기반으로 자연어 요구사항에 맞는 표준 PPTX 사양서를 자동 생성해 주는 폐쇄망 전용 웹 애플리케이션입니다.
+로컬 LLM과 RAG(검색 증강 생성) 기술을 활용해, 자연어 또는 조건 선택으로 전극 검사기
+요구사항을 입력하면 사내 사양 데이터(Markdown 기반 RAG)를 검색해 근거를 추적할 수 있는
+표준 Specification을 만들고, 자동 검증을 거쳐 Markdown/HTML/PPTX 사양서를 생성해 주는
+폐쇄망 전용 웹 애플리케이션입니다. 사용자에게 노출되는 기능은 **전극 검사기 AI**(`/agent`)
+하나입니다 — 아래 "🔬 전극 검사기 사양서 자동 생성 AI Agent" 절 참고.
 
 ## 📌 주요 특징
 
 - **100% On-Premise / 폐쇄망 지원**: 외부 인터넷 연결 및 데이터 유출 없이 사내 서버 PC에서 독자 구동
-- **RAG 기반 사양 정교화**: 기존 PPT 사양서(표/텍스트)를 Vector DB에 저장하여 전문 엔지니어링 용어 및 수치 반영
-- **Structured JSON-to-PPTX**: LLM 환각(Hallucination) 및 레이아웃 깨짐 방지를 위해 JSON 구조화 데이터 추출 후 python-pptx 백엔드로 파워포인트 자동 합성
-- **웹 UI 제공**: 사내 사용자 누구나 웹 브라우저 접속을 통해 사양서 생성 및 다운로드 가능
-- **전극 검사기 사양서 AI Agent**: 자연어(또는 조건 선택)로 요구사항을 입력하면, 부족한 정보를 먼저 되물어 확인한 뒤 사내 사양서를 검색해 근거를 추적할 수 있는 표준 Specification JSON을 만들고, 자동 검증을 거쳐 9섹션 PPTX 사양서를 생성한다 (`/agent`, 자세한 설계는 아래 "전극 검사기 AI Agent" 절과 `IMPLEMENTATION_PLAN.md` 참고)
+- **RAG 기반 사양 정교화**: 사내 사양서(Markdown, 필요 시 PPTX도 함께)를 Vector DB에 저장하여 전문 엔지니어링 용어 및 수치 반영
+- **Requirement/Specification 분리 + Source 추적**: 사용자가 원하는 조건과 장비가 실제 제공하는 사양을 별도로 유지하고, 값마다 USER_DEFINED/VERIFIED/INFERRED/UNKNOWN 상태와 근거 문서를 남긴다 (LLM이 근거 없는 값을 임의로 만들지 않는다)
+- **Structured JSON 중심 설계**: Specification JSON을 Single Source of Truth로 삼아 Markdown/HTML/PPTX를 각각 독립적으로 생성 (PPTX는 LLM 환각/레이아웃 깨짐 방지를 위해 python-pptx로 합성)
+- **전극 검사기 사양서 AI Agent**: 자연어(또는 조건 선택)로 요구사항을 입력하면, 부족한 정보를 먼저 되물어 확인한 뒤 사내 사양서를 검색해 근거를 추적할 수 있는 표준 Specification JSON을 만들고, 자동 검증을 거쳐 사양서를 생성한다 (`/agent`, 자세한 설계는 아래 "전극 검사기 AI Agent" 절과 `IMPLEMENTATION_PLAN.md` 참고)
 
 ## 🏗️ 시스템 아키텍처
 
 ```
 [사내 사용자 PC (Web Browser)]
          │
-         ▼ (사내 LAN 접속: http://<서버_IP>:8000)
+         ▼ (사내 LAN 접속: http://<서버_IP>:8000, 접속 시 /agent로 자동 이동)
 ┌────────────────────────────────────────────────────────┐
 │                      사내 서버 PC                       │
 │                                                        │
 │   [FastAPI Web Server (main.py)]                       │
 │         │                                              │
-│         ├──► [SpecGenerator (generator.py)]            │
-│         │         │                                    │
-│         │         ├─► [Chroma DB (chroma_db_specs)]    │
-│         │         └─► [Ollama (qwen2.5:14b / bge-m3)]  │
-│         │                                              │
-│         └──► [PPTXBuilder (pptx_builder.py)]           │
+│         └──► [전극 검사기 AI Agent (agent/)]             │
 │                   │                                    │
-│                   └─► [Template Engine (template.pptx)]│
+│                   ├─► [Chroma DB (chroma_db_specs)]     │
+│                   ├─► [Ollama (qwen2.5:14b / bge-m3)]   │
+│                   └─► [Markdown/HTML/PPTX Renderer]     │
+│                             │                           │
+│                             └─► [Template (선택, PPTX 출력 시)]│
 └────────────────────────────────────────────────────────┘
 ```
+
+> `generator.py`(SpecGenerator)/`pptx_builder.py`(PPTXBuilder)는 예전 "사양서 제작하기"
+> 기능이 쓰던 모듈로, 사용자 화면에서는 제거됐지만 파일은 삭제하지 않았습니다.
+> `preprocess_specs.py`(PPTX 전처리 스크립트)가 계속 사용하고, `pptx_builder.py`는
+> `agent/pptx_electrode_builder.py`(전극 검사기 AI의 PPTX 출력)가 내부적으로 재사용하는
+> 공통 모듈입니다.
 
 ## 🖥️ 권장 서버 하드웨어 사양
 
@@ -140,18 +149,21 @@ ollama list
 
 필수 모델: `qwen2.5:14b` (LLM 추론용), `bge-m3` (임베딩용)
 
-### 3. 테스트용 마스터 템플릿 생성
+### 3. (선택) PPTX 템플릿 생성
+
+전극 검사기 AI(`/agent`)는 템플릿 없이도 동작합니다 (템플릿이 없으면 python-pptx로
+기본 PPTX를 즉석에서 생성합니다). 회사 지정 양식으로 PPTX를 출력하고 싶다면
+`PPT_TEMPLATE_PATH` 환경변수로 템플릿 경로를 지정하세요.
+
+```powershell
+python make_electrode_template.py   # 예시용 9섹션 템플릿 생성 (실제로는 사내 표준 템플릿으로 교체)
+```
+
+`make_template.py`(범용 `template.pptx`)는 `preprocess_specs.py`(기존 PPTX 사양서를
+표준 형식으로 정규화하는 스크립트)를 쓸 때만 필요합니다.
 
 ```powershell
 python make_template.py
-```
-
-(실제 운영 시에는 디자인된 사내 표준 `template.pptx` 파일로 교체하세요.)
-
-전극 검사기 AI Agent(`/agent`)를 쓰려면 9섹션 전용 템플릿도 한 번 생성해야 합니다.
-
-```powershell
-python make_electrode_template.py
 ```
 
 ### 4. (필요 시) 기존 PPTX 사양서 전처리 — 표준 템플릿으로 정규화
@@ -243,10 +255,17 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 - 서버 PC 접속: http://localhost:8000
 - 사내망 접속: http://<서버PC_IP_주소>:8000
 
-웹 화면 상단 탭으로 세 페이지를 오갈 수 있습니다.
-- **사양서 제작하기** (`/`): 자연어 요구사항으로 새 사양서 PPTX 생성 (기존 기능)
-- **사양서 업로드하기** (`/upload`): 클라이언트 PC에서 기존 사양서 PPTX를 서버로 업로드 → `sample_specs/`에 저장. 업로드만으로는 검색에 바로 반영되지 않으며, 서버 관리자가 `python preprocess_specs.py` → `python build_rag_ollama.py`를 실행해야 RAG 검색에 반영됩니다.
-- **전극 검사기 AI** (`/agent`, 신규): 아래 절 참고
+`http://localhost:8000`으로 접속하면 바로 **전극 검사기 AI**(`/agent`) 화면으로 이동합니다 —
+현재 사용자에게 노출되는 기능은 이것 하나뿐입니다. 자세한 사용법은 아래 절 참고.
+
+> 예전에는 "사양서 제작하기"(`/`)와 "사양서 업로드하기"(`/upload`) 탭도 있었지만, 전극
+> 검사기 AI 하나로 기능을 통합하면서 사용자 화면에서 제거했습니다. 두 기능이 쓰던
+> `generator.py`(SpecGenerator)/`pptx_builder.py`(PPTXBuilder) 모듈 자체는 삭제하지
+> 않았습니다 — `preprocess_specs.py`가 계속 사용하고, `pptx_builder.py`는
+> `agent/pptx_electrode_builder.py`(전극 검사기 AI의 PPTX 출력 기능)가 내부적으로
+> 재사용하는 공통 모듈입니다. RAG 학습용 사양서는 이제 업로드 화면이 아니라
+> `sample_specs/`에 Markdown 파일을 직접 넣고 `build_rag_ollama.py`로 색인합니다
+> (위 5~6번 절 참고).
 
 ## 🔬 전극 검사기 사양서 자동 생성 AI Agent
 

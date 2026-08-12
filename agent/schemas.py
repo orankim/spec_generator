@@ -69,6 +69,10 @@ class SourcedNumber(BaseModel):
     status: Status = "UNKNOWN"
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     source: Optional[SourceRef] = None
+    reasoning: Optional[str] = Field(
+        default=None,
+        description="status가 INFERRED일 때 반드시 채운다 — 어떤 근거/계산으로 이 값을 추정했는지 (요청서 21절)",
+    )
 
     @classmethod
     def from_legacy(
@@ -87,14 +91,37 @@ class SourcedNumber(BaseModel):
 
 
 # ==========================================
+# Requirement 수치 필드 — "자연어의 숫자/단위를 문자열로만 저장하지 않는다" (요청서 5절)
+# ==========================================
+class RequirementValue(BaseModel):
+    """단일 요구값 + 단위 + 비교 방향. 예: "정확도 1um 이하" -> {value:1.0, unit:"um", operator:"<="}."""
+
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    operator: Optional[Operator] = None
+
+
+class RequirementRange(BaseModel):
+    """범위 요구값. 예: "0~200um" -> {min:0, max:200, unit:"um"}."""
+
+    min: Optional[float] = None
+    max: Optional[float] = None
+    unit: Optional[str] = None
+
+
+# ==========================================
 # Requirement Schema — 사용자가 입력/선택한 "요구사항"
 # ==========================================
 class RequirementTarget(BaseModel):
     material: Optional[str] = Field(default=None, description="검사 대상 (예: 양극, 음극, 분리막, 전극)")
     product_type: Optional[str] = None
+    electrode_type: Optional[str] = None
     width_mm: Optional[float] = None
     length_mm: Optional[float] = None
-    thickness_range_um: Optional[str] = Field(default=None, description="예: '0~200'")
+    thickness_range_um: Optional[str] = Field(default=None, description="레거시 문자열 표기. 예: '0~200' (신규 입력은 thickness_range 사용 권장)")
+    thickness_range: Optional[RequirementRange] = None
+    coating_thickness: Optional[RequirementValue] = None
+    line_speed: Optional[RequirementValue] = None
     substrate: Optional[str] = None
 
 
@@ -105,13 +132,95 @@ class RequirementSchema(BaseModel):
         default_factory=list,
         description="예: thickness, surface_defect, profile_3d, coating, edge, other",
     )
+
+    # Equipment
+    equipment_type: Optional[str] = None
     measurement_method: Optional[Literal["non_contact", "contact"]] = None
     measurement_principle: Optional[Literal["laser", "oct", "interferometry", "vision", "other"]] = None
+    inline_offline: Optional[Literal["inline", "offline"]] = None
+
+    # Measurement Requirements — 레거시 float 필드는 하위호환을 위해 유지한다.
+    # 신규 입력(자연어 파싱/구조화 UI)은 RequirementValue/RequirementRange 필드를 채우고,
+    # RequirementSchema.sync_legacy_fields()가 두 표현을 서로 동기화한다.
     required_accuracy_um: Optional[float] = None
     required_resolution_um: Optional[float] = None
     minimum_defect_size_um: Optional[float] = None
     scan_speed_requirement: Optional[str] = None
+
+    measurement_range: Optional[RequirementRange] = None
+    accuracy: Optional[RequirementValue] = None
+    resolution: Optional[RequirementValue] = None
+    repeatability: Optional[RequirementValue] = None
+    reproducibility: Optional[RequirementValue] = None
+    measurement_speed: Optional[RequirementValue] = None
+    sampling_rate: Optional[RequirementValue] = None
+    sampling_interval: Optional[RequirementValue] = None
+
+    # Defect Requirements
+    defect_types: List[str] = Field(default_factory=list)
+    minimum_defect_size: Optional[RequirementValue] = None
+    detection_resolution: Optional[RequirementValue] = None
+    detection_accuracy: Optional[RequirementValue] = None
+    false_positive_rate: Optional[RequirementValue] = None
+    false_negative_rate: Optional[RequirementValue] = None
+    classification: Optional[bool] = None
+
+    # System Requirements
+    plc: Optional[bool] = None
+    mes: Optional[bool] = None
+    communication: Optional[str] = None
+    data_output: Optional[str] = None
+    installation_environment: Optional[str] = None
+
+    # Production Requirements
+    tact_time: Optional[RequirementValue] = None
+    throughput: Optional[RequirementValue] = None
+    uptime: Optional[RequirementValue] = None
+
+    # Hard/Soft 분류 (요청서 16절) — dotted path(예: "accuracy", "target.width_mm")로
+    # 이 요구사항 중 어떤 항목이 반드시 만족돼야 하는지(Hard)와 가능하면 만족하면
+    # 좋은지(Soft)를 표시한다. 비워두면 agent.candidate_matcher의 기본 분류
+    # (DEFAULT_HARD_REQUIREMENT_FIELDS)를 따른다.
+    hard_requirements: List[str] = Field(default_factory=list)
+    soft_requirements: List[str] = Field(default_factory=list)
+
     notes: List[str] = Field(default_factory=list)
+
+    def sync_legacy_fields(self) -> "RequirementSchema":
+        """
+        신규 구조화 필드(accuracy/resolution/minimum_defect_size 등)와 레거시 float
+        필드(required_accuracy_um 등)를 서로 채운다 — 둘 중 하나만 채워져 들어와도
+        기존 코드(spec_generator/spec_validator/구 UI)와 신규 코드(candidate_matcher 등)
+        양쪽에서 값을 읽을 수 있게 하기 위함이다. 값이 있는 쪽을 신뢰하며, 둘 다
+        채워져 있으면 신규 구조화 필드를 우선한다(더 명시적인 unit/operator 정보를 담고 있으므로).
+        """
+        if self.accuracy and self.accuracy.value is not None:
+            self.required_accuracy_um = self.accuracy.value
+        elif self.required_accuracy_um is not None and self.accuracy is None:
+            self.accuracy = RequirementValue(value=self.required_accuracy_um, unit="um", operator="<=")
+
+        if self.resolution and self.resolution.value is not None:
+            self.required_resolution_um = self.resolution.value
+        elif self.required_resolution_um is not None and self.resolution is None:
+            self.resolution = RequirementValue(value=self.required_resolution_um, unit="um", operator="<=")
+
+        if self.minimum_defect_size and self.minimum_defect_size.value is not None:
+            self.minimum_defect_size_um = self.minimum_defect_size.value
+        elif self.minimum_defect_size_um is not None and self.minimum_defect_size is None:
+            self.minimum_defect_size = RequirementValue(value=self.minimum_defect_size_um, unit="um", operator="<=")
+
+        if self.target.thickness_range and self.target.thickness_range.min is not None:
+            lo, hi = self.target.thickness_range.min, self.target.thickness_range.max
+            self.target.thickness_range_um = f"{lo:g}~{hi:g}"
+        elif self.target.thickness_range_um and self.target.thickness_range is None:
+            from .units import parse_range
+
+            parsed = parse_range(self.target.thickness_range_um + " um")
+            if parsed:
+                lo, hi, unit = parsed
+                self.target.thickness_range = RequirementRange(min=lo, max=hi, unit=unit)
+
+        return self
 
 
 # ==========================================
@@ -332,3 +441,43 @@ class ComplianceRecord(BaseModel):
     result: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
     reason: str = ""
     source: Optional[SourceRef] = None
+    hard: bool = Field(default=False, description="Hard Requirement 항목이면 True (요청서 16절)")
+
+
+# ==========================================
+# Candidate Equipment — RAG 검색 결과를 Specification Generator에 바로 넘기지 않고,
+# 후보 장비 단위로 그룹화 + 비교 + 랭킹한 결과 (요청서 13~18절).
+# SpecificationSchema에는 저장하지 않는다 — 사용자가 후보를 선택하면 그 결과(주로
+# VERIFIED 근거)가 SpecificationSchema 생성의 입력으로만 쓰이는 파생/중간 산출물이다.
+# ==========================================
+class CandidateFieldMatch(BaseModel):
+    """후보 장비 하나가 Requirement 항목 하나를 만족하는지에 대한 판단 (agent.candidate_matcher가 생성)."""
+
+    item: str = Field(description="사람이 읽을 항목명 (예: Accuracy)")
+    field_key: str = Field(description="요구사항 dotted path (예: accuracy, target.width_mm)")
+    hard: bool = False
+    requirement_value: Optional[float] = None
+    requirement_unit: Optional[str] = None
+    operator: Optional[Operator] = None
+    found_value: Optional[float] = None
+    found_unit: Optional[str] = None
+    result: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
+    evidence_text: Optional[str] = Field(default=None, description="근거로 삼은 원문 발췌")
+    source: Optional[SourceRef] = None
+
+
+class CandidateEquipment(BaseModel):
+    """RAG 검색 결과를 문서(장비) 단위로 그룹화한 후보 하나."""
+
+    candidate_id: str
+    manufacturer: Optional[str] = None
+    model: Optional[str] = None
+    source_document: str
+    matches: List[CandidateFieldMatch] = Field(default_factory=list)
+    match_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    hard_requirements_pass: bool = Field(
+        default=False, description="Hard Requirement 항목 중 FAIL이 하나도 없으면 True (UNKNOWN은 FAIL로 치지 않음)"
+    )
+    unknown_count: int = 0
+    fail_count: int = 0
+    pass_count: int = 0

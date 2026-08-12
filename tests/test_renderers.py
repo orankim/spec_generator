@@ -86,9 +86,18 @@ def test_spec_to_pptx_without_template():
 
 
 def test_spec_to_pptx_with_template():
+    """
+    template_electrode.pptx는 회사 정책상 git에 커밋하지 않으므로(사내 PC에서
+    PPT_TEMPLATE_PATH로 지정), 테스트 자체가 make_electrode_template.build_electrode_template()로
+    임시 템플릿을 직접 생성해 자기완결적으로 검증한다 — 커밋된 바이너리 파일에 의존하지 않는다.
+    """
+    from make_electrode_template import build_electrode_template
+
     spec = _full_spec()
     with tempfile.TemporaryDirectory() as tmp:
-        out = render_pptx(spec, str(Path(tmp) / "out.pptx"), template_path="template_electrode.pptx")
+        template_path = str(Path(tmp) / "template_electrode.pptx")
+        build_electrode_template(template_path)
+        out = render_pptx(spec, str(Path(tmp) / "out.pptx"), template_path=template_path)
         prs = Presentation(out)
         assert len(prs.slides) == 9  # 기존 ElectrodeSpecPPTXBuilder 그대로 사용
 
@@ -96,14 +105,36 @@ def test_spec_to_pptx_with_template():
 # ---------------------------------------------------------------
 # Test 4: PPTX -> Markdown
 # ---------------------------------------------------------------
+def _build_minimal_test_pptx(output_path: str) -> None:
+    """sample_specs/*.pptx 커밋 파일에 의존하지 않는 최소 2슬라이드(텍스트+표) PPTX."""
+    from pptx.util import Inches
+
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    slide1 = prs.slides.add_slide(blank)
+    slide1.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(1)).text_frame.text = "테스트 장비 사양서"
+
+    slide2 = prs.slides.add_slide(blank)
+    table_shape = slide2.shapes.add_table(2, 2, Inches(1), Inches(1), Inches(4), Inches(2))
+    table_shape.table.cell(0, 0).text = "항목"
+    table_shape.table.cell(0, 1).text = "사양값"
+    table_shape.table.cell(1, 0).text = "정확도"
+    table_shape.table.cell(1, 1).text = "0.5um"
+    prs.save(output_path)
+
+
 def test_pptx_to_markdown_preserves_content():
-    md = pptx_to_markdown("sample_specs/spec_electrode_coating_thickness.pptx")
-    assert md.startswith("# ")
-    assert "## Slide 1" in md
-    assert "## Slide 2" in md
-    ir = pptx_to_ir("sample_specs/spec_electrode_coating_thickness.pptx")
-    assert len(ir.slides) == 2
-    assert len(ir.slides[1].tables) == 1  # 상세 사양 표가 있는 슬라이드
+    with tempfile.TemporaryDirectory() as tmp:
+        pptx_path = str(Path(tmp) / "test.pptx")
+        _build_minimal_test_pptx(pptx_path)
+
+        md = pptx_to_markdown(pptx_path)
+        assert md.startswith("# ")
+        assert "## Slide 1" in md
+        assert "## Slide 2" in md
+        ir = pptx_to_ir(pptx_path)
+        assert len(ir.slides) == 2
+        assert len(ir.slides[1].tables) == 1  # 상세 사양 표가 있는 슬라이드
 
 
 # ---------------------------------------------------------------
@@ -345,8 +376,11 @@ def test_ppt_template_adapter_default_renders_without_template():
 def test_pptx_electrode_builder_still_importable_and_usable():
     """agent/pptx_electrode_builder.py(기존 PPTX Generator)를 삭제하지 않고 그대로 재사용 가능해야 한다."""
     from agent.pptx_electrode_builder import ElectrodeSpecPPTXBuilder
+    from make_electrode_template import build_electrode_template
 
-    builder = ElectrodeSpecPPTXBuilder(template_path="template_electrode.pptx")
     with tempfile.TemporaryDirectory() as tmp:
+        template_path = str(Path(tmp) / "template_electrode.pptx")
+        build_electrode_template(template_path)
+        builder = ElectrodeSpecPPTXBuilder(template_path=template_path)
         out = builder.build(_full_spec(), output_path=str(Path(tmp) / "legacy.pptx"))
         assert Path(out).exists()
