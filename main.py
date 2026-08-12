@@ -575,8 +575,8 @@ async def agent_page():
 
                 function fmtSourced(sn) {
                     if (!sn || sn.value === null || sn.value === undefined) return 'N/A';
-                    const sourceLabel = {user_requirement: '사용자 요구사항', document: sn.source || '문서', inferred: 'AI 추정', default: '기본값'}[sn.source_type] || '-';
-                    return `${sn.value}${sn.unit ? ' ' + sn.unit : ''} (${sourceLabel})`;
+                    const statusLabel = {USER_DEFINED: '사용자 요구사항', VERIFIED: (sn.source && sn.source.document) || '문서', INFERRED: 'AI 추정', UNKNOWN: '근거 없음'}[sn.status] || sn.status || '-';
+                    return `${sn.value}${sn.unit ? ' ' + sn.unit : ''} (${statusLabel})`;
                 }
 
                 function renderSpecSummary(retrievedSources) {
