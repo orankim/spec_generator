@@ -87,6 +87,21 @@ def check_code_version() -> bool:
     else:
         _ok("agent/routes.py는 DEFAULT_CHROMA_DB_PATH를 사용하는 최신 버전입니다.")
 
+    if "langchain_chroma" in build_src or "langchain_chroma" in retriever_src:
+        _fail(
+            "build_rag_ollama.py 또는 agent/spec_retriever.py가 여전히 langchain_chroma를 씁니다 — "
+            "Windows 애플리케이션 제어 정책이 xxhash 네이티브 DLL을 차단하면 이 import에서 죽습니다."
+        )
+        all_good = False
+    else:
+        _ok("langchain_chroma 미사용 확인 (xxhash/langsmith가 딸려 들어오지 않음).")
+
+    if "xxhash" in sys.modules or "langsmith" in sys.modules:
+        _fail("이 시점에 이미 xxhash/langsmith가 로드되어 있습니다 — 다른 어딘가에서 langchain_chroma를 import했습니다.")
+        all_good = False
+    else:
+        _ok("xxhash/langsmith가 로드되지 않았습니다 (agent.chroma_store가 정상적으로 이를 우회합니다).")
+
     return all_good
 
 
@@ -119,7 +134,7 @@ def test_b_chromadb(db_path: str, ollama_host: str) -> tuple:
 
     from agent.spec_retriever import get_embeddings
     from agent.paths import DEFAULT_CHROMA_DB_PATH
-    from langchain_chroma import Chroma
+    from agent.chroma_store import SimpleChromaStore
 
     print("[ChromaDB]")
     print(f"persist_directory (사용값)   : {db_path}")
@@ -151,14 +166,14 @@ def test_b_chromadb(db_path: str, ollama_host: str) -> tuple:
         return None, 0
     _ok(f"Ollama 임베딩 연결 성공 (model={embedding_model}, 차원={len(probe)})")
 
-    vector_store = Chroma(persist_directory=db_path, embedding_function=embeddings)
+    vector_store = SimpleChromaStore(persist_directory=db_path, embedding_function=embeddings)
     collection = vector_store._collection
 
     print(f"\ncollection_name (실제 사용값): {collection.name}")
     print(
-        "build_rag_ollama.py의 Chroma.from_documents()와 agent/spec_retriever.py의 Chroma() 생성자는 "
-        "둘 다 collection_name 인자를 넘기지 않으므로 langchain_chroma의 기본값('langchain')을 그대로 "
-        "쓴다 — 두 코드를 직접 읽어 확인했다(코드에 collection_name='...'로 다른 값을 지정한 부분 없음)."
+        "build_rag_ollama.py와 agent/spec_retriever.py는 둘 다 agent.chroma_store.SimpleChromaStore()를 "
+        "collection_name 인자 없이 생성하므로 기본값('langchain')을 그대로 쓴다 — 두 코드를 직접 읽어 "
+        "확인했다(코드에 collection_name='...'로 다른 값을 지정한 부분 없음)."
     )
 
     document_count = collection.count()

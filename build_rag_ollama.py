@@ -27,9 +27,10 @@ from glob import glob
 from typing import List, Optional
 
 from langchain_core.documents import Document
-from langchain_chroma import Chroma
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from pptx import Presentation
+
+from agent.chroma_store import SimpleChromaStore
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ def build_vector_db(
     db_save_path: str,
     rebuild: bool = False,
     ollama_host: Optional[str] = None,
-) -> Optional[Chroma]:
+) -> Optional[SimpleChromaStore]:
     """
     input_dir 안의 *.md(기본, 권장)와 *.pptx(레거시, 있으면 함께 인덱싱)를 모두 읽어
     Chroma Vector DB를 구축한다. .md만 있어도, .pptx만 있어도, 둘 다 있어도 동작한다.
@@ -211,17 +212,14 @@ def build_vector_db(
     embeddings = get_embeddings(ollama_host)
 
     print("\n=== 3단계: Chroma Vector DB 생성 및 저장 ===")
-    vector_store = Chroma.from_documents(
-        documents=all_documents,
-        embedding=embeddings,
-        persist_directory=db_save_path,
-    )
+    vector_store = SimpleChromaStore(persist_directory=db_save_path, embedding_function=embeddings)
+    vector_store.add_documents(all_documents)
     print(f"성공! Vector DB가 '{db_save_path}' 경로에 저장되었습니다.\n")
     return vector_store
 
 
 # 이전 이름과의 호환 — 다른 스크립트/문서가 이 이름으로 호출하고 있을 수 있다.
-def build_vector_db_with_ollama(pptx_folder_path: str, db_save_path: str) -> Optional[Chroma]:
+def build_vector_db_with_ollama(pptx_folder_path: str, db_save_path: str) -> Optional[SimpleChromaStore]:
     return build_vector_db(pptx_folder_path, db_save_path)
 
 
@@ -233,7 +231,7 @@ def test_search(query: str, db_save_path: str, ollama_host: Optional[str] = None
 
     print(f"\n=== 검색 테스트: '{query}' ===")
     embeddings = get_embeddings(ollama_host)
-    vector_store = Chroma(persist_directory=db_save_path, embedding_function=embeddings)
+    vector_store = SimpleChromaStore(persist_directory=db_save_path, embedding_function=embeddings)
 
     results = vector_store.similarity_search(query, k=3)
     for i, doc in enumerate(results, start=1):

@@ -59,9 +59,9 @@ def indexed_db(fake_embeddings):
     """
     shutil.rmtree(TEST_DB_PATH, ignore_errors=True)
     build_vector_db("sample_specs", TEST_DB_PATH)
-    from langchain_chroma import Chroma
+    from agent.chroma_store import SimpleChromaStore
 
-    n = Chroma(persist_directory=TEST_DB_PATH, embedding_function=spec_retriever.get_embeddings())._collection.count()
+    n = SimpleChromaStore(persist_directory=TEST_DB_PATH, embedding_function=spec_retriever.get_embeddings())._collection.count()
     assert n > 0, "sample_specs/ 인덱싱 결과가 0건이면 이후 검색 테스트가 무의미하므로 실패시킨다"
     yield
     shutil.rmtree(TEST_DB_PATH, ignore_errors=True)
