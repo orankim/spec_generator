@@ -2,10 +2,16 @@
 전극 검사기 사양서 자동 생성 Agent의 Pydantic 스키마 정의.
 
 Requirement(사용자 요구사항)와 Specification(최종 장비 사양서)을
-서로 다른 모델로 분리한다 (기획안 6절). 수치/성능 계열 필드는
+서로 다른 모델로 분리한다 (기획안 6절, 18절). 수치/성능 계열 필드는
 SourcedNumber로 감싸 근거(source)를 추적하고, 서술/분류 계열 필드는
 일반 값으로 둔다 — 스키마 크기와 근거 추적 필요성 사이의 실용적 절충이며
 자세한 이유는 IMPLEMENTATION_PLAN.md 2절에 기록되어 있다.
+
+v2 변경사항 (breaking change, docs/SPECIFICATION_SCHEMA.md 마이그레이션 절 참고):
+- SourcedNumber.source_type(문자열) -> SourcedNumber.status(Status enum) + source(SourceRef 객체)로 분리.
+  "이 값이 얼마나 신뢰할 만한가"(status)와 "어디서 왔는가"(source)는 서로 다른 축이라 분리했다.
+- SourcedNumber.operator 추가: 이 수치가 요구사항과 비교될 때 어떤 방향(<=, >= 등)이 "좋음"인지
+  값 자체에 싣는다. 이전 버전은 렌더러가 모든 필드를 "작을수록 좋다"로 하드코딩했었다.
 """
 from __future__ import annotations
 
@@ -13,7 +19,43 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+# ==========================================
+# 공통: 근거가 있는 수치 필드
+# ==========================================
+
+#: 값의 신뢰도/출처 종류. LLM의 "느낌 점수"가 아니라 명확한 기준으로 정해진다
+#: (docs/SPECIFICATION_SCHEMA.md "Status 정의" 절 참고).
+#:   USER_DEFINED — 사용자가 직접 입력한 요구사항
+#:   VERIFIED     — 원본 문서에서 직접 확인된 값
+#:   INFERRED     — 계산/명확한 논리적 추론으로 얻은 값
+#:   UNKNOWN      — 근거를 찾지 못함 (기본값)
+Status = Literal["USER_DEFINED", "VERIFIED", "INFERRED", "UNKNOWN"]
+
+Operator = Literal["<=", ">=", "=", "<", ">"]
+
+# 이전 버전과의 호환을 위한 레거시 타입 별칭 (docs/SPECIFICATION_SCHEMA.md 마이그레이션 절 참고)
 SourceType = Literal["document", "user_requirement", "inferred", "default"]
+
+_LEGACY_SOURCE_TYPE_TO_STATUS = {
+    "user_requirement": "USER_DEFINED",
+    "document": "VERIFIED",
+    "inferred": "INFERRED",
+    "default": "UNKNOWN",
+}
+
+
+class SourceRef(BaseModel):
+    """값의 구체적 근거 위치. PPTX에서 왔다면 slide, PDF라면 page를 채운다."""
+
+    document: Optional[str] = Field(default=None, description="근거 문서 파일명")
+    page: Optional[int] = None
+    slide: Optional[int] = None
+    section: Optional[str] = None
+    paragraph: Optional[str] = None
+    table: Optional[str] = None
+    source_type: Optional[str] = Field(
+        default=None, description="문서 종류 (예: vendor_document, internal_spec, datasheet)"
+    )
 
 
 class SourcedNumber(BaseModel):
@@ -21,9 +63,27 @@ class SourcedNumber(BaseModel):
 
     value: Optional[float] = None
     unit: Optional[str] = None
-    source_type: Optional[SourceType] = None
-    source: Optional[str] = Field(default=None, description="근거 문서 파일명 등 (source_type=document일 때)")
+    operator: Optional[Operator] = Field(
+        default=None, description="요구사항과 비교 시 어떤 방향이 '충족'인지 (예: accuracy는 '<=')"
+    )
+    status: Status = "UNKNOWN"
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    source: Optional[SourceRef] = None
+
+    @classmethod
+    def from_legacy(
+        cls,
+        value: Optional[float] = None,
+        unit: Optional[str] = None,
+        source_type: Optional[str] = None,
+        source: Optional[str] = None,
+        confidence: Optional[float] = None,
+        operator: Optional[Operator] = None,
+    ) -> "SourcedNumber":
+        """v1 형태(source_type: str, source: str)로 온 데이터를 v2로 변환한다."""
+        status = _LEGACY_SOURCE_TYPE_TO_STATUS.get(source_type, "UNKNOWN") if source_type else "UNKNOWN"
+        source_ref = SourceRef(document=source) if source else None
+        return cls(value=value, unit=unit, operator=operator, status=status, confidence=confidence, source=source_ref)
 
 
 # ==========================================
@@ -59,19 +119,38 @@ class RequirementSchema(BaseModel):
 # ==========================================
 class Equipment(BaseModel):
     name: Optional[str] = None
+    equipment_type: Optional[str] = None
     manufacturer: Optional[str] = None
     model: Optional[str] = None
+    version: Optional[str] = None
+    application: Optional[str] = None
+    inspection_method: Optional[str] = None
     measurement_principle: Optional[str] = None
+    inline_offline: Optional[Literal["inline", "offline"]] = None
 
 
 class InspectionTarget(BaseModel):
     material: Optional[str] = None
     product_type: Optional[str] = None
+    electrode_type: Optional[str] = None
     width_mm: Optional[float] = None
     length_mm: Optional[float] = None
     thickness_um: Optional[float] = None
+    coating_thickness_um: Optional[float] = None
     substrate: Optional[str] = None
     inspection_direction: Optional[str] = None
+    line_speed_mm_s: Optional[SourcedNumber] = None
+
+
+class InspectionRequirements(BaseModel):
+    """검사 조건(무엇을 어떤 범위/주기로 검사하는지). Inspection Target(대상 자체의 물성)과는 별개."""
+
+    inspection_area: Optional[str] = None
+    inspection_width_mm: Optional[float] = None
+    inspection_length_mm: Optional[float] = None
+    sampling_interval: Optional[SourcedNumber] = None
+    inspection_frequency: Optional[str] = None
+    inspection_mode: Optional[str] = None
 
 
 class MeasurementPerformance(BaseModel):
@@ -80,13 +159,25 @@ class MeasurementPerformance(BaseModel):
     accuracy_um: Optional[SourcedNumber] = None
     repeatability_um: Optional[SourcedNumber] = None
     reproducibility_um: Optional[SourcedNumber] = None
+    linearity: Optional[SourcedNumber] = None
+    measurement_speed: Optional[SourcedNumber] = None
+    sampling_rate: Optional[SourcedNumber] = None
 
 
 class SpatialPerformance(BaseModel):
-    fov_mm: Optional[SourcedNumber] = None
+    """3D/2D 검사 장비를 고려해 Measurement Performance와 분리 유지 (요청서 7절)."""
+
+    x_range: Optional[SourcedNumber] = None
+    y_range: Optional[SourcedNumber] = None
+    z_range: Optional[SourcedNumber] = None
     x_resolution_um: Optional[SourcedNumber] = None
     y_resolution_um: Optional[SourcedNumber] = None
     z_resolution_um: Optional[SourcedNumber] = None
+    fov_mm: Optional[SourcedNumber] = None
+    working_distance: Optional[SourcedNumber] = None
+    pixel_size: Optional[SourcedNumber] = None
+    point_spacing: Optional[SourcedNumber] = None
+    profile_spacing: Optional[SourcedNumber] = None
     sampling_interval_um: Optional[SourcedNumber] = None
 
 
@@ -99,19 +190,35 @@ class InspectionPerformance(BaseModel):
 
 
 class DefectDetection(BaseModel):
+    defect_detection: Optional[bool] = Field(default=None, description="결함 검사 기능 지원 여부")
     minimum_defect_size_um: Optional[SourcedNumber] = None
-    defect_types: List[str] = Field(default_factory=list)
+    defect_types: List[str] = Field(
+        default_factory=list,
+        description="실제 사양서/요구사항에서 확인된 결함 종류만 (예: pinhole, scratch, crack, "
+        "contamination, coating_defect, particle) — AI가 임의로 추가하지 않는다",
+    )
+    detection_resolution: Optional[SourcedNumber] = None
     defect_detection_accuracy: Optional[SourcedNumber] = None
     false_positive_rate: Optional[SourcedNumber] = None
     false_negative_rate: Optional[SourcedNumber] = None
+    classification: Optional[bool] = Field(default=None, description="결함 자동 분류 기능 지원 여부")
 
 
 class OpticalSystem(BaseModel):
+    """광학식이 아닌 장비(접촉식 등)에는 해당 없는 필드가 많으므로 전부 Optional."""
+
     light_source: Optional[str] = None
     wavelength: Optional[str] = None
+    spectral_range: Optional[str] = None
     optical_method: Optional[str] = None
+    interferometry: Optional[bool] = None
+    reflectometry: Optional[bool] = None
+    oct: Optional[bool] = None
+    laser: Optional[bool] = None
     sensor_type: Optional[str] = None
+    camera: Optional[str] = None
     camera_resolution: Optional[str] = None
+    lens: Optional[str] = None
     objective: Optional[str] = None
     working_distance: Optional[str] = None
 
@@ -120,38 +227,63 @@ class SystemConfig(BaseModel):
     automation_level: Optional[str] = None
     stage: Optional[str] = None
     motion_system: Optional[str] = None
+    sensor: Optional[str] = None
     controller: Optional[str] = None
+    pc: Optional[str] = None
     software: Optional[str] = None
+    display: Optional[str] = None
+    power: Optional[str] = None
+    air: Optional[str] = None
+    cooling: Optional[str] = None
+    mechanical_configuration: Optional[str] = None
     data_output: Optional[str] = None
 
 
 class Interfaces(BaseModel):
-    ethernet: Optional[bool] = None
-    digital_io: Optional[bool] = None
+    """존재하지 않는 인터페이스는 None(=UNKNOWN으로 렌더링)으로 둔다."""
+
     plc: Optional[bool] = None
     mes: Optional[bool] = None
     opc_ua: Optional[bool] = None
+    ethernet_ip: Optional[bool] = None
+    profinet: Optional[bool] = None
+    modbus: Optional[bool] = None
+    ethernet: Optional[bool] = None
+    digital_io: Optional[bool] = None
+    analog_io: Optional[bool] = None
+    api: Optional[bool] = None
+    data_format: Optional[str] = None
+    data_storage: Optional[str] = None
+    network: Optional[str] = None
     other_interfaces: List[str] = Field(default_factory=list)
 
 
 class Environment(BaseModel):
     operating_temperature: Optional[str] = None
+    storage_temperature: Optional[str] = None
     humidity: Optional[str] = None
     installation_space: Optional[str] = None
     power: Optional[str] = None
     vibration_requirement: Optional[str] = None
+    dust: Optional[str] = None
+    installation_environment: Optional[str] = None
+    clean_room: Optional[str] = None
 
 
 class Safety(BaseModel):
     safety_standard: Optional[str] = None
+    laser_class: Optional[str] = None
     interlock: Optional[bool] = None
     emergency_stop: Optional[bool] = None
+    safety_sensor: Optional[bool] = None
+    protective_cover: Optional[bool] = None
 
 
 class SpecificationSchema(BaseModel):
     equipment: Equipment = Field(default_factory=Equipment)
     inspection_target: InspectionTarget = Field(default_factory=InspectionTarget)
     inspection_items: List[str] = Field(default_factory=list)
+    inspection_requirements: InspectionRequirements = Field(default_factory=InspectionRequirements)
     measurement_performance: MeasurementPerformance = Field(default_factory=MeasurementPerformance)
     spatial_performance: SpatialPerformance = Field(default_factory=SpatialPerformance)
     inspection_performance: InspectionPerformance = Field(default_factory=InspectionPerformance)
@@ -166,7 +298,7 @@ class SpecificationSchema(BaseModel):
     sources: List[str] = Field(default_factory=list, description="이 사양서 생성에 참고한 문서 파일명 목록")
     needs_confirmation: List[str] = Field(
         default_factory=list,
-        description="inferred/default로 채워져 사용자 확인이 필요한 필드의 dotted path 목록",
+        description="INFERRED/UNKNOWN으로 채워져 사용자 확인이 필요한 필드의 dotted path 목록",
     )
 
 
@@ -184,3 +316,19 @@ class ValidationResult(BaseModel):
     issues: List[ValidationIssue] = Field(default_factory=list)
     missing_fields: List[str] = Field(default_factory=list)
     questions: List[str] = Field(default_factory=list)
+
+
+# ==========================================
+# Requirement Compliance — Requirement과 Specification의 필드별 비교 결과
+# (SpecificationSchema에는 저장하지 않는다 — 렌더링/검증 시점에 계산되는 파생 정보.
+#  agent/spec_validator.py의 build_compliance_report()가 생성한다.)
+# ==========================================
+class ComplianceRecord(BaseModel):
+    item: str
+    unit: Optional[str] = None
+    requirement: Optional[float] = None
+    specification: Optional[float] = None
+    operator: Optional[Operator] = None
+    result: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
+    reason: str = ""
+    source: Optional[SourceRef] = None
