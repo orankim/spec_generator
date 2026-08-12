@@ -10,7 +10,15 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from .schemas import RequirementSchema, SourcedNumber, SpecificationSchema, ValidationIssue, ValidationResult
+from .schemas import (
+    ComplianceRecord,
+    Operator,
+    RequirementSchema,
+    SourcedNumber,
+    SpecificationSchema,
+    ValidationIssue,
+    ValidationResult,
+)
 
 _NUMERIC_SECTIONS = (
     "measurement_performance",
@@ -48,15 +56,21 @@ def _validate_units(spec: SpecificationSchema) -> List[ValidationIssue]:
         if not sourced.unit:
             issues.append(ValidationIssue(level="warning", field=path, message="값은 있는데 단위(unit)가 비어 있습니다."))
         expected_hint = path.rsplit(".", 1)[-1]
-        for suffix, expected_unit in (("_um", "um"), ("_mm", "mm"), ("_mm_s", "mm/s"), ("_s", "s")):
-            if expected_hint.endswith(suffix) and sourced.unit and sourced.unit.replace(" ", "") != expected_unit.replace(" ", ""):
-                issues.append(
-                    ValidationIssue(
-                        level="warning",
-                        field=path,
-                        message=f"필드명은 '{expected_unit}' 단위를 암시하지만 실제 unit 값은 '{sourced.unit}' 입니다.",
+        # 긴 접미사(_mm_s)부터 검사해야 "line_speed_mm_s"가 짧은 접미사(_s)에도
+        # 걸려서 "mm/s인데 s를 기대한다"는 거짓 경고를 내지 않는다 — 접미사 하나가
+        # 매치되면 그걸로 확정하고 더 짧은 접미사는 검사하지 않는다.
+        for suffix, expected_unit in sorted(
+            (("_um", "um"), ("_mm", "mm"), ("_mm_s", "mm/s"), ("_s", "s")), key=lambda p: -len(p[0])
+        ):
+            if expected_hint.endswith(suffix):
+                if sourced.unit and sourced.unit.replace(" ", "") != expected_unit.replace(" ", ""):
+                    issues.append(
+                        ValidationIssue(
+                            level="warning",
+                            field=path,
+                            message=f"필드명은 '{expected_unit}' 단위를 암시하지만 실제 unit 값은 '{sourced.unit}' 입니다.",
+                        )
                     )
-                )
                 break
     return issues
 
@@ -117,12 +131,12 @@ def _validate_sources(spec: SpecificationSchema) -> List[ValidationIssue]:
     for path, sourced in _iter_sourced_numbers(spec):
         if sourced.value is None:
             continue
-        if sourced.source_type is None:
-            issues.append(ValidationIssue(level="warning", field=path, message="값은 있는데 source_type이 지정되지 않았습니다."))
-        elif sourced.source_type == "document" and not sourced.source:
-            issues.append(ValidationIssue(level="warning", field=path, message="source_type이 document인데 출처(source) 파일명이 비어 있습니다."))
-        elif sourced.source_type in ("inferred", "default"):
-            issues.append(ValidationIssue(level="info", field=path, message="이 값은 추정(inferred/default)된 값입니다. 생성 전 사용자 확인이 필요합니다."))
+        if sourced.status == "UNKNOWN":
+            issues.append(ValidationIssue(level="warning", field=path, message="값은 있는데 status가 UNKNOWN입니다(근거 불명확)."))
+        elif sourced.status == "VERIFIED" and not (sourced.source and sourced.source.document):
+            issues.append(ValidationIssue(level="warning", field=path, message="status가 VERIFIED인데 출처(source.document)가 비어 있습니다."))
+        elif sourced.status == "INFERRED":
+            issues.append(ValidationIssue(level="info", field=path, message="이 값은 추정(INFERRED)된 값입니다. 생성 전 사용자 확인이 필요합니다."))
     return issues
 
 
@@ -157,6 +171,77 @@ def _validate_requirement_coverage(spec: SpecificationSchema, requirement: Optio
                 )
             )
     return issues
+
+
+def _compare(value: float, req_value: float, operator: Operator) -> bool:
+    if operator == "<=":
+        return value <= req_value
+    if operator == ">=":
+        return value >= req_value
+    if operator == "<":
+        return value < req_value
+    if operator == ">":
+        return value > req_value
+    return value == req_value
+
+
+# Requirement 필드 -> (Specification의 SourcedNumber, 표시 라벨) 매핑.
+# "13. Requirement Compliance" 섹션은 이 표에 있는 항목만 비교한다 —
+# 비교 기준이 없는 필드까지 "UNKNOWN"으로 채워 표를 불필요하게 늘리지 않는다.
+_COMPLIANCE_FIELDS = [
+    ("required_accuracy_um", "measurement_performance", "accuracy_um", "Accuracy"),
+    ("required_resolution_um", "measurement_performance", "resolution_um", "Resolution"),
+    ("minimum_defect_size_um", "defect_detection", "minimum_defect_size_um", "Minimum Defect Size"),
+]
+
+
+def build_compliance_report(
+    spec: SpecificationSchema,
+    requirement: Optional[RequirementSchema],
+) -> List[ComplianceRecord]:
+    """
+    Requirement(사용자가 원하는 조건)와 Specification(장비의 실제/제안 사양)을
+    항목별로 비교한다 (요청서 14/18절). 이 결과는 스키마에 저장하지 않고
+    렌더링 시점에 계산되는 파생 정보다 — Requirement와 Specification 자체는
+    항상 분리된 채로 유지된다.
+    """
+    if requirement is None:
+        return []
+
+    records: List[ComplianceRecord] = []
+    for req_field, section_name, spec_field, label in _COMPLIANCE_FIELDS:
+        req_value = getattr(requirement, req_field, None)
+        section = getattr(spec, section_name)
+        sourced: Optional[SourcedNumber] = getattr(section, spec_field, None)
+        spec_value = sourced.value if sourced else None
+        unit = sourced.unit if sourced and sourced.unit else "um"
+        operator: Operator = (sourced.operator if sourced and sourced.operator else "<=")
+
+        if req_value is None and spec_value is None:
+            continue  # 요구사항도 사양값도 없으면 비교 자체가 무의미하므로 표에 넣지 않는다
+
+        if spec_value is None:
+            result, reason = "UNKNOWN", "사양값이 채워지지 않았습니다."
+        elif req_value is None:
+            result, reason = "UNKNOWN", "이 항목에 대한 요구사항이 지정되지 않았습니다."
+        else:
+            ok = _compare(spec_value, req_value, operator)
+            result = "PASS" if ok else "FAIL"
+            reason = f"{spec_value}{unit} {operator} {req_value}{unit}"
+
+        records.append(
+            ComplianceRecord(
+                item=label,
+                unit=unit,
+                requirement=req_value,
+                specification=spec_value,
+                operator=operator,
+                result=result,
+                reason=reason,
+                source=sourced.source if sourced else None,
+            )
+        )
+    return records
 
 
 def validate_specification(
