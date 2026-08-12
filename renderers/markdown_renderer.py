@@ -7,23 +7,47 @@ converters/markdown_to_spec.py가 이 포맷을 역파싱해서 SpecificationSch
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
-from agent.schemas import RequirementSchema, SpecificationSchema, ValidationResult
+from agent.schemas import ComplianceRecord, RequirementSchema, SpecificationSchema, ValidationResult
+from agent.spec_validator import build_compliance_report
 
-from .common import RenderRow, RenderSection, build_notes_section, build_sections, build_validation_section
+from .common import (
+    COMPLIANCE_SECTION_EMPTY_NOTE,
+    COMPLIANCE_SECTION_TITLE,
+    RenderRow,
+    RenderSection,
+    build_notes_section,
+    build_sections,
+    build_validation_section,
+)
+
+_SECTION_ORDER = [
+    "equipment",
+    "inspection_target",
+    "inspection_requirements",
+    "measurement_performance",
+    "spatial_performance",
+    "optical_system",
+    "defect_inspection",
+    "inspection_performance",
+    "system_configuration",
+    "interfaces",
+    "environment",
+    "safety",
+]
 
 
-def _row_to_md_table_row(row: RenderRow, has_requirement_col: bool) -> str:
-    if has_requirement_col:
-        req = row.requirement_display if row.requirement_display is not None else "-"
-        result = row.result if row.result is not None else "-"
+def _row_to_md_table_row(row: RenderRow, has_status_col: bool) -> str:
+    if has_status_col:
+        status = row.status or "-"
+        source = row.source or "-"
         unit = row.unit or "-"
-        return f"| {row.label} | {unit} | {req} | {row.value_display} | {result} |"
+        return f"| {row.label} | {unit} | {row.value_display} | {status} | {source} |"
     return f"| {row.label} | {row.value_display} |"
 
 
-def _section_to_md(section: RenderSection) -> str:
+def _section_to_md(section: RenderSection, has_status_col: bool) -> str:
     lines = [f"## {section.title}", ""]
     if section.note:
         lines.append(f"_{section.note}_")
@@ -34,26 +58,50 @@ def _section_to_md(section: RenderSection) -> str:
             lines.append("")
         return "\n".join(lines)
 
-    has_requirement_col = any(r.requirement_display is not None or r.result is not None for r in section.rows)
-    if has_requirement_col:
-        lines.append("| Item | Unit | Requirement | Specification | Result |")
+    if has_status_col:
+        lines.append("| Item | Unit | Specification | Status | Source |")
         lines.append("|---|---|---|---|---|")
     else:
         lines.append("| Item | Specification |")
         lines.append("|---|---|")
     for row in section.rows:
-        lines.append(_row_to_md_table_row(row, has_requirement_col))
+        lines.append(_row_to_md_table_row(row, has_status_col))
 
-    # Source 정보는 표 대신 표 아래 blockquote로 보존한다 (표준 포맷 예시와 동일)
-    source_lines = [
-        f"> Source: {row.source or row.source_type} — {row.label}"
-        for row in section.rows
-        if row.source_type is not None
-    ]
-    if source_lines:
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _fmt_opt(value) -> str:
+    return "UNKNOWN" if value is None else str(value)
+
+
+def _compliance_records_to_md(records: List[ComplianceRecord]) -> str:
+    lines = [f"## {COMPLIANCE_SECTION_TITLE}", ""]
+    if not records:
+        lines.append(f"_{COMPLIANCE_SECTION_EMPTY_NOTE}_")
         lines.append("")
-        lines.extend(source_lines)
+        return "\n".join(lines)
+    lines.append("| Item | Unit | Requirement | Specification | Result | Reason |")
+    lines.append("|---|---|---|---|---|---|")
+    for r in records:
+        lines.append(
+            f"| {r.item} | {r.unit or '-'} | {_fmt_opt(r.requirement)} | {_fmt_opt(r.specification)} | {r.result} | {r.reason} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
 
+
+def _validation_section_to_md(section: RenderSection) -> str:
+    lines = [f"## {section.title}", ""]
+    if section.note:
+        lines.append(f"_{section.note}_")
+        lines.append("")
+    if not section.rows:
+        return "\n".join(lines)
+    lines.append("| Level / Field | Message |")
+    lines.append("|---|---|")
+    for row in section.rows:
+        lines.append(f"| {row.label} | {row.value_display} |")
     lines.append("")
     return "\n".join(lines)
 
@@ -64,28 +112,28 @@ def render_markdown(
     validation: Optional[ValidationResult] = None,
     title: str = "Electrode Inspection Equipment Specification",
 ) -> str:
-    sections = build_sections(specification, requirement=requirement)
+    sections = build_sections(specification)
     by_id = {s.id: s for s in sections}
-    order = [
-        "equipment",
+    ordered = [by_id[key] for key in _SECTION_ORDER]
+
+    numeric_section_ids = {
         "inspection_target",
         "inspection_requirements",
         "measurement_performance",
         "spatial_performance",
-        "optical_system",
-        "defect_inspection",
         "inspection_performance",
-        "system_configuration",
-        "interfaces",
-        "environment",
-        "safety",
-    ]
-    ordered = [by_id[key] for key in order]
+        "defect_inspection",
+    }
 
     parts = [f"# {title}", ""]
     for section in ordered:
-        parts.append(_section_to_md(section))
-    parts.append(_section_to_md(build_validation_section(validation)))
-    parts.append(_section_to_md(build_notes_section(specification)))
+        parts.append(_section_to_md(section, has_status_col=section.id in numeric_section_ids))
+
+    parts.append(_validation_section_to_md(build_validation_section(validation)))
+
+    compliance_records = build_compliance_report(specification, requirement)
+    parts.append(_compliance_records_to_md(compliance_records))
+
+    parts.append(_section_to_md(build_notes_section(specification), has_status_col=False))
 
     return "\n".join(parts).rstrip() + "\n"
