@@ -334,6 +334,18 @@ async def agent_page():
                     }
                 }
 
+                function fmtRange(range) {
+                    if (!range || range.min === null || range.min === undefined || range.max === null || range.max === undefined) return '미정';
+                    return `${range.min} ~ ${range.max} ${range.unit || ''}`.trim();
+                }
+
+                function fmtReqValue(rv, withPlusMinus) {
+                    if (!rv || rv.value === null || rv.value === undefined) return '미정';
+                    const opLabel = {'<=': '이하', '>=': '이상', '<': '미만', '>': '초과'}[rv.operator] || '';
+                    const prefix = withPlusMinus ? '±' : '';
+                    return `${prefix}${rv.value} ${rv.unit || ''} ${opLabel}`.trim();
+                }
+
                 function renderRequirementSummary() {
                     const req = state.requirement;
                     const val = state.validation;
@@ -342,6 +354,8 @@ async def agent_page():
                         <strong>검사 대상:</strong> ${req.target.material || '미정'}<br>
                         <strong>폭:</strong> ${req.target.width_mm ?? '미정'} mm<br>
                         <strong>검사 항목:</strong> ${(req.inspection_items || []).join(', ') || '미정'}<br>
+                        <strong>측정 범위:</strong> ${fmtRange(req.measurement_range)}<br>
+                        <strong>요구 정확도:</strong> ${fmtReqValue(req.accuracy, true)}<br>
                         <strong>측정 방식:</strong> ${req.measurement_method || '미정'}<br>
                         <strong>측정 원리:</strong> ${req.measurement_principle || '미정'}
                     `;
