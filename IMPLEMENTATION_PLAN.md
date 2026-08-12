@@ -1,6 +1,11 @@
 # IMPLEMENTATION_PLAN.md
 ## 전극 검사기 사양서 자동 생성 AI Agent
 
+> SpecificationSchema/RequirementSchema 필드 상세, Status/Source/Confidence 정의,
+> Markdown/HTML/PPTX 포맷은 이 문서가 아니라 `docs/SPECIFICATION_SCHEMA.md`,
+> `docs/SPECIFICATION_MARKDOWN_FORMAT.md`, `docs/PPT_SLIDE_STRUCTURE.md`를 참고한다.
+> 이 문서는 최초 설계 시점의 분석/의사결정 기록이다.
+
 ## 1. 기존 Repository 분석
 
 ### 1.1 현재 LLM 호출 방식
