@@ -2,6 +2,7 @@
 fastapi>=0.110.0
 uvicorn>=0.28.0
 python-multipart>=0.0.9
+requests>=2.31.0
 
 # LLM Framework & RAG Integration
 langchain>=0.1.13
@@ -14,3 +15,6 @@ chromadb>=0.4.24
 # Data Validation & Parsing
 pydantic>=2.6.4
 python-pptx>=0.6.23
+
+# 환경변수(.env) 로딩
+python-dotenv>=1.0.1
