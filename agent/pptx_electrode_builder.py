@@ -25,9 +25,10 @@ from .schemas import SourcedNumber, SpecificationSchema  # noqa: E402
 def _num_row(label: str, sn: Optional[SourcedNumber]) -> List[str]:
     if sn is None or sn.value is None:
         return [label, "N/A", "", ""]
-    source = sn.source or (
-        {"user_requirement": "사용자 요구사항", "inferred": "AI 추정", "default": "기본값"}.get(sn.source_type, "")
-    )
+    if sn.source and sn.source.document:
+        source = sn.source.document
+    else:
+        source = {"USER_DEFINED": "사용자 요구사항", "INFERRED": "AI 추정", "UNKNOWN": ""}.get(sn.status, "")
     return [label, str(sn.value), sn.unit or "", source]
 
 
