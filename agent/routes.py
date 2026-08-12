@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import ollama_client, spec_retriever
+from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, retrieve_and_generate
 from .pptx_electrode_builder import ElectrodeSpecPPTXBuilder
 from .requirement_validator import validate_requirement
@@ -24,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent", tags=["electrode-agent"])
 
-DB_PATH = os.environ.get("CHROMA_DB_PATH", "./chroma_db_specs")
+# 저장소 루트 기준 절대경로가 기본값이다 — cwd에 따라 build_rag_ollama.py와
+# 서로 다른 디렉터리를 가리키는 문제를 방지한다 (agent/paths.py 참고).
+DB_PATH = os.environ.get("CHROMA_DB_PATH", DEFAULT_CHROMA_DB_PATH)
 TEMPLATE_PATH = os.environ.get("ELECTRODE_TEMPLATE_PATH", "./template_electrode.pptx")
 OUTPUT_DIR = Path("./generated_files")
 OUTPUT_DIR.mkdir(exist_ok=True)

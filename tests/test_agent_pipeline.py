@@ -31,6 +31,7 @@ from agent.schemas import (
     SpecificationSchema,
 )
 from agent.spec_validator import validate_specification
+from build_rag_ollama import build_vector_db
 
 TEST_DB_PATH = "./_test_chroma_db_pytest"
 
@@ -50,8 +51,17 @@ def fake_embeddings():
 
 @pytest.fixture(scope="module", autouse=True)
 def indexed_db(fake_embeddings):
+    """
+    sample_specs/ 안의 실제 파일 형식(.md 또는 .pptx, 또는 둘 다)에 상관없이 인덱싱한다.
+    build_rag_ollama.build_vector_db()는 두 형식을 모두 스캔하므로, sample_specs가
+    전부 Markdown으로 바뀌어도(레거시 index_spec_rows_from_folder는 .pptx 전용이라
+    이 경우 0건을 반환한다) 테스트 DB가 비어있지 않게 만든다.
+    """
     shutil.rmtree(TEST_DB_PATH, ignore_errors=True)
-    n = spec_retriever.index_spec_rows_from_folder("sample_specs", db_path=TEST_DB_PATH)
+    build_vector_db("sample_specs", TEST_DB_PATH)
+    from langchain_chroma import Chroma
+
+    n = Chroma(persist_directory=TEST_DB_PATH, embedding_function=spec_retriever.get_embeddings())._collection.count()
     assert n > 0, "sample_specs/ 인덱싱 결과가 0건이면 이후 검색 테스트가 무의미하므로 실패시킨다"
     yield
     shutil.rmtree(TEST_DB_PATH, ignore_errors=True)
@@ -141,8 +151,12 @@ def _run_case(stub_requirement: RequirementSchema, followup: dict, stub_llm_spec
         specification, spec_validation, retrieved_docs = retrieve_and_generate(requirement, db_path=TEST_DB_PATH)
 
     assert len(retrieved_docs) > 0
-    builder = ElectrodeSpecPPTXBuilder(template_path="template_electrode.pptx")
+    from make_electrode_template import build_electrode_template
+
     with tempfile.TemporaryDirectory() as tmp_dir:
+        template_path = str(Path(tmp_dir) / "template_electrode.pptx")
+        build_electrode_template(template_path)
+        builder = ElectrodeSpecPPTXBuilder(template_path=template_path)
         output_path = builder.build(specification, output_path=str(Path(tmp_dir) / "test_output.pptx"))
 
         from pptx import Presentation

@@ -27,7 +27,10 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_core.documents import Document
 from pptx import Presentation
 
+from .paths import DEFAULT_CHROMA_DB_PATH, resolve_db_path
 from .schemas import RequirementSchema
+
+_RAG_DEBUG = os.environ.get("RAG_DEBUG", "").lower() in ("1", "true", "yes")
 
 _ITEM_QUERY_HINTS = {
     "thickness": "두께 측정 두께 정확도 두께 분해능",
@@ -86,28 +89,54 @@ class RetrievedChunk(Document):
 
 def retrieve_for_requirement(
     requirement: RequirementSchema,
-    db_path: str = "./chroma_db_specs",
+    db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
     k_per_query: int = 3,
 ) -> List[Document]:
     """
     요구사항 기반 다중 질의 검색을 수행하고, (source, content) 기준으로
     중복 제거한 Document 목록을 반환한다.
+
+    db_path를 명시하지 않으면 CHROMA_DB_PATH 환경변수 -> 저장소 루트 기준 기본값
+    (agent/paths.DEFAULT_CHROMA_DB_PATH) 순으로 정해진다 — build_rag_ollama.py도
+    동일한 규칙을 쓰므로, 두 프로세스를 서로 다른 작업 디렉터리에서 실행해도
+    (예: 빌드는 프로젝트 루트에서, 서버는 다른 cwd에서) 항상 같은 디스크 경로를
+    가리킨다. 예전에는 둘 다 "./chroma_db_specs"라는 *상대경로* 기본값을 썼는데,
+    이는 각자의 cwd 기준으로 따로 해석되어 서로 다른(한쪽은 비어있는) 디렉터리를
+    가리킬 수 있었다 — 예외 없이 조용히 검색 결과 0개로 이어지는 원인이었다.
     """
+    resolved_db_path = resolve_db_path(db_path)
     host = ollama_host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     embeddings = _default_embeddings(host)
-    vector_store = Chroma(persist_directory=db_path, embedding_function=embeddings)
+    vector_store = Chroma(persist_directory=resolved_db_path, embedding_function=embeddings)
 
     queries = _build_queries(requirement)
     seen = set()
     results: List[Document] = []
     for query in queries:
-        for doc in vector_store.similarity_search(query, k=k_per_query):
+        hits = vector_store.similarity_search(query, k=k_per_query)
+        for doc in hits:
             key = (doc.metadata.get("source"), doc.page_content[:80])
             if key in seen:
                 continue
             seen.add(key)
             results.append(doc)
+        if _RAG_DEBUG:
+            print(f"[RAG DEBUG] query: {query!r} -> {len(hits)}개 hit (db_path={resolved_db_path})")
+
+    if _RAG_DEBUG:
+        try:
+            collection_count = vector_store._collection.count()
+        except Exception:
+            collection_count = "?"
+        print(
+            f"[RAG DEBUG] collection: {vector_store._collection.name} | "
+            f"document_count: {collection_count} | queries: {len(queries)} | "
+            f"retrieved_chunks(중복제거 후): {len(results)}"
+        )
+        for i, doc in enumerate(results, start=1):
+            print(f"[RAG DEBUG]   [{i}] source: {source_label(doc)}")
+            print(f"[RAG DEBUG]       content: {doc.page_content[:120]!r}")
 
     return results
 
@@ -186,7 +215,7 @@ def parse_pptx_rows(file_path: str) -> List[Document]:
 
 def index_spec_rows_from_folder(
     pptx_folder: str,
-    db_path: str = "./chroma_db_specs",
+    db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
 ) -> int:
     """
@@ -205,6 +234,6 @@ def index_spec_rows_from_folder(
     if not all_rows:
         return 0
 
-    vector_store = Chroma(persist_directory=db_path, embedding_function=embeddings)
+    vector_store = Chroma(persist_directory=resolve_db_path(db_path), embedding_function=embeddings)
     vector_store.add_documents(all_rows)
     return len(all_rows)

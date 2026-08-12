@@ -1,13 +1,10 @@
 import logging
 import os
-import uuid
 from pathlib import Path
-from typing import List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 # .env 파일이 있으면 로드 (없어도 조용히 무시됨 - 환경변수를 직접 export해도 동일하게 동작)
 load_dotenv()
@@ -20,52 +17,37 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 # 앞서 작성한 파이프라인 모듈 임포트
-from generator import SpecGenerator
-from pptx_builder import PPTXBuilder
 from agent.routes import router as agent_router
 from agent.ollama_client import check_ollama_available
+from agent.paths import DEFAULT_SAMPLE_SPECS_DIR
 
-app = FastAPI(title="사내망 설비 사양서 자동 생성 시스템")
+app = FastAPI(title="전극 검사기 사양서 자동 생성 AI")
 app.include_router(agent_router)
 
-# 생성된 PPTX 파일이 임시 저장될 폴더
+# 생성된 PPTX 파일이 임시 저장될 폴더. agent/routes.py의 "/api/agent/build-pptx"가
+# 이 폴더(상대경로 "./generated_files")에 파일을 쓰고, 아래 "/api/download/{file_name}"이
+# 그 파일을 서빙한다 — Agent가 실제로 쓰는 공유 인프라이므로 유지한다.
 OUTPUT_DIR = Path("./generated_files")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# 업로드된(RAG 학습용) 기존 사양서 PPTX가 저장될 폴더
-SAMPLE_SPECS_DIR = Path("./sample_specs")
+# RAG 원본 사양서(Markdown/PPTX)가 저장되는 폴더. build_rag_ollama.py의 기본
+# 입력 폴더와 항상 같은 절대경로를 가리키도록 agent/paths.py 기준값을 그대로 쓴다.
+SAMPLE_SPECS_DIR = Path(DEFAULT_SAMPLE_SPECS_DIR)
 SAMPLE_SPECS_DIR.mkdir(exist_ok=True)
 
-# 템플릿 파일 경로
-TEMPLATE_PATH = "template.pptx"
-
-# Ollama 서버/모델 설정 (환경변수로 오버라이드 가능, 기본값은 기존 하드코딩 값과 동일)
+# Ollama 서버 주소 (환경변수로 오버라이드 가능)
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-
-# SpecGenerator & PPTXBuilder 인스턴스 초기화
-print("=== AI 엔진 및 RAG DB 로딩 중... ===")
-generator = SpecGenerator(
-    db_path="./chroma_db_specs",
-    ollama_base_url=OLLAMA_HOST
-)
-builder = PPTXBuilder(template_path=TEMPLATE_PATH)
-print("=== 서비스 준비 완료 ===")
 
 if not check_ollama_available(OLLAMA_HOST):
     logger.warning(
         "Ollama 서버(%s)에 연결할 수 없습니다. 서버는 계속 기동하지만, "
-        "사양서 생성/전극 검사기 Agent 기능은 Ollama가 켜져 있어야 동작합니다.",
+        "전극 검사기 Agent 기능은 Ollama가 켜져 있어야 동작합니다.",
         OLLAMA_HOST,
     )
 
 
-# 요청 Body 데이터 구조
-class SpecRequest(BaseModel):
-    prompt: str
-
-
 # ==========================================
-# 1. 공통 페이지 레이아웃 (탭 네비게이션 + 공통 스타일)
+# 1. 공통 페이지 레이아웃 (공통 스타일)
 # ==========================================
 PAGE_STYLE = """
     body { font-family: '맑은 고딕', sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background-color: #f5f6f8; }
@@ -111,14 +93,11 @@ PAGE_STYLE = """
 """
 
 
-def render_page(title: str, active: str, body_html: str) -> str:
+def render_page(title: str, body_html: str) -> str:
     """
-    두 페이지(사양서 제작하기 / 업로드하기)가 공유하는 상단 네비게이션과 스타일을 적용해
-    완성된 HTML 문서를 만듭니다.
+    페이지 공통 레이아웃. 전극 검사기 AI가 유일한 기능이므로 더 이상 탭 네비게이션이
+    필요 없다 — 상단에 고정 타이틀만 표시한다.
     """
-    nav_generate_class = "active" if active == "generate" else ""
-    nav_upload_class = "active" if active == "upload" else ""
-    nav_agent_class = "active" if active == "agent" else ""
     return f"""
     <!DOCTYPE html>
     <html lang="ko">
@@ -131,9 +110,7 @@ def render_page(title: str, active: str, body_html: str) -> str:
     <body>
         <div class="container">
             <div class="nav">
-                <a href="/" class="{nav_generate_class}">📋 사양서 제작하기</a>
-                <a href="/upload" class="{nav_upload_class}">📤 사양서 업로드하기</a>
-                <a href="/agent" class="{nav_agent_class}">🔬 전극 검사기 AI</a>
+                <span style="flex:1; text-align:center; padding:12px; border-radius:6px; background:#2b6cb0; color:white; font-weight:bold;">🔬 전극 검사기 AI</span>
             </div>
             {body_html}
         </div>
@@ -142,161 +119,23 @@ def render_page(title: str, active: str, body_html: str) -> str:
     """
 
 
-# ==========================================
-# 2. 사양서 제작하기 페이지
-# ==========================================
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", include_in_schema=False)
 async def read_root():
-    """
-    자연어 요구사항으로 새 사양서 PPTX를 생성하는 화면
-    """
-    body_html = """
-            <h2>⚙️ 사내망 설비 사양서 자동 생성기</h2>
-            <p>원하는 설비 사양 조건(전압, 크기, 성능 등)을 자연어로 자유롭게 입력하세요.</p>
-
-            <textarea id="promptInput" placeholder="예시: 300mm 웨이퍼 처리용 고진공 챔버 설비 사양서 만들어줘. 전압은 380V 삼상 사용하고, 도달 진공도는 10^-6 Torr 이상이어야 해."></textarea>
-            <button id="generateBtn" onclick="generateSpec()">사양서 PPTX 생성하기</button>
-
-            <div id="loading">⏳ 기존 사양 DB 참조 및 PPTX 사양서를 생성 중입니다... (약 10~20초 소요)</div>
-
-            <div id="result">
-                <h3>🎉 사양서가 성공적으로 생성되었습니다!</h3>
-                <a id="downloadLink" class="download-btn" href="#" download>PPTX 사양서 다운로드</a>
-            </div>
-
-            <script>
-                async function generateSpec() {
-                    const prompt = document.getElementById('promptInput').value.trim();
-                    if (!prompt) {
-                        alert('설비 요구사항을 입력해 주세요.');
-                        return;
-                    }
-
-                    const btn = document.getElementById('generateBtn');
-                    const loading = document.getElementById('loading');
-                    const result = document.getElementById('result');
-
-                    btn.disabled = true;
-                    loading.style.display = 'block';
-                    result.style.display = 'none';
-
-                    try {
-                        const response = await fetch('/api/generate-spec', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ prompt: prompt })
-                        });
-
-                        const data = await response.json();
-
-                        if (!response.ok) {
-                            throw new Error(data.detail || '생성 실패');
-                        }
-
-                        document.getElementById('downloadLink').href = data.download_url;
-                        result.style.display = 'block';
-                    } catch (err) {
-                        alert('사양서 생성 중 오류가 발생했습니다:\\n\\n' + err.message);
-                    } finally {
-                        btn.disabled = false;
-                        loading.style.display = 'none';
-                    }
-                }
-            </script>
-    """
-    return HTMLResponse(content=render_page("설비 사양서 자동 생성 시스템", "generate", body_html))
+    """루트 접속 시 바로 전극 검사기 AI 화면으로 이동한다 (유일한 사용자 기능)."""
+    return RedirectResponse(url="/agent")
 
 
 # ==========================================
-# 3. 사양서 업로드하기 페이지
+# 2. (제거됨) 사양서 제작하기 / 사양서 업로드하기
 # ==========================================
-@app.get("/upload", response_class=HTMLResponse)
-async def upload_page():
-    """
-    RAG 학습용 기존 사양서 PPTX를 클라이언트 PC에서 서버로 업로드하는 화면.
-    업로드된 파일은 sample_specs/ 폴더에 저장되며, 이후 서버 관리자가
-    preprocess_specs.py(전처리) → build_rag_ollama.py(Vector DB 구축)를
-    실행해야 실제 검색/생성에 반영됩니다.
-    """
-    body_html = """
-            <h2>📤 기존 사양서 업로드하기</h2>
-            <p>RAG 학습에 사용할 기존 설비 사양서 PPTX 파일을 업로드하세요. (여러 개 동시 선택 가능)</p>
-            <p style="font-size:13px;color:#888;">업로드된 파일은 서버의 <code>sample_specs/</code> 폴더에 저장됩니다. 검색에 실제로 반영되려면 서버 관리자가 전처리 및 Vector DB 재구축 스크립트를 실행해야 합니다.</p>
-
-            <input type="file" id="fileInput" accept=".pptx" multiple>
-            <button id="uploadBtn" onclick="uploadSpecs()">업로드하기</button>
-
-            <div id="loading">⏳ 업로드 중입니다...</div>
-
-            <div id="result">
-                <h3 id="resultTitle">🎉 업로드가 완료되었습니다!</h3>
-                <ul id="fileList"></ul>
-            </div>
-
-            <script>
-                async function uploadSpecs() {
-                    const input = document.getElementById('fileInput');
-                    if (!input.files.length) {
-                        alert('업로드할 PPTX 파일을 선택해 주세요.');
-                        return;
-                    }
-
-                    const formData = new FormData();
-                    for (const file of input.files) {
-                        formData.append('files', file);
-                    }
-
-                    const btn = document.getElementById('uploadBtn');
-                    const loading = document.getElementById('loading');
-                    const result = document.getElementById('result');
-
-                    btn.disabled = true;
-                    loading.style.display = 'block';
-                    result.style.display = 'none';
-
-                    try {
-                        const response = await fetch('/api/upload-specs', {
-                            method: 'POST',
-                            body: formData
-                        });
-
-                        const data = await response.json();
-
-                        if (!response.ok) {
-                            throw new Error(data.detail || '업로드 실패');
-                        }
-
-                        const fileList = document.getElementById('fileList');
-                        fileList.innerHTML = '';
-                        data.saved.forEach(name => {
-                            const li = document.createElement('li');
-                            li.textContent = '✅ ' + name;
-                            fileList.appendChild(li);
-                        });
-                        data.skipped.forEach(name => {
-                            const li = document.createElement('li');
-                            li.textContent = '⚠️ ' + name + ' (.pptx 파일이 아니라 건너뜀)';
-                            fileList.appendChild(li);
-                        });
-
-                        document.getElementById('resultTitle').textContent =
-                            `🎉 ${data.saved.length}개 파일 업로드 완료!`;
-                        result.style.display = 'block';
-                        input.value = '';
-                    } catch (err) {
-                        alert('업로드 중 오류가 발생했습니다:\\n\\n' + err.message);
-                    } finally {
-                        btn.disabled = false;
-                        loading.style.display = 'none';
-                    }
-                }
-            </script>
-    """
-    return HTMLResponse(content=render_page("기존 사양서 업로드", "upload", body_html))
-
-
+# 기존에는 여기에 "/"(자연어 요구사항으로 PPTX 생성)와 "/upload"(RAG 학습용 PPTX
+# 업로드) 페이지가 있었다. 전극 검사기 AI(/agent)만 사용자 기능으로 남기기로 하여
+# UI/라우트를 제거했다. 이 기능들이 쓰던 generator.py(SpecGenerator)/pptx_builder.py
+# (PPTXBuilder) 모듈 자체는 삭제하지 않았다 — preprocess_specs.py가 계속
+# import하고, pptx_builder.py는 agent/pptx_electrode_builder.py(Agent의 PPTX 출력
+# 기능)가 재사용하는 공통 모듈이기 때문이다.
 # ==========================================
-# 3-1. 전극 검사기 사양서 자동 생성 AI Agent 페이지
+# 3. 전극 검사기 사양서 자동 생성 AI Agent 페이지
 # ==========================================
 @app.get("/agent", response_class=HTMLResponse)
 async def agent_page():
@@ -583,6 +422,12 @@ async def agent_page():
                     const spec = state.specification;
                     const val = state.specValidation;
 
+                    const noResultsWarning = retrievedSources.length === 0
+                        ? `<div style="margin-top:8px; padding:8px 10px; background:#fff5f5; border:1px solid #feb2b2; border-radius:4px; color:#822727;">
+                               ⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다 (검색된 chunk 0개). 아래 값은 사용자가 직접 입력한 요구사항 외에는 근거가 없습니다.
+                           </div>`
+                        : '';
+
                     document.getElementById('specSummary').innerHTML = `
                         <strong>설비명:</strong> ${spec.equipment.name || 'N/A'}<br>
                         <strong>검사 대상:</strong> ${spec.inspection_target.material || 'N/A'} (${spec.inspection_target.width_mm ?? '?'} mm)<br>
@@ -591,6 +436,7 @@ async def agent_page():
                         <strong>분해능:</strong> ${fmtSourced(spec.measurement_performance.resolution_um)}<br>
                         <strong>최소 검출 결함 크기:</strong> ${fmtSourced(spec.defect_detection.minimum_defect_size_um)}<br>
                         <strong>참고 문서:</strong> ${(spec.sources || []).join(', ') || '없음'} (검색된 chunk ${retrievedSources.length}개)
+                        ${noResultsWarning}
                     `;
 
                     const issuesList = document.getElementById('issuesList');
@@ -642,52 +488,15 @@ async def agent_page():
                 }
             </script>
     """
-    return HTMLResponse(content=render_page("전극 검사기 사양서 AI Agent", "agent", body_html))
+    return HTMLResponse(content=render_page("전극 검사기 사양서 AI Agent", body_html))
 
 
 # ==========================================
-# 4. 사양서 생성 API 엔드포인트
+# 4. PPTX 파일 다운로드 API
 # ==========================================
-@app.post("/api/generate-spec")
-async def generate_spec_api(req: SpecRequest):
-    """
-    1) RAG + Ollama로 JSON 사양서 데이터 생성
-    2) PPTX 파일로 합성 후 다운로드 URL 반환
-    """
-    try:
-        # 1) LLM + RAG 기반 JSON 생성
-        spec_json = generator.generate_spec_json(req.prompt)
-
-        if "error" in spec_json:
-            reason = spec_json.get("reason", "알 수 없는 오류")
-            raw = spec_json.get("raw_response", "")[:500]
-            raise HTTPException(
-                status_code=500,
-                detail=f"JSON 생성 실패: {reason} | LLM 원문 응답: {raw}"
-            )
-
-        # 2) 고유한 파일명 생성
-        file_id = str(uuid.uuid4())[:8]
-        output_filename = f"spec_{file_id}.pptx"
-        output_filepath = OUTPUT_DIR / output_filename
-
-        # 3) PPTX 합성
-        builder.build(spec_json, output_path=str(output_filepath))
-
-        return {
-            "status": "success",
-            "file_name": output_filename,
-            "download_url": f"/api/download/{output_filename}"
-        }
-
-    except Exception as e:
-        print(f"API 오류: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# 5. PPTX 파일 다운로드 API
-# ==========================================
+# agent/routes.py의 "/api/agent/build-pptx"가 OUTPUT_DIR(./generated_files)에 PPTX를
+# 쓰고 download_url로 이 엔드포인트를 가리킨다 — 전극 검사기 AI가 실제로 쓰는
+# 공유 인프라이므로 유지한다 (예전 "/api/generate-spec"이 쓰던 것과 같은 폴더/엔드포인트).
 @app.get("/api/download/{file_name}")
 async def download_file(file_name: str):
     """
@@ -702,32 +511,6 @@ async def download_file(file_name: str):
         filename=f"설비사양서_{file_name}",
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-
-
-# ==========================================
-# 6. 기존 사양서 업로드 API (sample_specs/ 에 저장)
-# ==========================================
-@app.post("/api/upload-specs")
-async def upload_specs_api(files: List[UploadFile] = File(...)):
-    """
-    클라이언트 PC에서 올린 기존 사양서 PPTX 파일들을 sample_specs/ 폴더에 저장합니다.
-    .pptx가 아닌 파일은 저장하지 않고 skipped 목록으로 반환합니다.
-    """
-    saved, skipped = [], []
-
-    for upload in files:
-        # Path(...).name 으로 경로 구분자를 제거해 경로 조작(디렉터리 탈출)을 방지
-        safe_name = Path(upload.filename or "").name
-        if not safe_name.lower().endswith(".pptx"):
-            skipped.append(upload.filename or "(파일명 없음)")
-            continue
-
-        dest_path = SAMPLE_SPECS_DIR / safe_name
-        content = await upload.read()
-        dest_path.write_bytes(content)
-        saved.append(safe_name)
-
-    return {"status": "success", "saved": saved, "skipped": skipped}
 
 
 # ==========================================

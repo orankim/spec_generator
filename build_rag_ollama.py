@@ -250,19 +250,29 @@ def test_search(query: str, db_save_path: str, ollama_host: Optional[str] = None
 if __name__ == "__main__":
     import argparse
 
+    from agent.paths import DEFAULT_CHROMA_DB_PATH, DEFAULT_SAMPLE_SPECS_DIR
+
     parser = argparse.ArgumentParser(description="Markdown(.md) 사양서로 RAG Vector DB 구축 (.pptx도 함께 지원)")
-    parser.add_argument("--input-dir", default="./sample_specs", help="파싱할 사양서 폴더 (.md 우선, .pptx도 지원)")
+    parser.add_argument(
+        "--input-dir", default=DEFAULT_SAMPLE_SPECS_DIR,
+        help=f"파싱할 사양서 폴더 (.md 우선, .pptx도 지원). 기본값은 이 스크립트 기준 저장소 루트의 sample_specs/ (현재: {DEFAULT_SAMPLE_SPECS_DIR})",
+    )
     parser.add_argument(
         "--pptx-folder", default=None,
         help="[레거시 별칭] --input-dir와 동일하게 동작한다. 이름과 달리 .md/.pptx를 모두 스캔한다.",
     )
-    parser.add_argument("--db-path", default="./chroma_db_specs", help="저장할 Vector DB 폴더")
+    parser.add_argument(
+        "--db-path", default=DEFAULT_CHROMA_DB_PATH,
+        help=f"저장할 Vector DB 폴더. 기본값은 이 스크립트 기준 저장소 루트의 chroma_db_specs/ (현재: {DEFAULT_CHROMA_DB_PATH}) "
+             "— agent/spec_retriever.py(검색 쪽)의 기본값과 항상 같은 절대경로를 가리킨다.",
+    )
     parser.add_argument("--rebuild", action="store_true", help="기존 Vector DB를 삭제하고 새로 구축한다")
     args = parser.parse_args()
 
     input_dir = args.pptx_folder if args.pptx_folder is not None else args.input_dir
     os.makedirs(input_dir, exist_ok=True)
 
+    print(f"[설정] input_dir={input_dir} | db_path={args.db_path}")
     build_vector_db(input_dir, args.db_path, rebuild=args.rebuild)
 
     # 검색 테스트가 필요하면 주석을 해제하세요.

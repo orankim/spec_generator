@@ -59,7 +59,7 @@ def analyze_requirement(
 
 def retrieve_and_generate(
     requirement: RequirementSchema,
-    db_path: str = "./chroma_db_specs",
+    db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
     model: Optional[str] = None,
     k_per_query: int = 3,
@@ -75,6 +75,11 @@ def retrieve_and_generate(
     specification = generate_specification(
         requirement, retrieved_docs, context_text, model=model, host=host
     )
+    if not retrieved_docs:
+        # 검색 결과가 0개면 LLM에게 넘길 근거 자체가 없다는 뜻이다 — 이 사실을
+        # 조용히 넘기지 않고 사용자가 바로 알아챌 수 있게 notes에 명시한다
+        # (검색 결과 없음을 "그냥 UNKNOWN 필드들"로만 남기면 원인 파악이 어렵다).
+        specification.notes.append("조건에 맞는 참고 사양서를 찾지 못했습니다 (검색된 chunk 0개). sample_specs/ 데이터와 RAG 인덱스를 확인하세요.")
     validation = validate_specification(specification, requirement=requirement)
 
     return specification, validation, retrieved_docs
@@ -83,7 +88,7 @@ def retrieve_and_generate(
 def run_full_pipeline(
     user_text: Optional[str] = None,
     selection: Optional[Dict[str, Any]] = None,
-    db_path: str = "./chroma_db_specs",
+    db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
     model: Optional[str] = None,
 ) -> Dict[str, Any]:

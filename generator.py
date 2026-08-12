@@ -9,6 +9,8 @@ from langchain_chroma import Chroma
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.llms import Ollama
 
+from agent.paths import DEFAULT_CHROMA_DB_PATH
+
 
 # ==========================================
 # 1. Pydantic을 활용한 사양서 JSON 데이터 구조 정의
@@ -30,7 +32,7 @@ class SpecDocumentData(BaseModel):
 # 2. 사양서 데이터 생성기 클래스
 # ==========================================
 class SpecGenerator:
-    def __init__(self, db_path: str = "./chroma_db_specs", ollama_base_url: str = "http://localhost:11434"):
+    def __init__(self, db_path: str = DEFAULT_CHROMA_DB_PATH, ollama_base_url: str = "http://localhost:11434"):
         """
         RAG DB 및 Ollama LLM 초기화
         """
@@ -192,7 +194,7 @@ class SpecGenerator:
 if __name__ == "__main__":
     # 클래스 인스턴스화
     generator = SpecGenerator(
-        db_path="./chroma_db_specs",
+        db_path=DEFAULT_CHROMA_DB_PATH,
         ollama_base_url="http://localhost:11434"
     )
 
