@@ -61,20 +61,36 @@ spec-generator/
 ├── make_electrode_template.py  # [보조] template_electrode.pptx 자동 생성 스크립트
 ├── main.py                     # 4단계: FastAPI 웹 서버 및 UI 메인 실행 파일 (탭 3개: 제작/업로드/전극검사기AI)
 ├── agent/                      # 전극 검사기 사양서 자동 생성 AI Agent (신규, 함수 기반 파이프라인)
-│   ├── schemas.py               # RequirementSchema / SpecificationSchema (Pydantic)
+│   ├── schemas.py               # RequirementSchema / SpecificationSchema (Pydantic) — 변경 없음
 │   ├── ollama_client.py         # Ollama JSON Schema 구조화 출력 REST 클라이언트
 │   ├── requirement_parser.py    # 자연어/조건선택 -> RequirementSchema
 │   ├── requirement_validator.py # 누락 필드 탐지 + 확인 질문 생성 (추측 금지)
 │   ├── spec_retriever.py        # 항목(행) 단위 RAG 검색 + 인덱서
 │   ├── spec_generator.py        # Requirement + 검색결과 -> SpecificationSchema
 │   ├── spec_validator.py        # Schema/Unit/Range/Logical/Source/Requirement 검증
-│   ├── pptx_electrode_builder.py# SpecificationSchema -> 9섹션 PPTX
+│   ├── pptx_electrode_builder.py# (기존 PPTX Generator, 변경 없음) 템플릿 있을 때 renderers/pptx_renderer.py가 재사용
 │   ├── pipeline.py              # 위 모듈을 순서대로 호출하는 오케스트레이션
 │   └── routes.py                 # /api/agent/* FastAPI 라우트
+├── renderers/                   # [신규] Specification JSON -> {Markdown, HTML, PPTX} (Single Source of Truth)
+│   ├── common.py                 # 세 포맷이 공유하는 섹션/필드 모델 (라벨-필드 매핑의 유일한 소스)
+│   ├── markdown_renderer.py      # render_markdown(spec) -> specification.md
+│   ├── html_renderer.py          # render_html(spec) -> specification.html (외부 CDN 미사용)
+│   └── pptx_renderer.py          # render_pptx(spec) -> PPTX (템플릿 있으면 재사용, 없으면 코드로 기본 생성)
+├── converters/                   # [신규] PPTX <-> Markdown/Specification 변환
+│   ├── document_ir.py             # PPTX 파싱용 중간 표현 (Document/Slide/Table)
+│   ├── pptx_to_markdown.py        # 임의 PPTX -> Markdown (문서 보존용, Specification과 무관)
+│   └── markdown_to_spec.py        # 표준 Specification Markdown -> SpecificationSchema
+├── templates/adapters/           # [신규] 회사별 PPT 템플릿 연결 확장점 (실제 템플릿 파일은 git에 넣지 않음)
+│   ├── base.py                    # TemplateAdapter 인터페이스
+│   └── env_path_adapter.py        # PPT_TEMPLATE_PATH 환경변수로 템플릿 경로를 주는 기본 어댑터
+├── docs/
+│   └── SPECIFICATION_MARKDOWN_FORMAT.md  # 표준 Markdown 포맷 문서
+├── cli_commands.py               # [신규] `python main.py render-md/render-html/render-pptx/pptx-to-md/md-to-spec` 구현
 ├── tests/
-│   └── test_agent_pipeline.py   # Agent 파이프라인 pytest 테스트 (요청서 18절 테스트 케이스 3종 포함)
+│   ├── test_agent_pipeline.py   # Agent 파이프라인 pytest 테스트 (기존, 변경 없음 — 계속 통과해야 함)
+│   └── test_renderers.py         # [신규] 렌더러/변환기 테스트 (Test 1~10 + 회귀 테스트)
 ├── IMPLEMENTATION_PLAN.md      # 기존 코드 분석 + Agent 설계 문서 (작업 시작 전 필독)
-├── .env.example                 # 환경변수 설정 예시 (복사해서 .env로 사용)
+├── .env.example                 # 환경변수 설정 예시 (복사해서 .env로 사용, PPT_TEMPLATE_PATH 포함)
 ├── requirements.txt             # 의존성 패키지 목록
 └── README.md                    # 프로젝트 안내 문서
 ```
@@ -237,6 +253,77 @@ python -m pytest tests/ -v
 ```
 
 **사내 서버에서 반드시 추가로 확인할 것**: `qwen2.5:14b`가 실제로 JSON Schema 구조화 출력 요청 시 얼마나 정확하게 필드를 채우는지, 그리고 응답 속도(사양서 1건 생성에 걸리는 시간)는 이 환경에서 검증할 수 없었습니다.
+
+## 🧩 Specification JSON 중심 아키텍처 (Markdown / HTML / PPTX)
+
+**PPTX 템플릿 파일은 회사 기밀정보를 포함할 수 있어 이 저장소에 커밋하지 않습니다.**
+그래서 PPTX를 "Specification의 원본 포맷"이 아니라 "여러 출력 포맷 중 하나"로 바꿨습니다. 시스템의
+Single Source of Truth는 항상 **Specification JSON**이고, Markdown/HTML/PPTX는 전부 거기서
+파생되는 독립적인 렌더러입니다.
+
+```
+Requirement Parser → Specification Generator → Specification Validator → Specification JSON
+                                                                                │
+                                                          ┌─────────────────────┼─────────────────────┐
+                                                          ▼                     ▼                     ▼
+                                                       Markdown                HTML                 PPTX
+                                                  (renderers/          (renderers/          (renderers/
+                                                 markdown_renderer)    html_renderer)      pptx_renderer)
+```
+
+**PPTX ↔ AI ↔ PPTX 처럼 포맷을 반복 변환해서 데이터를 유지하는 구조는 의도적으로 만들지 않았습니다.**
+항상 Specification JSON을 중심에 두고 각 포맷이 거기서 한 방향으로 파생됩니다.
+
+### 언제든 템플릿 없이도 전체가 동작합니다
+
+`renderers/pptx_renderer.py`는 `PPT_TEMPLATE_PATH`(또는 `.env`)가 가리키는 파일이 있으면 기존
+`agent/pptx_electrode_builder.py`(변경 없음)를 그대로 써서 회사 양식대로 PPTX를 만들고, 없으면
+코드로 즉석에서 기본 PPTX를 생성합니다. **Schema 검증 / Markdown 생성 / HTML 생성 / Agent
+파이프라인 전체는 템플릿 파일의 존재 여부와 무관하게 항상 정상 동작합니다.**
+
+> **PPTX template files may contain company confidential information.**
+> **Do not commit company templates to the repository.**
+> **Configure the template path locally using `PPT_TEMPLATE_PATH`.**
+
+```env
+# .env (커밋하지 않음)
+PPT_TEMPLATE_PATH=C:\Company\Templates\electrode_spec.pptx
+```
+
+여러 회사/여러 템플릿을 구분해서 연결해야 한다면 `templates/adapters/`에 `TemplateAdapter`를
+구현해서 확장할 수 있습니다 (`templates/adapters/env_path_adapter.py`가 가장 단순한 예시).
+
+### CLI
+
+웹 UI 없이 터미널에서 Specification JSON을 바로 렌더링/변환할 수 있습니다. `python main.py`를
+인자 없이 실행하면 기존과 동일하게 웹 서버가 뜨고, 아래 서브커맨드를 붙이면 그 명령만 실행하고
+종료합니다 (서버는 뜨지 않습니다).
+
+```powershell
+python main.py render-md specification.json        # -> specification.md
+python main.py render-html specification.json      # -> specification.html
+python main.py render-pptx specification.json      # -> specification.pptx (템플릿 있으면 사용)
+python main.py render-pptx specification.json --template C:\Company\Templates\electrode_spec.pptx
+python main.py pptx-to-md sample_specs/some_file.pptx   # 임의 PPTX 내용을 마크다운으로 보존
+python main.py md-to-spec specification.md          # 표준 포맷 마크다운 -> specification.json
+```
+
+### 표준 Markdown 포맷
+
+`renderers/markdown_renderer.py`가 만들고 `converters/markdown_to_spec.py`가 되돌리는 포맷은
+`docs/SPECIFICATION_MARKDOWN_FORMAT.md`에 문서화되어 있습니다. **임의의 마크다운을 일반적으로
+파싱하지 않고, 우리가 정의한 이 표준 포맷만 대상으로 합니다.**
+
+### PPTX → Markdown (문서 보존용, Specification과는 별개)
+
+기존에 흩어져 있는 임의 형식의 PPTX를 읽어보기 좋은 텍스트로 보존하고 싶을 때 씁니다 (제목/텍스트/표/
+슬라이드 노트/슬라이드 번호를 보존하고, 이미지는 메타데이터만 남깁니다 — OCR/의미분석은 범위 밖).
+`preprocess_specs.py`(기존, LLM으로 Specification을 추출)와는 다른 목적입니다 — 이건 LLM 없이
+순수 파싱만 합니다.
+
+```powershell
+python main.py pptx-to-md sample_specs/spec_electrode_coating_thickness.pptx
+```
 
 ## 🛠️ 자주 발생하는 오류 및 해결 방법
 
