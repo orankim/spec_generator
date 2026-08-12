@@ -1,0 +1,456 @@
+{
+  "equipment": {
+    "name": "전극 코팅 두께/표면결함 통합 검사기",
+    "equipment_type": "In-line Optical Inspection System",
+    "manufacturer": "ACME Metrology",
+    "model": "EI-3000",
+    "version": "v2.1",
+    "application": "이차전지 전극(양극/음극) 코팅 공정 인라인 검사",
+    "inspection_method": "Non-contact Laser Triangulation + Line-scan Camera",
+    "measurement_principle": "laser",
+    "inline_offline": "inline"
+  },
+  "inspection_target": {
+    "material": "양극 전극",
+    "product_type": "Coated Electrode Sheet",
+    "electrode_type": "Cathode (NCM)",
+    "width_mm": 500.0,
+    "length_mm": null,
+    "thickness_um": 120.0,
+    "coating_thickness_um": 60.0,
+    "substrate": "Aluminum Foil",
+    "inspection_direction": "Web (MD) + Cross Web (CD)",
+    "line_speed_mm_s": {
+      "value": 1500.0,
+      "unit": "mm/s",
+      "operator": "<=",
+      "status": "VERIFIED",
+      "confidence": 0.95,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 3,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": "vendor_document"
+      }
+    }
+  },
+  "inspection_items": [
+    "thickness",
+    "coating",
+    "surface_defect"
+  ],
+  "inspection_requirements": {
+    "inspection_area": "Full Width",
+    "inspection_width_mm": 500.0,
+    "inspection_length_mm": null,
+    "sampling_interval": {
+      "value": 2.0,
+      "unit": "mm",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": 0.9,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 4,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "inspection_frequency": "100% Inline",
+    "inspection_mode": "Continuous"
+  },
+  "measurement_performance": {
+    "measurement_range": {
+      "value": 500.0,
+      "unit": "um",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 5,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "resolution_um": {
+      "value": 0.1,
+      "unit": "um",
+      "operator": "<=",
+      "status": "VERIFIED",
+      "confidence": 0.95,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 5,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "accuracy_um": {
+      "value": 0.5,
+      "unit": "um",
+      "operator": "<=",
+      "status": "VERIFIED",
+      "confidence": 0.9,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 5,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "repeatability_um": {
+      "value": 0.3,
+      "unit": "um",
+      "operator": "<=",
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 5,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "reproducibility_um": {
+      "value": 0.4,
+      "unit": "um",
+      "operator": null,
+      "status": "INFERRED",
+      "confidence": 0.6,
+      "source": null
+    },
+    "linearity": {
+      "value": 0.2,
+      "unit": "%",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 5,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "measurement_speed": null,
+    "sampling_rate": {
+      "value": 10.0,
+      "unit": "kHz",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 5,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    }
+  },
+  "spatial_performance": {
+    "x_range": {
+      "value": 500.0,
+      "unit": "mm",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 6,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "y_range": null,
+    "z_range": null,
+    "x_resolution_um": null,
+    "y_resolution_um": {
+      "value": 50.0,
+      "unit": "um",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 6,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "z_resolution_um": null,
+    "fov_mm": {
+      "value": 100.0,
+      "unit": "mm",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 6,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "working_distance": {
+      "value": 150.0,
+      "unit": "mm",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 6,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "pixel_size": {
+      "value": 7.0,
+      "unit": "um",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 6,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "point_spacing": null,
+    "profile_spacing": null,
+    "sampling_interval_um": null
+  },
+  "inspection_performance": {
+    "scan_speed_mm_s": {
+      "value": 1500.0,
+      "unit": "mm/s",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 3,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "line_speed_mm_s": {
+      "value": 1500.0,
+      "unit": "mm/s",
+      "operator": "<=",
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 3,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "measurement_speed": null,
+    "tact_time_s": null,
+    "inspection_width_mm": {
+      "value": 500.0,
+      "unit": "mm",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 4,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    }
+  },
+  "defect_detection": {
+    "defect_detection": true,
+    "minimum_defect_size_um": {
+      "value": 20.0,
+      "unit": "um",
+      "operator": "<=",
+      "status": "VERIFIED",
+      "confidence": 0.85,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 7,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "defect_types": [
+      "pinhole",
+      "scratch",
+      "coating_defect",
+      "particle"
+    ],
+    "detection_resolution": {
+      "value": 10.0,
+      "unit": "um",
+      "operator": null,
+      "status": "INFERRED",
+      "confidence": 0.5,
+      "source": null
+    },
+    "defect_detection_accuracy": {
+      "value": 98.5,
+      "unit": "%",
+      "operator": null,
+      "status": "VERIFIED",
+      "confidence": null,
+      "source": {
+        "document": "vendor_spec.pptx",
+        "page": null,
+        "slide": 7,
+        "section": null,
+        "paragraph": null,
+        "table": null,
+        "source_type": null
+      }
+    },
+    "false_positive_rate": {
+      "value": 1.5,
+      "unit": "%",
+      "operator": null,
+      "status": "INFERRED",
+      "confidence": 0.4,
+      "source": null
+    },
+    "false_negative_rate": null,
+    "classification": true
+  },
+  "optical_system": {
+    "light_source": "Red Laser Diode",
+    "wavelength": "650nm",
+    "spectral_range": null,
+    "optical_method": "Laser Triangulation",
+    "interferometry": false,
+    "reflectometry": false,
+    "oct": false,
+    "laser": true,
+    "sensor_type": "CMOS Line-scan",
+    "camera": "8K Line-scan Camera",
+    "camera_resolution": "8192 x 1",
+    "lens": "Telecentric",
+    "objective": null,
+    "working_distance": "150mm"
+  },
+  "system": {
+    "automation_level": "Fully Automatic",
+    "stage": "Motorized X-axis Scan Stage",
+    "motion_system": null,
+    "sensor": null,
+    "controller": "Industrial PC + PLC",
+    "pc": "Industrial PC (Windows 11 IoT)",
+    "software": "ACME Vision Suite",
+    "display": "21.5-inch Touch Monitor",
+    "power": "AC 220V, 3kW",
+    "air": "0.5MPa, Clean Dry Air",
+    "cooling": "Forced Air Cooling",
+    "mechanical_configuration": null,
+    "data_output": "CSV, Image (PNG), PDF Report"
+  },
+  "interfaces": {
+    "plc": true,
+    "mes": true,
+    "opc_ua": true,
+    "ethernet_ip": false,
+    "profinet": false,
+    "modbus": false,
+    "ethernet": true,
+    "digital_io": true,
+    "analog_io": false,
+    "api": true,
+    "data_format": "JSON, CSV",
+    "data_storage": "Local SSD + Network Share",
+    "network": "Gigabit Ethernet",
+    "other_interfaces": []
+  },
+  "environment": {
+    "operating_temperature": "15~30 degC",
+    "storage_temperature": "-10~50 degC",
+    "humidity": "40~70%RH (non-condensing)",
+    "installation_space": "2000mm(W) x 1500mm(D) x 1800mm(H)",
+    "power": "AC 220V, 50/60Hz, 3kW",
+    "vibration_requirement": "< 0.1G (installation site)",
+    "dust": "Class 1000 or cleaner recommended",
+    "installation_environment": "Indoor, coating/calendering line",
+    "clean_room": null
+  },
+  "safety": {
+    "safety_standard": "CE, KC",
+    "laser_class": "Class 2",
+    "interlock": true,
+    "emergency_stop": true,
+    "safety_sensor": true,
+    "protective_cover": true
+  },
+  "notes": [
+    "본 예시는 실제 고객사 사양서가 아닌, 공개 가능한 가상의 예시 데이터입니다.",
+    "Reproducibility는 원본 문서에 명시되지 않아 Repeatability로부터 추정(INFERRED)한 값입니다."
+  ],
+  "assumptions": [
+    "Line speed는 코팅 공정 표준 속도(1500mm/s)를 기준으로 가정했습니다."
+  ],
+  "sources": [
+    "vendor_spec.pptx"
+  ],
+  "needs_confirmation": [
+    "measurement_performance.reproducibility_um",
+    "defect_detection.detection_resolution",
+    "defect_detection.false_positive_rate"
+  ]
+}
