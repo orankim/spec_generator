@@ -134,7 +134,11 @@ def _validate_sources(spec: SpecificationSchema) -> List[ValidationIssue]:
         if sourced.status == "UNKNOWN":
             issues.append(ValidationIssue(level="warning", field=path, message="값은 있는데 status가 UNKNOWN입니다(근거 불명확)."))
         elif sourced.status == "VERIFIED" and not (sourced.source and sourced.source.document):
-            issues.append(ValidationIssue(level="warning", field=path, message="status가 VERIFIED인데 출처(source.document)가 비어 있습니다."))
+            # SpecGenerator._verify_sourced_numbers()가 VERIFIED로 표시된 값을 검색된
+            # 문서와 대조해 확인 못하면 INFERRED로 자동 강등하므로, 이 경로가 살아있다면
+            # 생성 파이프라인을 거치지 않고(API로 직접) VERIFIED를 주장하는 것이다 —
+            # 경고가 아니라 오류로 막는다(요청서: source 없는 VERIFIED를 더 이상 허용하지 않음).
+            issues.append(ValidationIssue(level="error", field=path, message="status가 VERIFIED인데 출처(source.document)가 비어 있습니다."))
         elif sourced.status == "INFERRED":
             issues.append(ValidationIssue(level="info", field=path, message="이 값은 추정(INFERRED)된 값입니다. 생성 전 사용자 확인이 필요합니다."))
     return issues

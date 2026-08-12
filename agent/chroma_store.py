@@ -67,11 +67,18 @@ class SimpleChromaStore:
             docs_and_scores.append((Document(page_content=text, metadata=meta or {}), dist))
         return docs_and_scores
 
-    def get(self, limit: Optional[int] = None, include: Optional[List[str]] = None) -> Dict[str, Any]:
-        """raw chromadb Collection.get()에 그대로 위임 (디버그 스크립트용)."""
+    def get(
+        self,
+        limit: Optional[int] = None,
+        include: Optional[List[str]] = None,
+        where: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """raw chromadb Collection.get()에 그대로 위임 (디버그 스크립트용/메타데이터 필터 조회용)."""
         kwargs: Dict[str, Any] = {}
         if limit is not None:
             kwargs["limit"] = limit
         if include is not None:
             kwargs["include"] = include
+        if where is not None:
+            kwargs["where"] = where
         return self._collection.get(**kwargs)

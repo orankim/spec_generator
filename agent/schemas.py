@@ -53,6 +53,9 @@ class SourceRef(BaseModel):
     section: Optional[str] = None
     paragraph: Optional[str] = None
     table: Optional[str] = None
+    chunk_id: Optional[int] = Field(
+        default=None, description="RAG chunk 순번 (build_rag_ollama.py가 markdown 소스에 부여, PPTX 소스는 None)"
+    )
     source_type: Optional[str] = Field(
         default=None, description="문서 종류 (예: vendor_document, internal_spec, datasheet)"
     )
