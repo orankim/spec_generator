@@ -1,45 +1,61 @@
-# ⚙️ 전극 검사기 사양서 자동 생성 AI (Spec PPTX Generator)
+# ⚙️ 전극 검사기 사양서 자동 생성 AI Agent
 
-로컬 LLM과 RAG(검색 증강 생성) 기술을 활용해, 자연어 또는 조건 선택으로 전극 검사기
-요구사항을 입력하면 사내 사양 데이터(Markdown 기반 RAG)를 검색해 근거를 추적할 수 있는
-표준 Specification을 만들고, 자동 검증을 거쳐 Markdown/HTML/PPTX 사양서를 생성해 주는
-폐쇄망 전용 웹 애플리케이션입니다. 사용자에게 노출되는 기능은 **전극 검사기 AI**(`/agent`)
-하나입니다 — 아래 "🔬 전극 검사기 사양서 자동 생성 AI Agent" 절 참고.
+로컬 LLM(Ollama)과 RAG(검색 증강 생성)를 활용해, 자연어(또는 조건 선택)로 전극 검사기
+요구사항을 입력하면 사내 사양 데이터(Markdown 기반)를 검색하고, 후보 장비의 hard
+requirement(측정 범위/정확도) 충족 여부를 **Python 코드로 결정론적으로 판정**한 뒤,
+근거(source)를 추적할 수 있는 표준 Specification을 생성해 PPTX로 출력해 주는 폐쇄망
+전용 웹 애플리케이션입니다.
+
+사용자에게 노출되는 기능은 **전극 검사기 AI**(`/agent`) 하나뿐입니다. 예전에 있었던
+"사양서 제작하기"(`/`)/"사양서 업로드하기"(`/upload`) 탭은 제거되었습니다 — 아래
+"📂 프로젝트 폴더 구조" 절의 레거시 모듈 안내 참고.
 
 ## 📌 주요 특징
 
-- **100% On-Premise / 폐쇄망 지원**: 외부 인터넷 연결 및 데이터 유출 없이 사내 서버 PC에서 독자 구동
-- **RAG 기반 사양 정교화**: 사내 사양서(Markdown, 필요 시 PPTX도 함께)를 Vector DB에 저장하여 전문 엔지니어링 용어 및 수치 반영
-- **Requirement/Specification 분리 + Source 추적**: 사용자가 원하는 조건과 장비가 실제 제공하는 사양을 별도로 유지하고, 값마다 USER_DEFINED/VERIFIED/INFERRED/UNKNOWN 상태와 근거 문서를 남긴다 (LLM이 근거 없는 값을 임의로 만들지 않는다)
-- **Structured JSON 중심 설계**: Specification JSON을 Single Source of Truth로 삼아 Markdown/HTML/PPTX를 각각 독립적으로 생성 (PPTX는 LLM 환각/레이아웃 깨짐 방지를 위해 python-pptx로 합성)
-- **전극 검사기 사양서 AI Agent**: 자연어(또는 조건 선택)로 요구사항을 입력하면, 부족한 정보를 먼저 되물어 확인한 뒤 사내 사양서를 검색해 근거를 추적할 수 있는 표준 Specification JSON을 만들고, 자동 검증을 거쳐 사양서를 생성한다 (`/agent`, 자세한 설계는 아래 "전극 검사기 AI Agent" 절과 `IMPLEMENTATION_PLAN.md` 참고)
+- **100% On-Premise / 폐쇄망 지원**: 외부 인터넷 연결 없이 사내 서버 PC(Ollama)에서 독자 구동. `agent/chroma_store.py`가 `chromadb`를 직접 사용해(`langchain_chroma` 미사용) Windows 사내 PC의 애플리케이션 제어 정책이 차단하는 `xxhash` 네이티브 DLL 의존성을 원천적으로 회피합니다 (아래 "폐쇄망 Windows PC에서 xxhash DLL 차단 문제" 절 참고).
+- **Markdown 기반 RAG**: 사내 사양서 원본은 `sample_specs/*.md` — heading(`#`/`##`) 구조를 그대로 chunk 경계로 사용해 항목 단위 검색 정확도를 높입니다. PPTX 원본도 함께 스캔할 수 있습니다(레거시 지원).
+- **결정론적 요구사항 구조화**: "0~200 μm 측정 범위와 ±1 μm 이하 정확도" 같은 표현을 LLM 품질에 의존하지 않고 정규식/단위 파싱(`agent/units.py`)으로 직접 구조화합니다(`agent/requirement_parser.py`). 소형 LLM이 이 값을 놓쳐도 코드가 보강합니다.
+- **Hard Requirement PASS/FAIL을 LLM이 아니라 Python 코드로 판정**: `agent/candidate_matcher.py`가 RAG 검색 결과를 문서(장비) 단위로 그룹화하고, 각 후보의 측정 범위/정확도를 원문에서 직접 추출해 요구 조건을 만족하는지(`agent/units.py`의 순수 함수) 판정합니다. PASS 후보가 최종 사양 생성에 우선 반영됩니다.
+- **Requirement/Specification 분리 + Source 추적**: 사용자가 원하는 조건(Requirement)과 장비가 실제 제공하는 사양(Specification)을 분리 유지하고, 값마다 `USER_DEFINED`/`VERIFIED`/`INFERRED`/`UNKNOWN` 상태와 근거 문서(`source.document`/`chunk_id`)를 남깁니다. LLM이 `VERIFIED`라고 주장해도 실제 검색 문서와 대조해 근거가 없으면 자동으로 `INFERRED`로 강등합니다.
+- **요구값 vs 장비 실측값 구분 표시**: 사용자가 요구한 정확도(`accuracy_um`, 보호됨)와 후보 장비에서 실제로 확인된 정확도(`equipment_accuracy_um`)를 별도 필드로 분리해, 화면에 "요구 정확도"/"장비 정확도"/"판정(PASS/FAIL)"을 명확히 구분해서 보여줍니다.
+- **자동 검증**: Schema/단위/범위/논리/근거/요구사항 충족 여부를 `agent/spec_validator.py`가 검사해 결과를 화면에 보여줍니다 (파이프라인을 막지 않고 사용자가 판단하도록 보여주기만 합니다).
 
-## 🏗️ 시스템 아키텍처
+## 🏗️ 시스템 아키텍처 / 파이프라인
 
 ```
 [사내 사용자 PC (Web Browser)]
-         │
-         ▼ (사내 LAN 접속: http://<서버_IP>:8000, 접속 시 /agent로 자동 이동)
-┌────────────────────────────────────────────────────────┐
-│                      사내 서버 PC                       │
-│                                                        │
-│   [FastAPI Web Server (main.py)]                       │
-│         │                                              │
-│         └──► [전극 검사기 AI Agent (agent/)]             │
-│                   │                                    │
-│                   ├─► [Chroma DB (chroma_db_specs)]     │
-│                   ├─► [Ollama (qwen2.5:14b / bge-m3)]   │
-│                   └─► [Markdown/HTML/PPTX Renderer]     │
-│                             │                           │
-│                             └─► [Template (선택, PPTX 출력 시)]│
-└────────────────────────────────────────────────────────┘
+         │  http://<서버_IP>:8000  (접속 시 자동으로 /agent 로 이동)
+         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                          사내 서버 PC                              │
+│  [FastAPI Web Server (main.py)] ──► [/agent 페이지 + /api/agent/*]  │
+│                                          │                         │
+│   1. RequirementParser   (agent/requirement_parser.py)             │
+│        └ 자연어(LLM) + 결정론적 정규식 추출(measurement_range/accuracy)│
+│   2. RequirementValidator (agent/requirement_validator.py)         │
+│        └ 부족한 정보는 화면에서 먼저 되물음 (추측 금지)                │
+│   3. SpecRetriever        (agent/spec_retriever.py)                 │
+│        └ 의미 검색 + raw_text 질의 + range_boost + identity_chunk    │
+│   4. CandidateMatcher     (agent/candidate_matcher.py)               │
+│        └ 후보 장비 그룹화 + hard requirement PASS/FAIL 판정(Python)  │
+│   5. SpecificationGenerator (agent/spec_generator.py)                │
+│        └ LLM 보강 + 후보 실측값 반영 + source 검증/강등               │
+│   6. SpecificationValidator (agent/spec_validator.py)                │
+│        └ 자동 검증 + Hard Requirement Report(요구 vs 실측 PASS/FAIL) │
+│   7. ElectrodeSpecPPTXBuilder (agent/pptx_electrode_builder.py)      │
+│        └ PPTX 사양서 생성 (generated_files/)                        │
+│                                                                      │
+│   [Chroma DB (chroma_db_specs, agent/chroma_store.py)]               │
+│   [Ollama (LLM 추론 + bge-m3 임베딩)]                                │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-> `generator.py`(SpecGenerator)/`pptx_builder.py`(PPTXBuilder)는 예전 "사양서 제작하기"
-> 기능이 쓰던 모듈로, 사용자 화면에서는 제거됐지만 파일은 삭제하지 않았습니다.
-> `preprocess_specs.py`(PPTX 전처리 스크립트)가 계속 사용하고, `pptx_builder.py`는
+> `generator.py`(SpecGenerator)/`pptx_builder.py`(PPTXBuilder)/`preprocess_specs.py`는
+> 예전 "사양서 제작하기"/"사양서 업로드하기" 기능이 쓰던 레거시 모듈입니다. 사용자
+> 화면에서는 제거됐지만 파일은 삭제하지 않았습니다 — `pptx_builder.py`는
 > `agent/pptx_electrode_builder.py`(전극 검사기 AI의 PPTX 출력)가 내부적으로 재사용하는
-> 공통 모듈입니다.
+> 공통 모듈이고, `renderers/`/`converters/`(범용 Specification JSON ↔ Markdown/HTML/PPTX
+> 변환 도구, CLI 전용)도 별도로 유지됩니다.
 
 ## 🖥️ 권장 서버 하드웨어 사양
 
@@ -54,248 +70,215 @@
 ## 📂 프로젝트 폴더 구조
 
 ```
-spec-generator/
-├── sample_specs/              # [입력] RAG 원본 사양서 폴더. 기본 형식은 Markdown(.md) — PPTX(.pptx)가 섞여 있어도 함께 인덱싱됨
-├── sample_specs_normalized/   # [생성] 전처리를 거쳐 표준 템플릿 형식으로 정규화된 PPTX 저장 폴더 (PPTX 원본을 쓸 때만 필요)
-├── chroma_db_specs/           # [생성] RAG용 Vector DB 저장 폴더
-├── generated_files/           # [생성] 사용자가 다운로드할 완성된 PPTX 저장 폴더
-├── .venv/                     # Python 가상환경 폴더
-├── template.pptx              # 마스터 PPTX 템플릿 파일 (범용 2슬라이드)
-├── template_electrode.pptx    # 전극 검사기 Agent 전용 9섹션 마스터 템플릿
-├── preprocess_specs.py        # 0단계: 형식이 제각각인 기존 사양서를 표준 템플릿으로 정규화(전처리)
-├── build_rag_ollama.py        # 1단계: 사양서 Markdown(기본)/PPTX(레거시) 파싱 및 Vector DB 구축 스크립트
-├── generator.py                # 2단계: RAG 검색 및 Ollama 기반 사양서 JSON 생성/추출 모듈
-├── pptx_builder.py             # 3단계: JSON 데이터를 PPTX 템플릿에 채워넣는 모듈
-├── make_template.py            # [보조] 테스트용 template.pptx 자동 생성 스크립트
-├── make_electrode_template.py  # [보조] template_electrode.pptx 자동 생성 스크립트
-├── main.py                     # 4단계: FastAPI 웹 서버 및 UI 메인 실행 파일 (탭 3개: 제작/업로드/전극검사기AI)
-├── agent/                      # 전극 검사기 사양서 자동 생성 AI Agent (신규, 함수 기반 파이프라인)
-│   ├── schemas.py               # RequirementSchema / SpecificationSchema (Pydantic) — 변경 없음
-│   ├── ollama_client.py         # Ollama JSON Schema 구조화 출력 REST 클라이언트
-│   ├── requirement_parser.py    # 자연어/조건선택 -> RequirementSchema
-│   ├── requirement_validator.py # 누락 필드 탐지 + 확인 질문 생성 (추측 금지)
-│   ├── spec_retriever.py        # 항목(행) 단위 RAG 검색 + 인덱서
-│   ├── spec_generator.py        # Requirement + 검색결과 -> SpecificationSchema
-│   ├── spec_validator.py        # Schema/Unit/Range/Logical/Source/Requirement 검증
-│   ├── pptx_electrode_builder.py# (기존 PPTX Generator, 변경 없음) 템플릿 있을 때 renderers/pptx_renderer.py가 재사용
-│   ├── pipeline.py              # 위 모듈을 순서대로 호출하는 오케스트레이션
-│   └── routes.py                 # /api/agent/* FastAPI 라우트
-├── renderers/                   # [신규] Specification JSON -> {Markdown, HTML, PPTX} (Single Source of Truth)
-│   ├── common.py                 # 세 포맷이 공유하는 섹션/필드 모델 (라벨-필드 매핑의 유일한 소스)
-│   ├── markdown_renderer.py      # render_markdown(spec) -> specification.md
-│   ├── html_renderer.py          # render_html(spec) -> specification.html (외부 CDN 미사용)
-│   └── pptx_renderer.py          # render_pptx(spec) -> PPTX (템플릿 있으면 재사용, 없으면 코드로 기본 생성)
-├── converters/                   # [신규] PPTX <-> Markdown/Specification 변환
-│   ├── document_ir.py             # PPTX 파싱용 중간 표현 (Document/Slide/Table)
-│   ├── pptx_to_markdown.py        # 임의 PPTX -> Markdown (문서 보존용, Specification과 무관)
-│   └── markdown_to_spec.py        # 표준 Specification Markdown -> SpecificationSchema
-├── templates/adapters/           # [신규] 회사별 PPT 템플릿 연결 확장점 (실제 템플릿 파일은 git에 넣지 않음)
-│   ├── base.py                    # TemplateAdapter 인터페이스
-│   └── env_path_adapter.py        # PPT_TEMPLATE_PATH 환경변수로 템플릿 경로를 주는 기본 어댑터
+spec_generator/
+├── sample_specs/               # [입력] RAG 원본 사양서 폴더. 기본 형식은 Markdown(.md) — heading(#/##) 구조를 chunk 경계로 사용
+├── chroma_db_specs/            # [생성] RAG용 Vector DB 저장 폴더 (agent/paths.py 기준 저장소 루트 절대경로)
+├── generated_files/            # [생성] 사용자가 다운로드할 완성된 PPTX 저장 폴더
+├── template_electrode.pptx     # (선택) 전극 검사기 Agent 전용 마스터 템플릿 — 없어도 python-pptx로 기본 생성됨
+├── build_rag_ollama.py         # RAG Vector DB 구축 스크립트 (Markdown 우선, PPTX도 함께 스캔)
+├── debug_rag.py                # RAG 검색 문제(0개 검색 등) 독립 진단 스크립트
+├── scripts/
+│   └── rag_diagnostics.py      # RAG 빌드↔검색 설정 일치 여부 진단 CLI
+├── main.py                     # FastAPI 웹 서버 + UI (/agent 단일 기능)
+├── agent/                      # 전극 검사기 사양서 자동 생성 AI Agent (함수 기반 파이프라인, LangChain Agent 미사용)
+│   ├── schemas.py                 # RequirementSchema / SpecificationSchema (Pydantic) — SourcedNumber/SourcedRange로 근거 추적
+│   ├── units.py                   # 단위 변환/파싱/hard requirement PASS·FAIL 판정 (순수 함수, LLM 미사용)
+│   ├── paths.py                   # cwd 무관 저장소 루트 기준 경로 상수 (DB 경로 불일치 버그 방지)
+│   ├── chroma_store.py            # chromadb 직접 래핑 (langchain_chroma 미사용 — xxhash DLL 문제 회피)
+│   ├── ollama_client.py           # Ollama JSON Schema 구조화 출력 REST 클라이언트
+│   ├── requirement_parser.py      # 자연어/조건선택 -> RequirementSchema (LLM + 결정론적 수치 추출 + hallucination 필터)
+│   ├── requirement_validator.py   # 누락 필드 탐지 + 확인 질문 생성 (추측 금지)
+│   ├── spec_retriever.py          # 다중 질의 RAG 검색 + range_boost + identity_chunk 보강
+│   ├── candidate_matcher.py       # 후보 장비 그룹화 + hard requirement PASS/FAIL 판정 (Python 코드, LLM 미개입)
+│   ├── spec_generator.py          # Requirement + 검색결과 + 후보 판정 -> SpecificationSchema (source 검증/강등 포함)
+│   ├── spec_validator.py          # Schema/Unit/Range/Logical/Source 검증 + Hard/Compliance Report
+│   ├── pptx_electrode_builder.py  # SpecificationSchema -> PPTX (템플릿 있으면 사용, 없으면 기본 생성)
+│   ├── pipeline.py                # 위 모듈을 순서대로 호출하는 오케스트레이션
+│   └── routes.py                  # /api/agent/* FastAPI 라우트
+├── renderers/ , converters/ , templates/adapters/   # [범용, CLI 전용] Specification JSON ↔ Markdown/HTML/PPTX (agent/의 실제 웹 파이프라인과는 별개)
 ├── docs/
-│   └── SPECIFICATION_MARKDOWN_FORMAT.md  # 표준 Markdown 포맷 문서
-├── cli_commands.py               # [신규] `python main.py render-md/render-html/render-pptx/pptx-to-md/md-to-spec` 구현
-├── tests/
-│   ├── test_agent_pipeline.py   # Agent 파이프라인 pytest 테스트 (기존, 변경 없음 — 계속 통과해야 함)
-│   └── test_renderers.py         # [신규] 렌더러/변환기 테스트 (Test 1~10 + 회귀 테스트)
-├── IMPLEMENTATION_PLAN.md      # 기존 코드 분석 + Agent 설계 문서 (작업 시작 전 필독)
-├── .env.example                 # 환경변수 설정 예시 (복사해서 .env로 사용, PPT_TEMPLATE_PATH 포함)
+│   ├── SPECIFICATION_SCHEMA.md            # Requirement/Specification 스키마 문서
+│   └── SPECIFICATION_MARKDOWN_FORMAT.md   # 표준 Markdown 포맷 문서 (renderers/converters용)
+├── tests/                       # pytest 테스트 (Ollama 없이 임베딩만 스텁, 나머지는 실제 코드 경로 실행)
+├── generator.py / pptx_builder.py / preprocess_specs.py   # [레거시] 예전 "사양서 제작하기/업로드하기"가 쓰던 모듈, 삭제하지 않고 유지
+├── .env.example                 # 환경변수 설정 예시
 ├── requirements.txt             # 의존성 패키지 목록
-└── README.md                    # 프로젝트 안내 문서
+└── README.md
 ```
 
 ## 🚀 빠른 시작 가이드 (Quick Start)
 
-### 1. VS Code PowerShell 가상환경 세팅 및 패키지 설치
-
-**A. PowerShell 스크립트 실행 권한 허용 (최초 1회)**
-
-VS Code 터미널(PowerShell)에서 가상환경 활성화 스크립트가 막히지 않도록 권한을 허용합니다.
+### 1. 가상환경 세팅 및 패키지 설치 (Windows PowerShell 기준)
 
 ```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser   # 최초 1회
 
-**B. 가상환경 생성 및 활성화**
-
-```powershell
-# 프로젝트 폴더 이동 후 가상환경 생성
 python -m venv .venv
-
-# 가상환경 활성화 (PowerShell)
 .\.venv\Scripts\Activate.ps1
-```
 
-(성공 시 터미널 입력창 맨 앞에 `(.venv)` 표시가 생깁니다.)
-
-> 💡 **VS Code 자동 연동 팁**: `Ctrl + Shift + P` → `Python: Select Interpreter` 검색 → `.\.venv\Scripts\python.exe`를 선택해 두면 이후 터미널을 열 때마다 가상환경이 자동 활성화됩니다.
-
-**C. 필수 라이브러리 설치**
-
-`Fatal error in launcher` 같은 실행 파일 경로 오류를 방지하기 위해 `python -m pip` 형태로 설치합니다.
-
-```powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### 2. Ollama 모델 확인 (로컬 실행 중이어야 함)
+> 💡 `Fatal error in launcher` 오류가 나면 `pip` 대신 `python -m pip` 형태로 설치하세요.
 
-터미널에서 Ollama에 필수 모델이 들어있는지 확인합니다.
+### 2. Ollama 모델 확인
 
 ```powershell
 ollama list
 ```
 
-필수 모델: `qwen2.5:14b` (LLM 추론용), `bge-m3` (임베딩용)
+필수 모델: LLM 추론용 1개(예: `qwen2.5:14b`, 사내 PC 성능에 맞춰 `.env`의 `OLLAMA_MODEL`로 교체 가능) + 임베딩용 `bge-m3`.
 
-### 3. (선택) PPTX 템플릿 생성
+### 3. RAG 데이터 준비 (`sample_specs/*.md`)
 
-전극 검사기 AI(`/agent`)는 템플릿 없이도 동작합니다 (템플릿이 없으면 python-pptx로
-기본 PPTX를 즉석에서 생성합니다). 회사 지정 양식으로 PPTX를 출력하고 싶다면
-`PPT_TEMPLATE_PATH` 환경변수로 템플릿 경로를 지정하세요.
-
-```powershell
-python make_electrode_template.py   # 예시용 9섹션 템플릿 생성 (실제로는 사내 표준 템플릿으로 교체)
-```
-
-`make_template.py`(범용 `template.pptx`)는 `preprocess_specs.py`(기존 PPTX 사양서를
-표준 형식으로 정규화하는 스크립트)를 쓸 때만 필요합니다.
-
-```powershell
-python make_template.py
-```
-
-### 4. (필요 시) 기존 PPTX 사양서 전처리 — 표준 템플릿으로 정규화
-
-이 단계는 **원본 사양서가 PPTX일 때만** 필요합니다. Markdown 원본(권장, 아래 5번 참고)을
-쓴다면 건너뛰어도 됩니다. 사내에 흩어져 있던 기존 사양서 PPTX들은 레이아웃이 표준 양식과
-다른 경우가 대부분입니다. `sample_specs/`에 그 원본 파일들을 넣고 아래를 실행하면, 각
-파일의 내용을 LLM으로 읽어 표준 `template.pptx` 형식에 맞춰 재작성한 뒤
-`sample_specs_normalized/`에 저장합니다. (원본은 그대로 보존되며, 추출에 실패한 파일은
-건너뛰고 마지막에 실패 목록으로 안내합니다.)
-
-```powershell
-python preprocess_specs.py
-```
-
-- `--input` : 원본 PPTX 폴더 (기본값 `./sample_specs`)
-- `--output` : 정규화 결과 저장 폴더 (기본값 `./sample_specs_normalized`)
-
-### 5. RAG 데이터 준비
-
-RAG 원본 데이터는 **Markdown(.md)을 기본 형식**으로 한다. `sample_specs/` 폴더에 사양서
-Markdown 파일을 넣는다 (파일명은 자유 — `spec_01.md`처럼 번호를 매기거나
-`spec_electrode_coating_thickness.md`처럼 내용을 알 수 있는 이름을 써도 된다. `*.md`를
-전부 스캔하므로 이름 규칙에 의존하지 않는다).
-
-```
-sample_specs/
-├── spec_01.md
-├── spec_02.md
-├── ...
-└── spec_10.md
-```
-
-각 Markdown 파일은 heading으로 섹션/항목을 구분해서 작성한다 — `#`(H1)는 구분(카테고리),
-`##`(H2)는 개별 항목이며, `build_rag_ollama.py`가 이 구조를 그대로 chunk 경계로 사용한다
-(파일 전체를 하나의 chunk로 넣지 않는다).
+RAG 원본 데이터는 **Markdown(.md)이 기본 형식**입니다. `sample_specs/` 폴더에 사양서
+Markdown 파일을 넣습니다(파일명 자유, `*.md`를 전부 스캔). 각 파일은 `#`(H1, 구분)과
+`##`(H2, 개별 항목)로 섹션을 나눠 작성하면 `build_rag_ollama.py`가 그 구조를 그대로
+chunk 경계로 사용합니다(파일 전체를 한 chunk로 넣지 않습니다). 수치 성능은 표
+(`| Item | Specification |`) 형식으로 적으면 `agent/candidate_matcher.py`가 hard
+requirement 판정 시 표 행을 직접 파싱합니다.
 
 ```markdown
-# 기본 정보
-## 설비명
-전극 두께 검사기 XYZ-100
-## 제조사
-ACME Metrology
+# Equipment Specification
 
-# 측정 성능
-## 측정 범위
-0 ~ 200 μm
-## 정확도
-±0.5 μm
+## General
+- Manufacturer: OptiScan
+- Model: ES-200
+- Equipment Type: Electrode 3D Inspection System
 
-# 검사 성능
-## 검출 속도
-...
+## Measurement Performance
+
+| Item | Specification |
+|---|---|
+| Measurement Range (Z) | 0 ~ 200 μm |
+| Accuracy | ±1.0 μm |
 ```
 
-PPTX 원본을 계속 쓰고 싶다면 `sample_specs/`에 `.md`와 `.pptx`를 함께 두어도 된다 —
-`build_rag_ollama.py`는 두 형식을 모두 스캔해서 함께 인덱싱한다. 단, RAG 구축이 PPTX
-파일의 존재를 더 이상 요구하지 않는다 — `.md`만 있어도 정상 동작한다.
+PPTX 원본을 계속 쓰고 싶다면 `sample_specs/`에 `.md`와 `.pptx`를 함께 두어도 됩니다 —
+`build_rag_ollama.py`는 두 형식을 모두 스캔해서 함께 인덱싱합니다(단, RAG 구축이 더는
+PPTX 파일의 존재를 요구하지 않습니다).
 
-### 6. RAG Vector DB 구축
+### 4. RAG Vector DB 구축
 
 ```powershell
 python build_rag_ollama.py --input-dir sample_specs
 ```
 
-기존 DB를 지우고 완전히 새로 만들려면(예: PPTX를 삭제하고 Markdown만 남긴 뒤 재구축할 때):
+기존 DB를 지우고 새로 만들려면:
 
 ```powershell
 python build_rag_ollama.py --input-dir sample_specs --db-path ./chroma_db_specs --rebuild
 ```
 
 - `--input-dir` : 사양서 폴더 (`.md`/`.pptx` 모두 스캔, 기본값 `./sample_specs`)
-- `--db-path` : Vector DB 저장 폴더 (기본값 `./chroma_db_specs`)
-- `--rebuild` : 실행 전 기존 Vector DB를 삭제하고 새로 구축 (예: 오래된 `.pptx` 기반 인덱스가 섞여 있을 때)
+- `--db-path` : Vector DB 저장 폴더 (기본값 `./chroma_db_specs`, `agent/paths.py` 기준 저장소 루트 절대경로)
+- `--rebuild` : 실행 전 기존 Vector DB를 삭제하고 새로 구축
 
 임베딩 모델/Ollama 서버 주소는 `.env`의 `EMBEDDING_MODEL`/`OLLAMA_HOST`를 따르며,
-`agent/spec_retriever.py`(검색 쪽)와 반드시 같은 값을 공유한다 — 두 곳에 각자 하드코딩된
-값을 두지 않는다.
+`agent/spec_retriever.py`(검색 쪽)와 `agent.spec_retriever.get_embeddings()` 하나만
+공유합니다 — 두 곳에 각자 하드코딩된 값을 두면 벡터 공간이 어긋나 검색이 조용히
+실패하므로, 빌드/검색이 항상 동일한 설정을 쓰도록 강제되어 있습니다.
 
-### 7. Agent 실행 (사내망 서비스 개방)
+### 5. 서버 실행
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python main.py
+# 또는: python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
-
-(또는 기존 방식대로 `python main.py`도 동일하게 동작합니다.)
 
 - 서버 PC 접속: http://localhost:8000
 - 사내망 접속: http://<서버PC_IP_주소>:8000
 
-`http://localhost:8000`으로 접속하면 바로 **전극 검사기 AI**(`/agent`) 화면으로 이동합니다 —
-현재 사용자에게 노출되는 기능은 이것 하나뿐입니다. 자세한 사용법은 아래 절 참고.
+접속하면 바로 **전극 검사기 AI**(`/agent`) 화면으로 이동합니다.
 
-> 예전에는 "사양서 제작하기"(`/`)와 "사양서 업로드하기"(`/upload`) 탭도 있었지만, 전극
-> 검사기 AI 하나로 기능을 통합하면서 사용자 화면에서 제거했습니다. 두 기능이 쓰던
-> `generator.py`(SpecGenerator)/`pptx_builder.py`(PPTXBuilder) 모듈 자체는 삭제하지
-> 않았습니다 — `preprocess_specs.py`가 계속 사용하고, `pptx_builder.py`는
-> `agent/pptx_electrode_builder.py`(전극 검사기 AI의 PPTX 출력 기능)가 내부적으로
-> 재사용하는 공통 모듈입니다. RAG 학습용 사양서는 이제 업로드 화면이 아니라
-> `sample_specs/`에 Markdown 파일을 직접 넣고 `build_rag_ollama.py`로 색인합니다
-> (위 5~6번 절 참고).
-
-## 🔬 전극 검사기 사양서 자동 생성 AI Agent
-
-`/agent` 페이지에서 아래 순서로 동작합니다.
+## 🔬 전극 검사기 AI 사용 흐름
 
 ```
-자연어 입력 또는 조건 선택
+자연어 입력 (또는 조건 선택)
         ↓
-Requirement 확인 (AI가 이해한 내용을 먼저 보여줌)
+"AI가 이해한 요구사항" 확인 — 검사 대상/폭/검사 항목/측정 범위/요구 정확도/측정 방식/측정 원리
         ↓
 정보가 부족하면 추가 질문 → 답변 입력 → 재검증 (반복)
         ↓
-사내 사양서 RAG 검색 + Specification 생성
+사내 사양서 RAG 검색 → 후보 장비 hard requirement PASS/FAIL 판정 → Specification 생성
         ↓
-자동 검증 결과 + "AI 추정값" 확인 항목 표시
+자동 검증 결과 + 사용자 요구조건 검증(Hard Requirement PASS/FAIL) + "AI 추정값" 확인 항목 표시
         ↓
 PPTX 사양서 생성 (generated_files/electrode_inspection_spec_*.pptx)
 ```
 
-핵심 설계는 `IMPLEMENTATION_PLAN.md`에 자세히 기록되어 있으며, 요약하면:
+예를 들어 "0~200 μm 측정 범위와 ±1 μm 이하 정확도가 필요한 전극 검사기를 찾아줘."라고
+입력하면:
 
-- **Agent Framework 미사용**: LangChain/LangGraph 없이 `agent/` 아래 평범한 Python 함수 파이프라인(`RequirementParser → RequirementValidator → SpecRetriever → SpecificationGenerator → SpecificationValidator → PPTXBuilder`)으로 구현했습니다.
-- **LLM은 JSON만, PPTX는 파이썬이 생성**: `agent/ollama_client.py`가 Ollama의 네이티브 구조화 출력(JSON Schema 기반 `format`)을 사용해 Pydantic 스키마를 그대로 강제합니다. PPTX 생성은 `agent/pptx_electrode_builder.py`(순수 python-pptx)가 담당합니다.
-- **값을 추측하지 않음**: 사용자가 말하지 않은 값은 `null`로 남기고, 정보가 부족하면 화면에서 추가 질문을 먼저 던집니다. 사용자가 명시한 값은 이후 LLM이 절대 덮어쓰지 않습니다(코드로 강제).
-- **근거 추적**: 수치 성능 필드(정확도/분해능/결함크기 등)는 `{value, unit, source_type, source, confidence}` 구조로, 어떤 문서에서 가져왔는지 또는 AI가 추정한 값인지(`inferred`/`default`)를 함께 저장합니다. 추정값은 `needs_confirmation` 목록으로 모아 화면에서 확인을 요구합니다.
-- **자동 검증**: Schema/단위/범위/논리/근거/요구사항 충족 여부를 `agent/spec_validator.py`가 검사해 결과를 화면에 색상별로 보여줍니다 (막지는 않고, 사용자가 판단할 수 있게 보여주기만 합니다).
+**1단계 — AI가 이해한 요구사항**
 
-### 환경변수 설정
+```
+검사 대상: 음극        폭: 5 mm        검사 항목: thickness
+측정 범위: 0 ~ 200 μm   요구 정확도: ±1 μm 이하
+측정 방식: 미정         측정 원리: 미정
+```
 
-`.env.example`을 복사해 `.env`로 만들고 필요한 값을 채우세요 (없어도 아래 기본값으로 동작합니다).
+**3단계 — 생성된 사양서 + 요구조건 검증**
+
+```
+설비명: OptiScan ES-200
+측정 범위: 0 ~ 200 μm (VERIFIED, SPEC-001.md)
+요구 정확도: ±1 μm 이하        장비 정확도: 1 μm (VERIFIED, SPEC-001.md)
+
+사용자 요구조건 검증 (Hard Requirement)
+  [Measurement Range] 요구 범위 0~200um / 장비 범위 0~200um → PASS
+  [Accuracy]          요구 정확도 <= 1um / 장비 정확도 1um → PASS
+
+참고 문서: SPEC-001.md (검색된 chunk 29개)   ← 실제 근거가 있는 문서만 우선 표시
+```
+
+## 🧠 핵심 설계 원칙
+
+- **Agent Framework 미사용**: LangChain/LangGraph 없이 `agent/` 아래 평범한 Python 함수 파이프라인으로 구현했습니다(`agent/pipeline.py`).
+- **판단이 필요한 곳은 LLM이 아니라 코드로**:
+  - 측정 범위/정확도 구조화: `agent/units.py`의 정규식/단위 파싱(`parse_range_with_span`, `parse_value_unit_with_span`)이 raw_text에서 직접 추출합니다 — LLM이 놓쳐도 코드가 보강합니다(`agent/requirement_parser.py:apply_deterministic_extraction`).
+  - **Hard Requirement PASS/FAIL**: `agent/units.py:evaluate_hard_requirements`/`range_covers`가 "장비의 측정 범위가 요구 범위를 포함하는가", "장비의 정확도가 요구 조건을 만족하는가"를 순수 함수로 판정합니다. `agent/candidate_matcher.py`가 이 함수를 사용해 후보 장비를 PASS 우선으로 선정합니다 — LLM은 이 판정에 전혀 관여하지 않습니다.
+  - Source 검증: LLM이 `status="VERIFIED"`라고 주장해도, 실제 검색된 문서 원문에 그 수치가 있는지 코드로 재대조합니다(`agent/spec_generator.py:_verify_sourced_numbers`). 확인되지 않으면 `INFERRED`로 자동 강등됩니다.
+- **값을 추측하지 않음**: 사용자가 말하지 않은 값은 `null`로 남기고, 정보가 부족하면 화면에서 추가 질문을 먼저 던집니다(`agent/requirement_validator.py`). LLM이 사용자가 언급하지 않은 검사 항목(예: `surface_defect`)을 임의로 추가하면 raw_text 근거를 확인해 걸러냅니다.
+- **요구값과 실측값을 혼동하지 않음**: `measurement_performance.accuracy_um`(사용자가 요구한 값, `USER_DEFINED`로 보호되어 LLM이 덮어쓸 수 없음)과 `equipment_accuracy_um`(후보 장비에서 실제로 확인된 값, `VERIFIED`+근거 문서)은 서로 다른 필드입니다.
+- **근거 추적**: 수치 성능 필드는 `SourcedNumber{value, unit, operator, status, source, reasoning}` 구조로, 어떤 문서/chunk에서 가져왔는지(`source.document`/`chunk_id`) 또는 AI가 추정한 값인지(`INFERRED`, `reasoning` 포함)를 함께 저장합니다. 범위형 필드는 `SourcedRange{min, max, unit, status, source}`를 씁니다. 추정값은 `needs_confirmation` 목록으로 모아 화면에서 확인을 요구합니다.
+- **참고 문서는 실제 근거만**: `Specification.sources`(검색된 문서 전체)와 별도로 `Specification.primary_sources`(실제로 `VERIFIED`된 필드의 근거 문서만)를 계산해 UI에 우선 노출합니다 — 관련 없는 문서 10개를 무조건 나열하지 않습니다.
+
+## 🧩 Requirement / Specification 스키마 개요
+
+`agent/schemas.py` (자세한 필드 목록은 `docs/SPECIFICATION_SCHEMA.md` 참고):
+
+| 개념 | 역할 |
+| --- | --- |
+| `RequirementSchema` | 사용자가 원하는 조건. `target`(검사 대상), `inspection_items`, `measurement_range`(`RequirementRange: min/max/unit`), `accuracy`(`RequirementValue: value/unit/operator`) 등. `required_accuracy_um` 같은 레거시 float 필드는 `sync_legacy_fields()`로 구조화 필드와 항상 동기화됩니다. |
+| `SpecificationSchema` | 장비의 실제/제안 사양. `Status = USER_DEFINED \| VERIFIED \| INFERRED \| UNKNOWN` 4단계로 값의 신뢰도를 명시합니다. |
+| `SourcedNumber` / `SourcedRange` | 근거가 있는 수치/범위 필드. `source: SourceRef{document, chunk_id, section, ...}`로 어느 문서의 어느 chunk에서 왔는지 추적합니다. |
+| `CandidateEquipment` / `CandidateFieldMatch` | `agent/candidate_matcher.py`가 만드는 후보 장비 단위 평가 결과. Hard Requirement 항목별 PASS/FAIL/UNKNOWN과 근거를 담습니다. |
+| `ComplianceRecord` | Requirement vs Specification 항목별 비교 결과(`agent/spec_validator.py:build_hard_requirement_report`). `/api/agent/generate-spec` 응답의 `hard_requirement_report`로 노출됩니다. |
+
+## 🔍 RAG 파이프라인 상세 (`agent/spec_retriever.py`)
+
+`retrieve_for_requirement()`는 단일 유사도 검색이 아니라 여러 신호를 병합합니다.
+
+1. **의미 기반 질의**: `target.material`/`inspection_items`로 만든 질의(예: "음극 검사 설비", "음극 두께 측정 두께 정확도 두께 분해능").
+2. **원문 질의(raw_text)**: 사용자의 원본 문장을 항상 추가 질의로 포함합니다 — material/inspection_items가 이미 있어도 원문의 구체적 수치("0~200 μm")가 의미 질의만으로는 상위 k에 들지 못할 수 있기 때문입니다.
+3. **range_boost**: raw_text에서 파싱한 범위 조건(예: "0~200 μm")을 실제로 포함하는 chunk를 의미 검색 순위와 무관하게 컬렉션 전체에서 찾아 강제로 포함시킵니다(`agent.units.range_covers` 재사용).
+4. **identity_chunk**: 검색 결과에 이미 포함된 문서의 "General"(제조사/모델) chunk를 별도로 함께 끌어와, 성능 수치만 검색되고 정작 장비명 정보가 빠지는 것을 방지합니다.
+
+기본 `k_per_query=5`이며, 결과는 `(source, content 앞부분)` 기준으로 중복 제거됩니다.
+
+## 🩺 진단 도구
+
+- `python scripts/rag_diagnostics.py` : ChromaDB 내용/설정 일치 여부/생성되는 검색 질의/실제 검색 결과를 단계별로 출력합니다. "검색 결과 0개" 같은 문제를 코드 추측이 아니라 실제 값으로 확인할 때 사용하세요.
+- `python debug_rag.py` : 더 포괄적인 RAG 독립 진단(빌드↔검색 설정, 원본 파일 vs 색인된 chunk 비교 등).
+
+두 스크립트 모두 사내 Ollama가 켜진 환경에서 실행해야 실제 임베딩 결과를 확인할 수 있습니다.
+
+## 🛠️ 환경변수 설정
+
+`.env.example`을 복사해 `.env`로 만듭니다.
 
 ```powershell
 copy .env.example .env
@@ -306,108 +289,70 @@ OLLAMA_HOST=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:14b
 EMBEDDING_MODEL=bge-m3
 AGENT_PORT=8000
+LOG_LEVEL=INFO
+# CHROMA_DB_PATH=./chroma_db_specs
+# ELECTRODE_TEMPLATE_PATH=./template_electrode.pptx
 ```
 
-RTX 4080 16GB 기준 `qwen2.5:14b`(4bit, ~9GB VRAM)가 기본값이며, 다른 모델로 바꾸려면 `.env`의 `OLLAMA_MODEL`만 수정하면 됩니다(코드 변경 불필요).
+`OLLAMA_MODEL`만 바꾸면 다른 LLM으로 교체할 수 있습니다(코드 변경 불필요). PPTX를
+회사 지정 양식으로 출력하고 싶다면 `ELECTRODE_TEMPLATE_PATH`로 템플릿 경로를
+지정하세요 — 지정하지 않으면 `agent/pptx_electrode_builder.py`가 템플릿 없이도
+기본 PPTX를 즉석에서 생성합니다.
 
-### 항목 단위 RAG 검색 보강 (선택)
+> **PPTX 템플릿 파일은 회사 기밀정보를 포함할 수 있으므로 이 저장소에 커밋하지 않습니다.**
 
-기존 `build_rag_ollama.py`는 PPTX 슬라이드 전체를 1개 chunk로 인덱싱합니다. 전극 검사기 Agent는 "정확도가 얼마인가" 같은 **항목 단위 검색**이 더 정확하도록, 표의 각 행(구분/항목/사양값/비고)을 별도 chunk로도 색인하는 보강 인덱서를 제공합니다 (기존 슬라이드 단위 색인은 그대로 두고 "추가"만 합니다).
+## 🧪 테스트
 
-```powershell
-python -c "from agent.spec_retriever import index_spec_rows_from_folder; index_spec_rows_from_folder('sample_specs_normalized', db_path='./chroma_db_specs')"
-```
-
-### 테스트
-
-이 개발 환경에는 Ollama가 없어 LLM 추론 자체는 검증하지 못했습니다. `agent.ollama_client`의 구조화 출력 호출만 스텁으로 대체하고, 나머지(요구사항 검증 규칙, RAG 인덱싱/검색, 사용자값 보존 병합 로직, 사양서 검증 규칙, PPTX 생성)는 실제 코드 경로로 테스트했습니다. 요청서 18절의 테스트 케이스 3종도 포함되어 있습니다.
+이 개발 환경에는 Ollama가 없어 LLM 추론 자체는 검증하지 못합니다.
+`OllamaEmbeddings.embed_*`/`ollama_client.parse_structured`만 결정론적 스텁으로
+대체하고, 나머지(Markdown 파싱/chunking, ChromaDB 색인/검색, range_boost/
+identity_chunk, hard requirement PASS/FAIL 판정, source 검증/강등, 사양서 검증
+규칙, PPTX 생성)는 실제 코드 경로 그대로 실행해서 검증합니다.
 
 ```powershell
 python -m pip install pytest numpy
 python -m pytest tests/ -v
 ```
 
-**사내 서버에서 반드시 추가로 확인할 것**: `qwen2.5:14b`가 실제로 JSON Schema 구조화 출력 요청 시 얼마나 정확하게 필드를 채우는지, 그리고 응답 속도(사양서 1건 생성에 걸리는 시간)는 이 환경에서 검증할 수 없었습니다.
+주요 테스트 파일:
 
-## 🧩 Specification JSON 중심 아키텍처 (Markdown / HTML / PPTX)
+| 파일 | 검증 대상 |
+| --- | --- |
+| `test_units.py` | 단위 변환/파싱/`evaluate_hard_requirements` 순수 함수 |
+| `test_requirement_structuring.py` | 요구사항 원문 → measurement_range/accuracy 결정론적 구조화 |
+| `test_source_verification.py` | RAG 검색 보강(range_boost/identity_chunk) + VERIFIED source 검증/강등 |
+| `test_candidate_matcher.py` | 후보 장비 hard requirement PASS/FAIL 판정 + 실제 SPEC-001.md 기반 end-to-end |
+| `test_markdown_rag.py` | Markdown chunking/색인/검색 (PPTX 없이도 동작) |
+| `test_agent_pipeline.py` | Requirement/Specification Validator + 통합 파이프라인 3종 시나리오 |
+| `test_renderers.py` | Specification JSON ↔ Markdown/HTML/PPTX 렌더러(범용, CLI 전용) |
+| `test_no_xxhash_dependency.py` | `agent/chroma_store.py` 경로가 `xxhash`/`langsmith`를 로드하지 않는지 확인 |
 
-**PPTX 템플릿 파일은 회사 기밀정보를 포함할 수 있어 이 저장소에 커밋하지 않습니다.**
-그래서 PPTX를 "Specification의 원본 포맷"이 아니라 "여러 출력 포맷 중 하나"로 바꿨습니다. 시스템의
-Single Source of Truth는 항상 **Specification JSON**이고, Markdown/HTML/PPTX는 전부 거기서
-파생되는 독립적인 렌더러입니다.
+**사내 서버에서 반드시 추가로 확인할 것**: 실제 LLM이 구조화 출력 요청 시 얼마나
+정확하게 필드를 채우는지, 응답 속도는 이 환경에서 검증할 수 없었습니다 — 다만 위
+"핵심 설계 원칙"에 정리된 대로, 측정 범위/정확도 구조화와 hard requirement
+PASS/FAIL 판정은 LLM 품질과 무관하게 코드가 보장합니다.
 
-```
-Requirement Parser → Specification Generator → Specification Validator → Specification JSON
-                                                                                │
-                                                          ┌─────────────────────┼─────────────────────┐
-                                                          ▼                     ▼                     ▼
-                                                       Markdown                HTML                 PPTX
-                                                  (renderers/          (renderers/          (renderers/
-                                                 markdown_renderer)    html_renderer)      pptx_renderer)
-```
+## 🛡️ 폐쇄망 Windows PC에서 xxhash DLL 차단 문제
 
-**PPTX ↔ AI ↔ PPTX 처럼 포맷을 반복 변환해서 데이터를 유지하는 구조는 의도적으로 만들지 않았습니다.**
-항상 Specification JSON을 중심에 두고 각 포맷이 거기서 한 방향으로 파생됩니다.
+일부 사내 Windows PC의 애플리케이션 제어 정책이 `xxhash`의 네이티브 확장(`_xxhash`)
+DLL 로드를 차단해 `build_rag_ollama.py` 실행 시 `ImportError: DLL load failed while
+importing _xxhash`가 발생할 수 있습니다. 원인은 `langchain_chroma`를 import하면
+`langchain_core.tracers.context` → `langsmith` → `xxhash`까지 전부 로드되기
+때문입니다(LangSmith는 이 프로젝트가 쓰지 않는 별도 트레이싱 SaaS 클라이언트).
 
-### 언제든 템플릿 없이도 전체가 동작합니다
-
-`renderers/pptx_renderer.py`는 `PPT_TEMPLATE_PATH`(또는 `.env`)가 가리키는 파일이 있으면 기존
-`agent/pptx_electrode_builder.py`(변경 없음)를 그대로 써서 회사 양식대로 PPTX를 만들고, 없으면
-코드로 즉석에서 기본 PPTX를 생성합니다. **Schema 검증 / Markdown 생성 / HTML 생성 / Agent
-파이프라인 전체는 템플릿 파일의 존재 여부와 무관하게 항상 정상 동작합니다.**
-
-> **PPTX template files may contain company confidential information.**
-> **Do not commit company templates to the repository.**
-> **Configure the template path locally using `PPT_TEMPLATE_PATH`.**
-
-```env
-# .env (커밋하지 않음)
-PPT_TEMPLATE_PATH=C:\Company\Templates\electrode_spec.pptx
-```
-
-여러 회사/여러 템플릿을 구분해서 연결해야 한다면 `templates/adapters/`에 `TemplateAdapter`를
-구현해서 확장할 수 있습니다 (`templates/adapters/env_path_adapter.py`가 가장 단순한 예시).
-
-### CLI
-
-웹 UI 없이 터미널에서 Specification JSON을 바로 렌더링/변환할 수 있습니다. `python main.py`를
-인자 없이 실행하면 기존과 동일하게 웹 서버가 뜨고, 아래 서브커맨드를 붙이면 그 명령만 실행하고
-종료합니다 (서버는 뜨지 않습니다).
-
-```powershell
-python main.py render-md specification.json        # -> specification.md
-python main.py render-html specification.json      # -> specification.html
-python main.py render-pptx specification.json      # -> specification.pptx (템플릿 있으면 사용)
-python main.py render-pptx specification.json --template C:\Company\Templates\electrode_spec.pptx
-python main.py pptx-to-md sample_specs/some_file.pptx   # 임의 PPTX 내용을 마크다운으로 보존
-python main.py md-to-spec specification.md          # 표준 포맷 마크다운 -> specification.json
-```
-
-### 표준 Markdown 포맷
-
-`renderers/markdown_renderer.py`가 만들고 `converters/markdown_to_spec.py`가 되돌리는 포맷은
-`docs/SPECIFICATION_MARKDOWN_FORMAT.md`에 문서화되어 있습니다. **임의의 마크다운을 일반적으로
-파싱하지 않고, 우리가 정의한 이 표준 포맷만 대상으로 합니다.**
-
-### PPTX → Markdown (문서 보존용, Specification과는 별개)
-
-기존에 흩어져 있는 임의 형식의 PPTX를 읽어보기 좋은 텍스트로 보존하고 싶을 때 씁니다 (제목/텍스트/표/
-슬라이드 노트/슬라이드 번호를 보존하고, 이미지는 메타데이터만 남깁니다 — OCR/의미분석은 범위 밖).
-`preprocess_specs.py`(기존, LLM으로 Specification을 추출)와는 다른 목적입니다 — 이건 LLM 없이
-순수 파싱만 합니다.
-
-```powershell
-python main.py pptx-to-md sample_specs/spec_electrode_coating_thickness.pptx
-```
+`agent/chroma_store.py`(`SimpleChromaStore`)가 `langchain_chroma.Chroma` 대신
+`chromadb`를 직접 사용하도록 대체해 이 문제를 해결했습니다 — `chromadb`는
+`xxhash`/`langsmith`에 의존하지 않음을 확인했습니다. `requirements.txt`에서
+`xxhash`를 단순히 지워서 문제를 숨기지 않고, 근본적으로 그 패키지를 로드하는
+경로 자체를 없앴습니다. `langchain-chroma`는 레거시 모듈(`generator.py`/
+`preprocess_specs.py`)이 여전히 쓰므로 `requirements.txt`에서 완전히 빼지는
+않았습니다.
 
 ## 🛠️ 자주 발생하는 오류 및 해결 방법
 
-### 1. `Fatal error in launcher` 오류 발생 시
-
-파이썬 경로 변경이나 가상환경 손상 시 발생합니다. `pip` 대신 `python -m pip`을 사용해 설치하거나 가상환경을 재생성합니다.
+### 1. `Fatal error in launcher` 오류
 
 ```powershell
-# 우회 설치
 python -m pip install -r requirements.txt
 
 # 가상환경 재생성 (필요시)
@@ -418,21 +363,29 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-### 2. `스크립트를 실행할 수 없으므로...` 에러 발생 시
-
-PowerShell 보안 정책 에러입니다. 권한 변경 명령을 실행해 주세요.
+### 2. `스크립트를 실행할 수 없으므로...` (PowerShell 보안 정책)
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
+### 3. RAG 검색 결과가 0개로 나올 때
+
+`python scripts/rag_diagnostics.py` 또는 `python debug_rag.py`를 실행해 ChromaDB
+경로/설정 불일치, collection이 비어 있는지, 임베딩 차원 불일치 등을 단계별로
+확인하세요. `CHROMA_DB_PATH`를 명시하지 않았다면 `agent/paths.py`가 cwd와 무관하게
+저장소 루트 기준 절대경로를 쓰므로, 빌드와 검색이 서로 다른 디렉터리를 가리키는
+문제는 발생하지 않습니다.
+
 ## 🛡️ 사내 방화벽 설정 안내
 
-사내 다른 직원 PC에서 웹 접속이 안 될 경우, 서버 PC의 윈도우 방화벽 인바운드 규칙에서 8000번 포트(TCP)를 허용하도록 설정하세요.
+사내 다른 직원 PC에서 웹 접속이 안 될 경우, 서버 PC의 윈도우 방화벽 인바운드 규칙에서
+8000번 포트(TCP)를 허용하도록 설정하세요.
 
 ## 🔒 폐쇄망(완전 오프라인) 환경 설치 가이드
 
-인터넷이 연결된 외부 PC에서 아래 자료를 미리 준비한 뒤, USB 등으로 사내 폐쇄망 서버 PC에 이관합니다.
+인터넷이 연결된 외부 PC에서 아래 자료를 미리 준비한 뒤, USB 등으로 사내 폐쇄망 서버
+PC에 이관합니다.
 
 ### 1. Python 패키지 오프라인 이관
 
@@ -446,8 +399,13 @@ python -m pip install --no-index --find-links=./offline_wheels -r requirements.t
 
 ### 2. Ollama 모델 오프라인 이관
 
-외부 PC에서 `ollama pull qwen2.5:14b`, `ollama pull bge-m3` 실행 후 생성되는 모델 데이터 폴더(`blobs`, `manifests`)를 통째로 복사하여 폐쇄망 서버 PC의 동일 Ollama 데이터 경로에 붙여넣습니다.
+외부 PC에서 필요한 모델을 `ollama pull`한 뒤 생성되는 모델 데이터 폴더(`blobs`,
+`manifests`)를 통째로 복사하여 폐쇄망 서버 PC의 동일 Ollama 데이터 경로에
+붙여넣습니다.
 
 ### 3. 외부 네트워크 통신 완전 차단
 
-본 프로젝트는 `main.py`, `build_rag_ollama.py` 실행 시 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` 환경변수를 자동으로 설정하여, LangChain/ChromaDB 관련 라이브러리가 HuggingFace Hub 등 외부로 통신을 시도하지 않도록 원천 차단합니다. 필요 시 시스템 환경변수로도 동일하게 설정해 이중으로 보안을 강화할 수 있습니다.
+`main.py`, `build_rag_ollama.py` 실행 시 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`
+환경변수를 자동으로 설정하여, LangChain/ChromaDB 관련 라이브러리가 HuggingFace Hub
+등 외부로 통신을 시도하지 않도록 차단합니다. 필요 시 시스템 환경변수로도 동일하게
+설정해 이중으로 보안을 강화할 수 있습니다.
