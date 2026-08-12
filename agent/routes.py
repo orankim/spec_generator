@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from . import ollama_client
+from . import ollama_client, spec_retriever
 from .pipeline import analyze_requirement, retrieve_and_generate
 from .pptx_electrode_builder import ElectrodeSpecPPTXBuilder
 from .requirement_validator import validate_requirement
@@ -81,7 +81,7 @@ async def generate_spec_api(req: GenerateSpecRequest):
             "specification": specification.model_dump(),
             "validation": validation.model_dump(),
             "retrieved_sources": [
-                {"source": d.metadata.get("source"), "excerpt": d.page_content[:200]}
+                {"source": spec_retriever.source_label(d), "excerpt": d.page_content[:200]}
                 for d in retrieved_docs
             ],
         }
