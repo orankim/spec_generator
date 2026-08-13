@@ -153,7 +153,13 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
 
         if required_range is not None:
             candidate_range = fact.range
-            ok, _reasons = units.evaluate_hard_requirements(required_range=required_range, candidate_range=candidate_range)
+            try:
+                ok, _reasons = units.evaluate_hard_requirements(required_range=required_range, candidate_range=candidate_range)
+            except units.UnitError:
+                # 후보 문서의 범위 단위가 요구 범위와 차원이 달라(예: 시간 vs 길이)
+                # 아예 비교할 수 없는 경우 — FAIL로 단정하지 않고 정보 없음과
+                # 동일하게 UNKNOWN으로 취급한다(_range_boost_docs와 동일한 방어 패턴).
+                ok, candidate_range = False, None
             result = "PASS" if ok else ("UNKNOWN" if candidate_range is None else "FAIL")
             matches.append(
                 CandidateFieldMatch(
@@ -175,9 +181,14 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
         if required_accuracy is not None:
             candidate_accuracy = fact.accuracy
             req_value, req_unit, operator = required_accuracy
-            ok, _reasons = units.evaluate_hard_requirements(
-                required_accuracy=required_accuracy, candidate_accuracy=candidate_accuracy
-            )
+            try:
+                ok, _reasons = units.evaluate_hard_requirements(
+                    required_accuracy=required_accuracy, candidate_accuracy=candidate_accuracy
+                )
+            except units.UnitError:
+                # 후보 문서의 정확도 단위가 요구 조건과 차원이 달라(예: % vs um)
+                # 비교 자체가 불가능한 경우 — FAIL로 단정하지 않고 UNKNOWN으로 취급한다.
+                ok, candidate_accuracy = False, None
             result = "PASS" if ok else ("UNKNOWN" if candidate_accuracy is None else "FAIL")
             matches.append(
                 CandidateFieldMatch(
@@ -198,9 +209,12 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
         pass_count = sum(1 for m in matches if m.result == "PASS")
         fail_count = sum(1 for m in matches if m.result == "FAIL")
         unknown_count = sum(1 for m in matches if m.result == "UNKNOWN")
-        # "Hard Requirement 항목 중 FAIL이 하나도 없으면 True" (CandidateEquipment 독스트링) —
-        # 검사할 hard requirement가 아예 없는 경우도 공허하게(vacuously) True다.
-        hard_requirements_pass = fail_count == 0
+        # FAIL이 없어도 UNKNOWN만 있는(=아무것도 확인되지 않은) 후보를 "충족"으로
+        # 표시하면 안 된다 — 검사할 hard requirement가 아예 없는 경우(matches=[])는
+        # 여전히 공허하게(vacuously) True다. 이 조건이 없으면 근거가 전혀 없는
+        # 후보가 "확인됨(PASS)"으로 표시되고, 실제 FAIL 증거가 있는 후보보다
+        # select_best_candidate()에서 우선 선택되는 문제가 있었다(실측됨).
+        hard_requirements_pass = fail_count == 0 and unknown_count == 0
         match_score = 100.0 * pass_count / len(matches) if matches else 0.0
 
         candidates.append(

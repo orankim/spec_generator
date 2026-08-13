@@ -123,7 +123,7 @@ def requirement_from_selection(selection: Dict[str, Any]) -> RequirementSchema:
 _ACCURACY_KEYWORDS: Tuple[str, ...] = ("정확도", "accuracy")
 _RESOLUTION_KEYWORDS: Tuple[str, ...] = ("분해능", "resolution")
 _DEFECT_KEYWORDS: Tuple[str, ...] = ("결함 크기", "결함크기", "defect size", "결함")
-_RANGE_KEYWORDS: Tuple[str, ...] = ("측정 범위", "측정범위", "measurement range", "범위")
+_RANGE_KEYWORDS: Tuple[str, ...] = ("측정 범위", "측정범위", "measurement range", "범위", "최대")
 
 _KEYWORD_WINDOW = 20
 
