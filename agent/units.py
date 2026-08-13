@@ -102,7 +102,15 @@ def parse_operator(text: str) -> Optional[str]:
 _UNIT_ALTERNATION = "|".join(
     sorted((re.escape(u) for u in _UNIT_TABLE), key=len, reverse=True)
 )
-_VALUE_UNIT_RE = re.compile(rf"([+-]?\d+(?:\.\d+)?)\s*({_UNIT_ALTERNATION})\b")
+# 단위 뒤에는 \b(단어 경계)가 아니라 "라틴 문자/숫자가 바로 이어지지 않으면 OK"를
+# 요구한다 — \b는 Python 정규식에서 한글 음절도 "단어 문자"로 취급하므로,
+# "200μm까지"처럼 단위 뒤에 공백 없이 한글 조사가 붙거나("m"과 "까" 둘 다 단어
+# 문자라 경계가 형성되지 않음), "%"처럼 단위 자체가 비단어 문자로 끝나는 경우
+# (뒤에 공백이 아니라 다른 비단어 문자가 오면 마찬가지로 경계가 형성되지 않음)
+# 매칭이 조용히 실패한다(실측됨: "최대 200 μm까지" 같은 표현에서 measurement_range를
+# 놓치는 원인이었다). (?![a-zA-Z0-9])는 "mm" 뒤에 다른 라틴 단위 문자가 이어지는
+# 잘못된 부분매칭(예: "mmHg")만 막고, 한글/공백/구두점/문자열 끝은 모두 허용한다.
+_VALUE_UNIT_RE = re.compile(rf"([+-]?\d+(?:\.\d+)?)\s*({_UNIT_ALTERNATION})(?![a-zA-Z0-9])")
 
 
 def parse_value_unit_with_span(text: str) -> Optional[Tuple[float, str, int, int]]:
@@ -138,7 +146,7 @@ def iter_value_units(text: str):
 
 
 _RANGE_RE = re.compile(
-    rf"([+-]?\d+(?:\.\d+)?)\s*(?:~|-|to|부터)\s*([+-]?\d+(?:\.\d+)?)\s*({_UNIT_ALTERNATION})\b"
+    rf"([+-]?\d+(?:\.\d+)?)\s*(?:~|-|to|부터)\s*([+-]?\d+(?:\.\d+)?)\s*({_UNIT_ALTERNATION})(?![a-zA-Z0-9])"
 )
 
 
