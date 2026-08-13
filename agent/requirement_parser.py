@@ -7,6 +7,7 @@ RequirementParser — 자연어 또는 조건 선택 UI 입력을 RequirementSch
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from . import ollama_client, units
@@ -133,22 +134,32 @@ def _find_keyword_value(
 ) -> Optional[Tuple[float, str, Optional[str], int, int]]:
     """
     text에서 keywords 중 하나가 처음 등장하는 위치 주변(앞뒤 _KEYWORD_WINDOW자)에서
-    가장 먼저 발견되는 (value, unit)과 operator를 찾는다. 못 찾으면 None. "정확도 1um
-    이하"처럼 값이 키워드 뒤에 오는 경우와 "1um 이하 정확도"처럼 앞에 오는 경우를
-    모두 지원한다. 매치된 (value, unit)의 절대 span(start, end)도 함께 반환해,
-    호출부가 그 구간을 마스킹하고 다음 키워드를 이어서 찾을 수 있게 한다 — 이렇게
-    하지 않으면 같은 숫자가 range/accuracy 등 여러 필드에 중복으로 잡힐 수 있다.
+    가장 먼저(왼쪽부터) 발견되는 (value, unit)과 operator를 찾는다. 못 찾으면 None.
+    "정확도 1um 이하"처럼 값이 키워드 뒤에 오는 경우와 "1um 이하 정확도"처럼 앞에
+    오는 경우를 모두 지원한다. 매치된 (value, unit)의 절대 span(start, end)도 함께
+    반환해, 호출부가 그 구간을 마스킹하고 다음 키워드를 이어서 찾을 수 있게 한다 —
+    이렇게 하지 않으면 같은 숫자가 range/accuracy 등 여러 필드에 중복으로 잡힐 수
+    있다.
+
+    주의: window 안에 값+단위가 여러 개 있을 때 "keyword에 가장 가까운 값"을
+    고르는 방식은(과거 시도) "200 μm 이하 측정 범위, ±1 μm 이하 정확도가
+    필요해." 같은 문장에서 콤마로 분리된 다음 절(정확도 절)의 값이 "측정 범위"
+    키워드에 더 가깝다는 이유로 잘못 선택되는 회귀를 실제로 일으켰다. 그래서
+    항상 왼쪽부터 첫 매치를 쓰는 단순한 규칙으로 되돌린다 — width_mm처럼 이미
+    다른 필드로 소비된 숫자는(아래 apply_deterministic_extraction에서) 호출
+    전에 마스킹해 애초에 window 후보에서 배제하는 방식으로 처리한다.
     """
     for kw in keywords:
         idx = text.find(kw)
         if idx == -1:
             continue
         window_start = max(0, idx - _KEYWORD_WINDOW)
-        window = text[window_start : idx + len(kw) + _KEYWORD_WINDOW]
-        value_unit = units.parse_value_unit_with_span(window)
-        if value_unit is None:
+        window_end = idx + len(kw) + _KEYWORD_WINDOW
+        window = text[window_start:window_end]
+        found = units.parse_value_unit_with_span(window)
+        if found is None:
             continue
-        value, unit, rel_start, rel_end = value_unit
+        value, unit, rel_start, rel_end = found
         operator = units.parse_operator(window)
         return value, unit, operator, window_start + rel_start, window_start + rel_end
     return None
@@ -181,6 +192,7 @@ def _mask(text: str, start: int, end: int) -> str:
 # ==========================================
 _MATERIAL_SPECIFIC_KEYWORDS: Tuple[str, ...] = ("음극", "양극", "분리막")
 _WIDTH_KEYWORDS: Tuple[str, ...] = ("폭", "width")
+_ADJACENT_NUMBER_RE = re.compile(r"^\s{0,2}\d")
 
 
 def _extract_material(text: str) -> Optional[str]:
@@ -190,17 +202,53 @@ def _extract_material(text: str) -> Optional[str]:
     return None
 
 
-def _extract_width_mm(text: str) -> Optional[float]:
+def _extract_width_mm_with_span(text: str) -> Optional[Tuple[float, int, int]]:
+    """폭(width)을 raw_text에서 찾아 (mm 환산값, 매치 span)을 반환한다. 못 찾으면 None.
+    반환하는 span은 호출부(apply_deterministic_extraction)가 이후 measurement_range
+    등을 찾을 때 같은 숫자를 재사용하지 않도록 마스킹하는 데 쓰인다."""
     found = _find_keyword_value(text, _WIDTH_KEYWORDS)
+    if found is not None:
+        value, unit, _operator, start, end = found
+        if unit is None:
+            return None
+        try:
+            return units.convert(value, unit, "mm"), start, end
+        except units.UnitError:
+            return None
+
+    # "폭"/"width" 키워드가 아예 없어도 "양극 10 mm의 thickness를..."처럼 재질명
+    # 바로 뒤에 (공백만 사이에 두고) 숫자+길이단위가 바로 이어지면 그것이 폭을
+    # 가리키는 경우가 실제로 관찰되었다. 다른 단어가 하나라도 끼어 있으면(예: "음극의
+    # 두께를 5mm...") 폭이라고 확신할 수 없으므로, 재질명 바로 뒤에 숫자가 곧바로
+    # 시작하는 경우로만 좁게 적용한다(오탐 방지).
+    for material_kw in _MATERIAL_SPECIFIC_KEYWORDS:
+        idx = text.find(material_kw)
+        if idx == -1:
+            continue
+        after = text[idx + len(material_kw):]
+        if not _ADJACENT_NUMBER_RE.match(after):
+            continue
+        candidate = units.parse_value_unit_with_span(after)
+        if candidate is None:
+            continue
+        value, unit, rel_start, rel_end = candidate
+        if unit is None or units.unit_dimension(unit) != "length":
+            continue
+        start = idx + len(material_kw) + rel_start
+        end = idx + len(material_kw) + rel_end
+        try:
+            return units.convert(value, unit, "mm"), start, end
+        except units.UnitError:
+            return None
+    return None
+
+
+def _extract_width_mm(text: str) -> Optional[float]:
+    found = _extract_width_mm_with_span(text)
     if found is None:
         return None
-    value, unit, _operator, _start, _end = found
-    if unit is None:
-        return None
-    try:
-        return units.convert(value, unit, "mm")
-    except units.UnitError:
-        return None
+    value_mm, _start, _end = found
+    return value_mm
 
 
 def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
@@ -222,14 +270,19 @@ def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
     if material is not None:
         requirement.target.material = material
 
-    width_mm = _extract_width_mm(text)
-    if width_mm is not None:
-        requirement.target.width_mm = width_mm
-
+    width_span = _extract_width_mm_with_span(text)
     working_text = text
+    if width_span is not None:
+        width_mm, width_start, width_end = width_span
+        requirement.target.width_mm = width_mm
+        # width로 이미 소비된 숫자(예: "10 mm")가 뒤이은 measurement_range 탐색에서
+        # 다시 후보로 잡히지 않도록 마스킹한다 — 그렇지 않으면 "폭 10 mm의 두께를
+        # 최대 200 μm까지..."에서 "최대" 키워드 근처 윈도에 폭 값 "10 mm"까지 함께
+        # 걸려 measurement_range가 폭 값을 잘못 재사용하는 회귀가 생긴다(실측됨).
+        working_text = _mask(working_text, width_start, width_end)
 
     if requirement.measurement_range is None:
-        range_result = units.parse_range_with_span(text)
+        range_result = units.parse_range_with_span(working_text)
         if range_result is not None:
             lo, hi, unit, start, end = range_result
             requirement.measurement_range = RequirementRange(min=lo, max=hi, unit=unit)
@@ -240,7 +293,7 @@ def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
             # "0~200 μm" 같은 완전한 범위가 없으면 "200 μm 이하"/"최대 200 μm"처럼
             # 상한만 있는 표현을 "측정 범위" 키워드 근처에서 찾는다(하한은 0으로 간주
             # — 두께/갭 계열 측정 범위는 관례상 0부터 시작하므로 안전한 가정이다).
-            bound = _find_keyword_value(text, _RANGE_KEYWORDS)
+            bound = _find_keyword_value(working_text, _RANGE_KEYWORDS)
             if bound is not None:
                 value, unit, operator, start, end = bound
                 if operator in (None, "<="):
