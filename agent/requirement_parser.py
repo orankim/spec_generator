@@ -158,11 +158,58 @@ def _mask(text: str, start: int, end: int) -> str:
     return text[:start] + (" " * (end - start)) + text[end:]
 
 
+# ==========================================
+# target.material / target.width_mm 결정론적 추출
+#
+# 배경: LLM이 "음극 폭 5 mm의 두께를 0~300 μm 범위에서 ±0.5 μm 이하 정확도로
+# 측정할 수 있는 검사기를 찾아줘." 같은 문장에서 measurement_range/accuracy는
+# 정확히 뽑으면서도 material/width_mm는 null로 반환하는 회귀가 실제로 관찰되었다
+# (기존 apply_deterministic_extraction()이 이 두 필드는 전혀 다루지 않았음).
+#
+# material은 "양극/음극/분리막" 3개 구체적 어휘만 대상으로 하는 단순 부분 문자열
+# 매칭이라 오탐 위험이 낮다. 일부러 "전극"(범용어)은 후보에서 제외한다 — 이 앱
+# 자체가 "전극 검사기"이므로 "전극"은 거의 모든 문장(예: "좋은 전극 검사기를
+# 찾아줘")에 등장하는 도메인 명칭일 뿐 사용자가 특정 소재를 지정했다는 신호가
+# 아니다(실제로 이걸 신호로 오인해 모호한 질문에서도 material을 잘못 채우는
+# 회귀가 있었다). width_mm은 "폭"/"width" 키워드 근처의 값+단위를 찾는 기존
+# _find_keyword_value() 패턴을 그대로 재사용한다.
+#
+# 다른 필드(measurement_range 등)와 달리, 이미 값이 있어도 raw_text에 명확한
+# 근거(위 3개 구체적 소재명 중 하나)가 있으면 그 값을 우선한다(요청서 3절) — LLM이
+# 이 두 필드를 잘못 채웠을 가능성까지 감안한 조치다. raw_text에서 못 찾으면 기존
+# 값(LLM 결과 또는 None)을 그대로 유지한다.
+# ==========================================
+_MATERIAL_SPECIFIC_KEYWORDS: Tuple[str, ...] = ("음극", "양극", "분리막")
+_WIDTH_KEYWORDS: Tuple[str, ...] = ("폭", "width")
+
+
+def _extract_material(text: str) -> Optional[str]:
+    for keyword in _MATERIAL_SPECIFIC_KEYWORDS:
+        if keyword in text:
+            return keyword
+    return None
+
+
+def _extract_width_mm(text: str) -> Optional[float]:
+    found = _find_keyword_value(text, _WIDTH_KEYWORDS)
+    if found is None:
+        return None
+    value, unit, _operator, _start, _end = found
+    if unit is None:
+        return None
+    try:
+        return units.convert(value, unit, "mm")
+    except units.UnitError:
+        return None
+
+
 def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
     """
-    raw_text에 담긴 구체적 수치(측정 범위/정확도/분해능/최소 결함 크기)를 LLM 결과와
-    무관하게 agent.units의 정규식/단위 파싱으로 직접 뽑아 채운다. 이미 값이 채워진
-    필드는 건드리지 않는다(다른 경로로 이미 확정된 값을 덮어쓰지 않음). 마지막에
+    raw_text에 담긴 구체적 수치(측정 범위/정확도/분해능/최소 결함 크기)와 검사
+    대상 정보(material/width_mm)를 LLM 결과와 무관하게 agent.units의 정규식/단위
+    파싱으로 직접 뽑아 채운다. 수치 필드는 이미 값이 채워진 경우 건드리지 않지만
+    (다른 경로로 이미 확정된 값을 덮어쓰지 않음), material/width_mm는 raw_text에
+    명확한 근거가 있으면 우선한다(위 설명 참고). 마지막에
     RequirementSchema.sync_legacy_fields()를 호출해 레거시 float 필드
     (required_accuracy_um 등)도 함께 채워, RequirementValidator/기존 코드가
     그대로 동작하도록 한다.
@@ -170,6 +217,14 @@ def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
     text = requirement.raw_text
     if not text:
         return
+
+    material = _extract_material(text)
+    if material is not None:
+        requirement.target.material = material
+
+    width_mm = _extract_width_mm(text)
+    if width_mm is not None:
+        requirement.target.width_mm = width_mm
 
     working_text = text
 
