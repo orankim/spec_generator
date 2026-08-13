@@ -201,6 +201,17 @@ def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[Candidat
     채웠더라도, 실제 후보 문서 원문에서 결정론적으로 추출/판정한 이 값이 항상
     우선한다 — hard requirement(측정 범위 포함 여부/정확도 충족 여부) PASS/FAIL을
     LLM 판단에 맡기지 않기 위함이다.
+
+    measurement_range_full/equipment_accuracy_um은 match.found_value가 있으면
+    PASS/FAIL과 무관하게 항상 채운다 — status="VERIFIED"는 "이 값이 실제 문서에서
+    확인됐다"는 뜻이지 "요구사항을 충족한다"는 뜻이 아니며(그 판정은 별도로
+    build_hard_requirement_report가 담당), 이렇게 해야 FAIL인 경우에도 Hard
+    Requirement Report가 실제 근거 값으로 이유를 보여줄 수 있다.
+
+    반면 레거시 단일값 필드(measurement_range)는 match.result == "PASS"일 때만
+    동기화한다 — 이 필드는 spec_validator._validate_sources()/needs_confirmation이
+    직접 검사하는 필드라서, FAIL인 값까지 VERIFIED로 써 넣으면 "요구사항을
+    충족하는 값처럼 보이는" 오해를 줄 수 있기 때문이다.
     """
     if chosen is None:
         return
@@ -221,14 +232,27 @@ def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[Candidat
                 max=match.found_value,
                 unit=match.found_unit,
                 status="VERIFIED",
-                source=match.source,
+                source=match.source.model_copy(),
             )
+            if match.result == "PASS":
+                # 레거시 단일값 필드(measurement_range)도 동일 근거로 동기화한다 — 이
+                # 필드는 LLM이 "범위"를 억지로 단일 값으로 채우려다(예: 하한 "0") 원문과
+                # 정확히 일치하는 토큰을 찾지 못해 _verify_sourced_numbers가 INFERRED로
+                # 강등시키는 경우가 실제로 관찰되었다. Hard Requirement가 이미 PASS로
+                # 확정한 값이 있으므로 그 값으로 legacy 필드를 덮어써 "PASS인데
+                # INFERRED"라는 모순을 없앤다(요청서 5절).
+                spec.measurement_performance.measurement_range = SourcedNumber(
+                    value=match.found_value,
+                    unit=match.found_unit,
+                    status="VERIFIED",
+                    source=match.source.model_copy(),
+                )
         elif match.field_key == "accuracy":
             spec.measurement_performance.equipment_accuracy_um = SourcedNumber(
                 value=match.found_value,
                 unit=match.found_unit,
                 status="VERIFIED",
-                source=match.source,
+                source=match.source.model_copy(),
             )
 
 

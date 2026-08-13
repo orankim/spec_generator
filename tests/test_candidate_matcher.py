@@ -26,7 +26,15 @@ from langchain_core.documents import Document
 from agent import spec_retriever
 from agent.candidate_matcher import build_candidates, select_best_candidate
 from agent.pipeline import retrieve_and_generate
-from agent.schemas import RequirementRange, RequirementSchema, RequirementTarget, RequirementValue, SpecificationSchema
+from agent.schemas import (
+    RequirementRange,
+    RequirementSchema,
+    RequirementTarget,
+    RequirementValue,
+    SourcedNumber,
+    SpecificationSchema,
+)
+from agent.spec_generator import generate_specification
 from agent.spec_validator import build_hard_requirement_report
 from agent.units import evaluate_hard_requirements
 from build_rag_ollama import build_vector_db
@@ -247,3 +255,164 @@ def test_H_required_value_and_equipment_value_are_distinct_in_api_response(db):
 
     # 두 필드는 서로 다른 필드이지 같은 필드를 재사용한 것이 아니다.
     assert specification.measurement_performance.accuracy_um is not specification.measurement_performance.equipment_accuracy_um
+
+
+# ---------------------------------------------------------------
+# Reconciliation 테스트 (요청서 Test 1~4): "Hard Requirement PASS인데 measurement_range는
+# INFERRED"라는 모순이 다시 발생하지 않는지 검증한다.
+#
+# 실제 관찰된 버그: LLM이 measurement_performance.measurement_range(레거시 단일값
+# SourcedNumber)를 채우면서 범위의 하한("0")을 VERIFIED로 주장하는 경우가 있었다.
+# "0 ~ 200 μm" 원문에는 "0"이 단위와 바로 붙어 나오지 않으므로(항상 "~200 μm"로만
+# 등장) _verify_sourced_numbers가 이 값을 확인하지 못해 INFERRED로 강등시켰다 — 하지만
+# candidate_matcher는 같은 문서에서 범위 전체(0~200)를 올바르게 추출해 Hard
+# Requirement를 PASS로 판정했으므로, 최종 결과에 "PASS인데 INFERRED"라는 모순이
+# 남아 있었다.
+# ---------------------------------------------------------------
+def test_reconciliation_1_pass_range_reconciles_legacy_field_to_verified(db):
+    """
+    Test 1: 사용자 요구 0~200 μm, 문서(SPEC-001.md) 0~200 μm → PASS.
+    LLM이 legacy measurement_range를 검증 불가능한 값(범위의 하한 "0")으로 잘못
+    채워도, Hard Requirement가 PASS로 확정한 값으로 재조정(VERIFIED)되어야 한다.
+    """
+    requirement = RequirementSchema(
+        raw_text=_REPORTED_QUERY,
+        target=RequirementTarget(material="음극", width_mm=5),
+        inspection_items=["thickness"],
+        measurement_range=RequirementRange(min=0.0, max=200.0, unit="um"),
+        accuracy=RequirementValue(value=1.0, unit="um", operator="<="),
+        required_accuracy_um=1.0,
+    )
+    retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=5)
+    context_text = spec_retriever.format_context(retrieved_docs)
+
+    fake_llm_response = SpecificationSchema()
+    fake_llm_response.measurement_performance.measurement_range = SourcedNumber(
+        value=0.0, unit="um", status="VERIFIED"
+    )
+
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        spec = generate_specification(requirement, retrieved_docs, context_text, model="test-model")
+
+    mr = spec.measurement_performance.measurement_range
+    assert mr.status == "VERIFIED"
+    assert mr.source is not None and mr.source.document == "SPEC-001.md"
+
+    mrf = spec.measurement_performance.measurement_range_full
+    assert mrf.status == "VERIFIED"
+    assert mrf.source.document == "SPEC-001.md"
+
+    assert "measurement_performance.measurement_range" not in spec.needs_confirmation
+
+    hard_report = build_hard_requirement_report(spec, requirement)
+    by_item = {r.item: r for r in hard_report}
+    assert by_item["Measurement Range"].result == "PASS"
+
+
+def test_reconciliation_2_fail_range_does_not_force_verified():
+    """
+    Test 2: 사용자 요구 0~200 μm, 문서 0~100 μm → FAIL. 이 경우 measurement_range를
+    VERIFIED로 확정하면 안 된다 — Hard Requirement가 충족하지 못한 값을 "요구사항을
+    만족하는 확정값"처럼 보여주지 않기 위함이다. 다만 measurement_range_full(장비의
+    실제 확인된 범위, PASS/FAIL 판정과는 별개의 "무엇을 찾았는가" 정보)은 여전히
+    VERIFIED로 채워져야 Hard Requirement Report가 실제 근거로 FAIL 사유를 보여줄
+    수 있다 — measurement_range_full까지 비워버리면 FAIL 사유 자체가 UNKNOWN이 되어
+    버린다(회귀: 처음 구현에서 실제로 이 문제가 발생해 여기서 함께 검증한다).
+    """
+    requirement = RequirementSchema(measurement_range=RequirementRange(min=0.0, max=200.0, unit="um"))
+    narrow_doc = Document(
+        page_content="| Item | Specification |\n|---|---|\n| Measurement Range | 0 ~ 100 μm |\n",
+        metadata={"filename": "NARROW.md", "source": "NARROW.md", "source_type": "markdown", "chunk_id": 0},
+    )
+    fake_llm_response = SpecificationSchema()
+
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        spec = generate_specification(requirement, [narrow_doc], "", model="test-model")
+
+    # 레거시 필드(needs_confirmation/validator가 검사하는 필드)는 FAIL인 값으로
+    # VERIFIED가 되면 안 된다.
+    assert (
+        spec.measurement_performance.measurement_range is None
+        or spec.measurement_performance.measurement_range.status != "VERIFIED"
+    )
+
+    # measurement_range_full은 "실제로 찾은 값"이므로 여전히 채워져야 한다(FAIL 사유의 근거).
+    mrf = spec.measurement_performance.measurement_range_full
+    assert mrf is not None
+    assert mrf.min == 0.0 and mrf.max == 100.0
+    assert mrf.source.document == "NARROW.md"
+
+    hard_report = build_hard_requirement_report(spec, requirement)
+    by_item = {r.item: r for r in hard_report}
+    assert by_item["Measurement Range"].result == "FAIL"
+
+
+def test_reconciliation_3_accuracy_pass_reconciles_equipment_field_to_verified():
+    """Test 3: 요구 정확도 <= 1μm, 문서 정확도 ±1.0μm → PASS → equipment_accuracy_um VERIFIED + source."""
+    requirement = RequirementSchema(accuracy=RequirementValue(value=1.0, unit="um", operator="<="), required_accuracy_um=1.0)
+    doc = Document(
+        page_content="| Item | Specification |\n|---|---|\n| Accuracy | ±1.0 μm |\n",
+        metadata={"filename": "SPEC-001.md", "source": "SPEC-001.md", "source_type": "markdown", "chunk_id": 2},
+    )
+    fake_llm_response = SpecificationSchema()
+
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        spec = generate_specification(requirement, [doc], "", model="test-model")
+
+    eq_acc = spec.measurement_performance.equipment_accuracy_um
+    assert eq_acc is not None
+    assert eq_acc.value == 1.0
+    assert eq_acc.status == "VERIFIED"
+    assert eq_acc.source is not None
+    assert eq_acc.source.document == "SPEC-001.md"
+
+
+def test_reconciliation_4_full_reported_query_end_to_end(db):
+    """
+    Test 4: 사용자가 실제로 보고한 정확한 질문에 대해 파이프라인(retrieve_and_generate)
+    최종 결과를 검증한다. LLM이 legacy measurement_range를 검증 불가능한 값(0)으로
+    채우는 실제 관찰된 시나리오를 재현해, 최종 결과에서 모순이 사라졌는지 확인한다.
+    """
+    requirement = RequirementSchema(
+        raw_text=_REPORTED_QUERY,
+        target=RequirementTarget(material="음극", width_mm=5),
+        inspection_items=["thickness"],
+        measurement_range=RequirementRange(min=0.0, max=200.0, unit="um"),
+        accuracy=RequirementValue(value=1.0, unit="um", operator="<="),
+        required_accuracy_um=1.0,
+    )
+
+    fake_llm_response = SpecificationSchema()
+    fake_llm_response.measurement_performance.measurement_range = SourcedNumber(
+        value=0.0, unit="um", status="VERIFIED"
+    )
+
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        specification, validation, retrieved_docs = retrieve_and_generate(requirement, db_path=db)
+
+    assert specification.equipment.name == "OptiScan ES-200"
+
+    mr = specification.measurement_performance.measurement_range
+    assert mr.value == 200.0
+    assert mr.status == "VERIFIED"
+    assert mr.source.document == "SPEC-001.md"
+
+    mrf = specification.measurement_performance.measurement_range_full
+    assert mrf.min == 0.0 and mrf.max == 200.0
+    assert mrf.status == "VERIFIED"
+    assert mrf.source.document == "SPEC-001.md"
+
+    assert requirement.required_accuracy_um == 1.0
+    eq_acc = specification.measurement_performance.equipment_accuracy_um
+    assert eq_acc.value == 1.0
+    assert eq_acc.status == "VERIFIED"
+    assert eq_acc.source.document == "SPEC-001.md"
+
+    hard_report = build_hard_requirement_report(specification, requirement)
+    by_item = {r.item: r for r in hard_report}
+    assert by_item["Measurement Range"].result == "PASS"
+    assert by_item["Accuracy"].result == "PASS"
+
+    assert "measurement_performance.measurement_range" not in specification.needs_confirmation
+    assert "measurement_performance.equipment_accuracy_um" not in specification.needs_confirmation
+    assert validation.is_valid is True
