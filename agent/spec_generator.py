@@ -17,6 +17,7 @@ top-level `needs_confirmation`에 자동으로 채운다 — LLM이 스스로 �
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import List, Optional
 
@@ -31,7 +32,9 @@ from .schemas import (
     SourcedRange,
     SpecificationSchema,
 )
-from .spec_retriever import source_label
+from .spec_retriever import format_context, source_label
+
+logger = logging.getLogger(__name__)
 
 GENERATE_PROMPT = """당신은 전극 검사기(계측 설비) 사양서를 작성하는 베테랑 엔지니어입니다.
 아래 [사용자 요구사항]과 [사내 참고 자료]를 바탕으로 [현재까지 채워진 사양서]의
@@ -310,6 +313,51 @@ def _collect_needs_confirmation(spec: SpecificationSchema) -> List[str]:
     return needs_confirmation
 
 
+_MAX_CHUNK_CHARS_FOR_PROMPT = 2000
+
+
+def _narrow_context_docs_for_prompt(
+    retrieved_docs: List[Document], chosen: Optional[CandidateEquipment]
+) -> List[Document]:
+    """
+    LLM 프롬프트에 실어 보낼 chunk를 "선택된 후보 문서"만으로 좁힌다.
+
+    배경: candidate_matcher.build_candidates()/select_best_candidate()가 이미
+    retrieved_docs 전체(실측: 흔한 다중 검사항목 질의에서 10개 사양서 중
+    25개 chunk, corpus 전체의 약 30%)를 근거로 hard requirement PASS/FAIL을
+    판정하고 "이 후보 하나"를 고른다. 그런데 기존 코드는 그 판정과 무관하게
+    retrieved_docs 전체를 LLM 프롬프트에 그대로 실어 보내고 있었다 — LLM이
+    최종적으로 사양서를 채워야 할 장비는 어차피 이 chosen 후보 하나뿐인데도,
+    관련 없는 다른 9개 문서의 chunk까지 매번 컨텍스트로 넘겨 prompt 크기와
+    Ollama 응답 시간을 불필요하게 늘리고 있었다(실측: 25개 chunk, 프롬프트
+    약 11,900자). 후보 선정 로직(build_candidates/select_best_candidate) 자체는
+    그대로 retrieved_docs 전체를 계속 보므로, RAG 검색/후보 매칭 정확도에는
+    영향이 없다 — 오직 "LLM에게 무엇을 보여줄지"만 좁힌다.
+
+    chosen이 없으면(검색 결과 0건 등) 기존과 동일하게 retrieved_docs 전체를
+    그대로 쓴다(회귀 방지).
+    """
+    if chosen is None:
+        return retrieved_docs
+    narrowed = [doc for doc in retrieved_docs if source_label(doc) == chosen.source_document]
+    return narrowed or retrieved_docs
+
+
+def _truncate_docs_for_prompt(docs: List[Document], limit: int = _MAX_CHUNK_CHARS_FOR_PROMPT) -> List[Document]:
+    """비정상적으로 긴 chunk(예: 표 하나가 통째로 한 chunk인 경우) 하나가 prompt
+    크기를 지배하지 않도록 chunk 단위로 방어적으로 자른다. sample_specs처럼
+    짧은 chunk만 있는 corpus에서는 사실상 아무 효과가 없다(안전망일 뿐, 정상
+    케이스는 그대로 통과— 아래에서 길이가 그대로면 원본 Document를 재사용한다)."""
+    result = []
+    for doc in docs:
+        if len(doc.page_content) <= limit:
+            result.append(doc)
+            continue
+        truncated_text = doc.page_content[:limit] + "\n...(이하 생략 — 원문이 너무 길어 일부만 표시됨)"
+        result.append(Document(page_content=truncated_text, metadata=doc.metadata))
+    return result
+
+
 def generate_specification(
     requirement: RequirementSchema,
     retrieved_docs: List[Document],
@@ -319,13 +367,35 @@ def generate_specification(
 ) -> SpecificationSchema:
     partial_spec = _prefill_from_requirement(requirement)
 
+    # Hard Requirement 판정(및 최종적으로 채택될 후보)을 LLM 호출 "전에" 먼저
+    # 계산한다 — 이 결과로 프롬프트에 실을 chunk를 좁히기 위함이다. 판정 로직
+    # 자체는 기존과 동일하게 retrieved_docs 전체를 본다(순서만 앞당김, 결과는
+    # 동일 — _apply_chosen_candidate가 나중에 이 값을 그대로 재사용한다).
+    candidates = candidate_matcher.build_candidates(requirement, retrieved_docs)
+    chosen_candidate = candidate_matcher.select_best_candidate(candidates)
+
+    llm_context_docs = _narrow_context_docs_for_prompt(retrieved_docs, chosen_candidate)
+    llm_context_docs = _truncate_docs_for_prompt(llm_context_docs)
+    logger.info(
+        "[LLM DEBUG] context 좁힘: retrieved_chunks=%s -> llm_context_chunks=%s (chosen_candidate=%s)",
+        len(retrieved_docs), len(llm_context_docs),
+        chosen_candidate.source_document if chosen_candidate else None,
+    )
+
+    # context_text(호출부가 넘긴, retrieved_docs 전체 기준 문자열) 대신 위에서
+    # 좁힌/자른 llm_context_docs로 항상 다시 만든다 — 시그니처는 하위호환을 위해
+    # context_text를 그대로 받지만, 실제 프롬프트에는 쓰지 않는다.
+    narrowed_context_text = format_context(llm_context_docs)
+
     prompt = GENERATE_PROMPT.format(
         requirement_json=requirement.model_dump_json(indent=2),
-        context=context_text or "(검색된 참고 자료 없음)",
+        context=narrowed_context_text or "(검색된 참고 자료 없음)",
         partial_spec_json=partial_spec.model_dump_json(indent=2),
     )
 
-    llm_spec = ollama_client.parse_structured(prompt, SpecificationSchema, model=model, host=host)
+    llm_spec = ollama_client.parse_structured(
+        prompt, SpecificationSchema, model=model, host=host, context_chunk_count=len(llm_context_docs)
+    )
 
     # 사용자가 명시한 값은 LLM 결과로 절대 덮어쓰지 않는다.
     merged = llm_spec.model_copy(deep=True)
@@ -351,8 +421,8 @@ def generate_specification(
         merged.defect_detection.minimum_defect_size_um = partial_spec.defect_detection.minimum_defect_size_um
 
     _verify_sourced_numbers(merged, retrieved_docs)
-    candidates = candidate_matcher.build_candidates(requirement, retrieved_docs)
-    chosen_candidate = candidate_matcher.select_best_candidate(candidates)
+    # candidates/chosen_candidate는 위에서(LLM 호출 전) 이미 계산해뒀다 — 그때와
+    # 지금 사이에 retrieved_docs/requirement가 바뀌지 않으므로 재계산하지 않는다.
     _apply_chosen_candidate(merged, chosen_candidate)
 
     _fallback_equipment_identity(merged, retrieved_docs)
