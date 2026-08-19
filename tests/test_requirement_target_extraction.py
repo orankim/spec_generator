@@ -118,15 +118,22 @@ def test_7_no_material_or_width_followup_questions():
 
 
 # ---------------------------------------------------------------
-# 이미 채워진 값이 raw_text에 근거가 없으면 그대로 유지되는지(과도한 override 방지)
+# 정책 변경(회귀 버그 수정): raw_text에 근거가 없는 material/width는 LLM이 뭘
+# 채웠든 지워야 한다 — 과거에는 "이미 채워진 값은 그대로 유지"했으나, 이 정책이
+# 실제로 "전극 표면을 ... 측정할 수 있는 ... 검사기를 찾아줘."에서 LLM이
+# material="양극"을 환각으로 채워도 그대로 통과시키는 버그로 이어졌다(사용자가
+# 명시하지 않은 값을 LLM이 임의로 채우면 안 된다는 원칙 위반). parse_requirement_text()는
+# 이제 apply_deterministic_extraction(trust_llm_guess=False)를 써서, raw_text에
+# 명확한 근거가 없으면 LLM의 값을 신뢰하지 않고 None으로 지운다.
 # ---------------------------------------------------------------
-def test_does_not_override_when_raw_text_has_no_clear_match():
+def test_llm_guess_without_raw_text_evidence_is_cleared_not_trusted():
     llm_stub = RequirementSchema(target={"material": "전극", "width_mm": 400.0}, inspection_items=["profile_3d"])
     with mock.patch(
         "agent.requirement_parser.ollama_client.parse_structured", return_value=llm_stub
     ):
         requirement = parse_requirement_text("3D 표면 형상을 측정하고 최소 10um 크기의 표면 결함을 검출할 수 있는 검사기가 필요하다.")
 
-    # raw_text에 material/width에 대한 명확한 근거가 없으므로 LLM 결과가 그대로 유지되어야 한다.
-    assert requirement.target.material == "전극"
-    assert requirement.target.width_mm == 400.0
+    # raw_text에 material/width에 대한 명확한 근거가 없으므로, LLM이 채운 값이라도
+    # 신뢰하지 않고 None으로 지워야 한다(환각 방지).
+    assert requirement.target.material is None
+    assert requirement.target.width_mm is None

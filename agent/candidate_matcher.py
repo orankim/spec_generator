@@ -17,12 +17,19 @@ from typing import Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
-from . import units
+from . import categorical_match, units
 from .schemas import CandidateEquipment, CandidateFieldMatch, RequirementSchema, SourceRef
 from .spec_retriever import source_label
 
 _MANUFACTURER_RE = re.compile(r"(?:Manufacturer|제조사)\s*[:：]\s*(.+)", re.IGNORECASE)
 _MODEL_RE = re.compile(r"(?:^|\n)[-*]?\s*Model\s*[:：]\s*(.+)", re.IGNORECASE)
+# Inspection Mode/Measurement Type/Measurement Principle은 sample_specs에서
+# markdown 표가 아니라 "## General" 절의 불릿 리스트로 쓰인다(Manufacturer/Model과
+# 동일한 형태) — 그래서 _extract_table_rows가 아니라 Manufacturer/Model과 같은
+# 방식(정규식 직접 매칭)으로 추출한다.
+_INSPECTION_MODE_RE = re.compile(r"(?:^|\n)[-*]?\s*Inspection Mode\s*[:：]\s*(.+)", re.IGNORECASE)
+_MEASUREMENT_TYPE_RE = re.compile(r"(?:^|\n)[-*]?\s*Measurement Type\s*[:：]\s*(.+)", re.IGNORECASE)
+_MEASUREMENT_PRINCIPLE_RE = re.compile(r"(?:^|\n)[-*]?\s*Measurement Principle\s*[:：]\s*(.+)", re.IGNORECASE)
 
 _RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
 _ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
@@ -96,6 +103,15 @@ class _CandidateFact:
         self.accuracy: Optional[Tuple[float, str]] = None
         self.accuracy_doc: Optional[Document] = None
         self.accuracy_text: Optional[str] = None
+        self.inspection_mode: Optional[str] = None
+        self.inspection_mode_doc: Optional[Document] = None
+        self.inspection_mode_text: Optional[str] = None
+        self.measurement_method: Optional[str] = None
+        self.measurement_method_doc: Optional[Document] = None
+        self.measurement_method_text: Optional[str] = None
+        self.measurement_principle: Optional[str] = None
+        self.measurement_principle_doc: Optional[Document] = None
+        self.measurement_principle_text: Optional[str] = None
 
 
 def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
@@ -106,6 +122,33 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
             manufacturer, model = extract_manufacturer_model(text)
             fact.manufacturer = fact.manufacturer or manufacturer
             fact.model = fact.model or model
+
+        if fact.inspection_mode is None:
+            m = _INSPECTION_MODE_RE.search(text)
+            if m:
+                canonical = categorical_match.extract_inspection_mode(m.group(1))
+                if canonical is not None:
+                    fact.inspection_mode = canonical
+                    fact.inspection_mode_doc = doc
+                    fact.inspection_mode_text = f"Inspection Mode: {m.group(1).strip()}"
+
+        if fact.measurement_method is None:
+            m = _MEASUREMENT_TYPE_RE.search(text)
+            if m:
+                canonical = categorical_match.extract_measurement_method(m.group(1))
+                if canonical is not None:
+                    fact.measurement_method = canonical
+                    fact.measurement_method_doc = doc
+                    fact.measurement_method_text = f"Measurement Type: {m.group(1).strip()}"
+
+        if fact.measurement_principle is None:
+            m = _MEASUREMENT_PRINCIPLE_RE.search(text)
+            if m:
+                canonical = categorical_match.extract_measurement_principle(m.group(1))
+                if canonical is not None:
+                    fact.measurement_principle = canonical
+                    fact.measurement_principle_doc = doc
+                    fact.measurement_principle_text = f"Measurement Principle: {m.group(1).strip()}"
 
         for label, value in _extract_table_rows(text):
             label_lower = label.lower()
@@ -218,6 +261,80 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.accuracy_text,
                     source=_source_ref(fact.accuracy_doc) if fact.accuracy_doc else None,
+                )
+            )
+
+        # Inspection Mode(Inline/Offline)/Measurement Type(Contact/Non-contact)/
+        # Measurement Principle — 숫자가 아니라 범주형 값이므로 agent.categorical_match로
+        # 정규화한 문자열을 그대로(==) 비교한다. 사용자가 해당 조건을 요구하지 않았으면
+        # (requirement.X is None) 애초에 평가 목록에 넣지 않는다 — Range/Accuracy와
+        # 동일한 원칙("요구하지 않은 조건을 임의로 채점하지 않는다").
+        if requirement.inline_offline is not None:
+            candidate_mode = fact.inspection_mode
+            if candidate_mode is None:
+                mode_result = "UNKNOWN"
+            elif candidate_mode == requirement.inline_offline:
+                mode_result = "PASS"
+            else:
+                mode_result = "FAIL"
+            matches.append(
+                CandidateFieldMatch(
+                    item="Inspection Mode",
+                    field_key="inline_offline",
+                    hard=True,
+                    requirement_text=requirement.inline_offline,
+                    found_text=candidate_mode,
+                    result=mode_result,
+                    evidence_text=fact.inspection_mode_text,
+                    source=_source_ref(fact.inspection_mode_doc) if fact.inspection_mode_doc else None,
+                )
+            )
+
+        if requirement.measurement_method is not None:
+            candidate_method = fact.measurement_method
+            if candidate_method is None:
+                method_result = "UNKNOWN"
+            elif candidate_method == requirement.measurement_method:
+                method_result = "PASS"
+            else:
+                method_result = "FAIL"
+            matches.append(
+                CandidateFieldMatch(
+                    item="Measurement Method",
+                    field_key="measurement_method",
+                    hard=True,
+                    requirement_text=requirement.measurement_method,
+                    found_text=candidate_method,
+                    result=method_result,
+                    evidence_text=fact.measurement_method_text,
+                    source=_source_ref(fact.measurement_method_doc) if fact.measurement_method_doc else None,
+                )
+            )
+
+        if requirement.measurement_principle is not None:
+            # RequirementParser가 이미 canonical 라벨로 채우지만, 조건 선택 UI 등
+            # 다른 경로로 자유 문자열이 들어올 수 있으므로 여기서도 한 번 더 정규화한다.
+            required_principle = (
+                categorical_match.extract_measurement_principle(requirement.measurement_principle)
+                or requirement.measurement_principle
+            )
+            candidate_principle = fact.measurement_principle
+            if candidate_principle is None:
+                principle_result = "UNKNOWN"
+            elif candidate_principle == required_principle:
+                principle_result = "PASS"
+            else:
+                principle_result = "FAIL"
+            matches.append(
+                CandidateFieldMatch(
+                    item="Measurement Principle",
+                    field_key="measurement_principle",
+                    hard=True,
+                    requirement_text=required_principle,
+                    found_text=candidate_principle,
+                    result=principle_result,
+                    evidence_text=fact.measurement_principle_text,
+                    source=_source_ref(fact.measurement_principle_doc) if fact.measurement_principle_doc else None,
                 )
             )
 

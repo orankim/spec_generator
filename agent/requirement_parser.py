@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Optional, Tuple
 
-from . import ollama_client, units
+from . import categorical_match, ollama_client, units
 from .schemas import RequirementRange, RequirementSchema, RequirementValue
 
 PARSE_PROMPT = """당신은 전극 검사기(인라인 계측 설비) 요구사항 분석 전문가입니다.
@@ -47,7 +47,12 @@ def parse_requirement_text(
     # LLM 파싱 직후) 걸러낸다. 후속 질문 답변 라운드(existing_requirement 경로)에서는
     # 사용자가 직접 입력/수정한 inspection_items를 건드리면 안 되므로 다시 적용하지 않는다.
     requirement.inspection_items = _filter_hallucinated_items(requirement.inspection_items, user_text)
-    apply_deterministic_extraction(requirement)
+    # trust_llm_guess=False: 소형 LLM이 raw_text에 없는 값을 환각으로 채우는 경우가
+    # 실제로 보고되었다(예: "전극 표면" -> material="양극", "1~500 μm" -> "0~500000",
+    # 정확도를 언급하지 않았는데 accuracy=1.0 생성). LLM 결과를 신뢰하지 않고,
+    # raw_text에 실제 증거가 있으면 그 값으로 덮어쓰고 증거가 없으면 LLM이 뭘
+    # 채웠든 지운다 — "이 최초 파싱 결과"에 한해서만 결정론적 추출이 항상 이긴다.
+    apply_deterministic_extraction(requirement, trust_llm_guess=False)
     return requirement
 
 
@@ -251,14 +256,26 @@ def _extract_width_mm(text: str) -> Optional[float]:
     return value_mm
 
 
-def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
+def apply_deterministic_extraction(requirement: RequirementSchema, *, trust_llm_guess: bool = True) -> None:
     """
     raw_text에 담긴 구체적 수치(측정 범위/정확도/분해능/최소 결함 크기)와 검사
-    대상 정보(material/width_mm)를 LLM 결과와 무관하게 agent.units의 정규식/단위
-    파싱으로 직접 뽑아 채운다. 수치 필드는 이미 값이 채워진 경우 건드리지 않지만
-    (다른 경로로 이미 확정된 값을 덮어쓰지 않음), material/width_mm는 raw_text에
-    명확한 근거가 있으면 우선한다(위 설명 참고). 마지막에
-    RequirementSchema.sync_legacy_fields()를 호출해 레거시 float 필드
+    대상/장비 조건(material/width_mm/inline_offline/measurement_method/
+    measurement_principle)을 agent.units/agent.categorical_match의 정규식 매칭으로
+    직접 뽑아 채운다.
+
+    trust_llm_guess(기본 True, 기존 동작과 동일 — 하위호환):
+      - True: 이미 값이 채워져 있으면 건드리지 않는다. 이 모드는 팔로우업 질문에
+        대한 사용자의 직접 답변(agent/routes.py의 existing_requirement 경로,
+        raw_text는 원문 그대로지만 필드 값은 사용자가 폼에 새로 입력한 것)을
+        절대 덮어쓰거나 지우면 안 되는 곳에서 쓴다.
+      - False: raw_text에서 찾은 값이 항상 이긴다 — 증거가 있으면 기존 값을
+        덮어쓰고, 증거가 없으면 기존 값을 None으로 지운다. LLM(parse_requirement_text)
+        직후 딱 한 번만 이 모드로 호출된다. 소형 LLM이 raw_text에 없는 값을
+        환각으로 채우는 경우가 실제로 보고되었다(예: "전극 표면" -> material="양극",
+        "1~500 μm" -> "0~500000"으로 둔갑, 정확도 미언급인데 accuracy=1.0 생성) —
+        이 모드가 그 환각을 raw_text 재검증으로 걸러낸다.
+
+    마지막에 RequirementSchema.sync_legacy_fields()를 호출해 레거시 float 필드
     (required_accuracy_um 등)도 함께 채워, RequirementValidator/기존 코드가
     그대로 동작하도록 한다.
     """
@@ -269,6 +286,8 @@ def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
     material = _extract_material(text)
     if material is not None:
         requirement.target.material = material
+    elif not trust_llm_guess:
+        requirement.target.material = None
 
     width_span = _extract_width_mm_with_span(text)
     working_text = text
@@ -280,8 +299,10 @@ def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
         # 최대 200 μm까지..."에서 "최대" 키워드 근처 윈도에 폭 값 "10 mm"까지 함께
         # 걸려 measurement_range가 폭 값을 잘못 재사용하는 회귀가 생긴다(실측됨).
         working_text = _mask(working_text, width_start, width_end)
+    elif not trust_llm_guess:
+        requirement.target.width_mm = None
 
-    if requirement.measurement_range is None:
+    if requirement.measurement_range is None or not trust_llm_guess:
         range_result = units.parse_range_with_span(working_text)
         if range_result is not None:
             lo, hi, unit, start, end = range_result
@@ -299,26 +320,60 @@ def apply_deterministic_extraction(requirement: RequirementSchema) -> None:
                 if operator in (None, "<="):
                     requirement.measurement_range = RequirementRange(min=0.0, max=value, unit=unit)
                     working_text = _mask(working_text, start, end)
+                elif not trust_llm_guess:
+                    requirement.measurement_range = None
+            elif not trust_llm_guess:
+                requirement.measurement_range = None
 
-    if requirement.accuracy is None and requirement.required_accuracy_um is None:
+    if (requirement.accuracy is None and requirement.required_accuracy_um is None) or not trust_llm_guess:
         found = _find_keyword_value(working_text, _ACCURACY_KEYWORDS)
         if found is not None:
             value, unit, operator, start, end = found
             requirement.accuracy = RequirementValue(value=value, unit=unit, operator=operator or "<=")
             working_text = _mask(working_text, start, end)
+        elif not trust_llm_guess:
+            requirement.accuracy = None
+            requirement.required_accuracy_um = None
 
-    if requirement.resolution is None and requirement.required_resolution_um is None:
+    if (requirement.resolution is None and requirement.required_resolution_um is None) or not trust_llm_guess:
         found = _find_keyword_value(working_text, _RESOLUTION_KEYWORDS)
         if found is not None:
             value, unit, operator, start, end = found
             requirement.resolution = RequirementValue(value=value, unit=unit, operator=operator or "<=")
             working_text = _mask(working_text, start, end)
+        elif not trust_llm_guess:
+            requirement.resolution = None
+            requirement.required_resolution_um = None
 
-    if requirement.minimum_defect_size is None and requirement.minimum_defect_size_um is None:
+    if (requirement.minimum_defect_size is None and requirement.minimum_defect_size_um is None) or not trust_llm_guess:
         found = _find_keyword_value(working_text, _DEFECT_KEYWORDS)
         if found is not None:
             value, unit, operator, start, end = found
             requirement.minimum_defect_size = RequirementValue(value=value, unit=unit, operator=operator or "<=")
             working_text = _mask(working_text, start, end)
+        elif not trust_llm_guess:
+            requirement.minimum_defect_size = None
+            requirement.minimum_defect_size_um = None
+
+    # Inline/Offline, 접촉/비접촉, 측정 원리 — 숫자가 아니라 범주형 값이므로
+    # agent.categorical_match의 키워드 매칭으로 판단한다(요청서 6절: "무리하게
+    # LLM으로 PASS/FAIL을 판단하지 마세요" — 추출 자체도 Python 코드로 결정론적으로).
+    inline_offline = categorical_match.extract_inspection_mode(text)
+    if inline_offline is not None:
+        requirement.inline_offline = inline_offline
+    elif not trust_llm_guess:
+        requirement.inline_offline = None
+
+    measurement_method = categorical_match.extract_measurement_method(text)
+    if measurement_method is not None:
+        requirement.measurement_method = measurement_method
+    elif not trust_llm_guess:
+        requirement.measurement_method = None
+
+    measurement_principle = categorical_match.extract_measurement_principle(text)
+    if measurement_principle is not None:
+        requirement.measurement_principle = measurement_principle
+    elif not trust_llm_guess:
+        requirement.measurement_principle = None
 
     requirement.sync_legacy_fields()

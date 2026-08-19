@@ -363,7 +363,8 @@ async def agent_page():
                         <strong>측정 범위:</strong> ${fmtRange(req.measurement_range)}<br>
                         <strong>요구 정확도:</strong> ${fmtReqValue(req.accuracy, true)}<br>
                         <strong>측정 방식:</strong> ${req.measurement_method || '미정'}<br>
-                        <strong>측정 원리:</strong> ${req.measurement_principle || '미정'}
+                        <strong>측정 원리:</strong> ${req.measurement_principle || '미정'}<br>
+                        <strong>검사 모드:</strong> ${req.inline_offline || '미정'}
                     `;
 
                     const followupSection = document.getElementById('followupSection');
@@ -471,6 +472,23 @@ async def agent_page():
                            </div>`
                         : '';
 
+                    // Hard Requirement 중 하나라도 FAIL이면, 아래 표시되는 설비가 "조건을
+                    // 충족하는 장비"가 아니라 "가장 유사하지만 조건을 다 채우지 못한 후보"임을
+                    // 먼저 알린다 — FAIL 후보를 적합 장비처럼 오인시키지 않기 위함(요청서).
+                    const hardRecords = hardRequirementReport || [];
+                    const hasFail = hardRecords.some(r => r.result === 'FAIL');
+                    const hasPass = hardRecords.some(r => r.result === 'PASS');
+                    let matchBanner = '';
+                    if (hasFail) {
+                        matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#fff5f5; border:1px solid #feb2b2; border-radius:4px; color:#822727; font-weight:bold;">
+                            ⚠️ 조건을 모두 충족하는 장비를 찾지 못했습니다. 아래는 가장 유사한 후보이며, 충족하지 못한 조건은 "사용자 요구조건 검증" 목록에서 FAIL로 표시됩니다.
+                        </div>`;
+                    } else if (hardRecords.length > 0 && hasPass) {
+                        matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#f0fff4; border:1px solid #9ae6b4; border-radius:4px; color:#276749; font-weight:bold;">
+                            ✅ 아래 장비는 지정하신 Hard Requirement 조건을 모두 충족합니다.
+                        </div>`;
+                    }
+
                     const requiredAccuracyDisplay = req.accuracy
                         ? fmtReqValue(req.accuracy, true)
                         : (req.required_accuracy_um != null ? `±${req.required_accuracy_um} um 이하` : '미정');
@@ -480,6 +498,7 @@ async def agent_page():
                         : (spec.sources || []);
 
                     document.getElementById('specSummary').innerHTML = `
+                        ${matchBanner}
                         <strong>설비명:</strong> ${spec.equipment.name || 'N/A'}<br>
                         <strong>검사 대상:</strong> ${spec.inspection_target.material || 'N/A'} (${spec.inspection_target.width_mm ?? '?'} mm)<br>
                         <strong>검사 항목:</strong> ${(spec.inspection_items || []).join(', ') || 'N/A'}<br>
