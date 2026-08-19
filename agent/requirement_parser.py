@@ -8,6 +8,7 @@ RequirementParser — 자연어 또는 조건 선택 UI 입력을 RequirementSch
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Dict, Optional, Tuple
 
 from . import categorical_match, ollama_client, units
@@ -282,6 +283,16 @@ def apply_deterministic_extraction(requirement: RequirementSchema, *, trust_llm_
     text = requirement.raw_text
     if not text:
         return
+    # "음극"/"양극"/"분리막"/"폭"/"정확도" 등 키워드 매칭은 전부 리터럴 부분 문자열
+    # 비교(in)나 이를 기반으로 한 정규식이라 텍스트가 Unicode 정규화 형태(NFC/NFD)에
+    # 따라 다르게 취급된다 — 예: 한글 "음극"이 완성형(NFC, 코드포인트 2개)이 아니라
+    # 자모 분해형(NFD, 코드포인트 4개)으로 들어오면 소스 코드의 리터럴 "음극"(NFC)과
+    # 바이트 단위로 달라 매칭이 조용히 실패한다. 사용자가 다른 앱에서 복사한 단어를
+    # 문장 중간에 붙여넣는 경우 등 실제로 관찰되었다(재현: material만 빠지고
+    # 폭/측정범위/정확도는 정상 추출됨 — 그 필드들은 숫자/단위 정규식이라 한글
+    # 정규화와 무관해 영향을 받지 않았다). raw_text 필드 자체(사용자 원문 표시/감사
+    # 목적)는 건드리지 않고, 매칭에만 쓰는 로컬 변수만 NFC로 정규화한다.
+    text = unicodedata.normalize("NFC", text)
 
     material = _extract_material(text)
     if material is not None:
