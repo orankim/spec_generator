@@ -24,7 +24,7 @@ from agent.paths import DEFAULT_SAMPLE_SPECS_DIR
 app = FastAPI(title="전극 검사기 사양서 자동 생성 AI")
 app.include_router(agent_router)
 
-# 생성된 PPTX 파일이 임시 저장될 폴더. agent/routes.py의 "/api/agent/build-pptx"가
+# 생성된 사양서 파일이 임시 저장될 폴더. agent/routes.py의 "/api/agent/build-markdown"이
 # 이 폴더(상대경로 "./generated_files")에 파일을 쓰고, 아래 "/api/download/{file_name}"이
 # 그 파일을 서빙한다 — Agent가 실제로 쓰는 공유 인프라이므로 유지한다.
 OUTPUT_DIR = Path("./generated_files")
@@ -241,12 +241,12 @@ async def agent_page():
                     <ul id="confirmList" class="issue-list"></ul>
                 </div>
 
-                <button onclick="buildPptx()">📄 PPTX 사양서 생성</button>
+                <button onclick="buildMarkdown()">📄 마크다운 사양서 생성</button>
                 <button onclick="goToStep('step2')" style="background:#a0aec0;">◀ 요구사항 다시 확인</button>
 
                 <div id="agentResult" style="display:none; margin-top:15px; padding:15px; background:#e6fffa; border:1px solid #319795; border-radius:6px; text-align:center;">
                     <h3>🎉 사양서가 생성되었습니다!</h3>
-                    <a id="agentDownloadLink" class="download-btn" href="#" download>PPTX 사양서 다운로드</a>
+                    <a id="agentDownloadLink" class="download-btn" href="#" download>마크다운 사양서 다운로드</a>
                 </div>
             </div>
 
@@ -523,20 +523,20 @@ async def agent_page():
                     document.getElementById('agentResult').style.display = 'none';
                 }
 
-                async function buildPptx() {
+                async function buildMarkdown() {
                     setLoading(true);
                     try {
-                        const res = await fetch('/api/agent/build-pptx', {
+                        const res = await fetch('/api/agent/build-markdown', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ specification: state.specification }),
+                            body: JSON.stringify({ specification: state.specification, requirement: state.requirement, validation: state.specValidation }),
                         });
                         const data = await res.json();
-                        if (!res.ok) throw new Error(data.detail || 'PPTX 생성 실패');
+                        if (!res.ok) throw new Error(data.detail || '마크다운 사양서 생성 실패');
                         document.getElementById('agentDownloadLink').href = data.download_url;
                         document.getElementById('agentResult').style.display = 'block';
                     } catch (err) {
-                        alert('PPTX 생성 중 오류가 발생했습니다:\\n\\n' + err.message);
+                        alert('마크다운 사양서 생성 중 오류가 발생했습니다:\\n\\n' + err.message);
                     } finally {
                         setLoading(false);
                     }
@@ -547,24 +547,32 @@ async def agent_page():
 
 
 # ==========================================
-# 4. PPTX 파일 다운로드 API
+# 4. 사양서 파일 다운로드 API
 # ==========================================
-# agent/routes.py의 "/api/agent/build-pptx"가 OUTPUT_DIR(./generated_files)에 PPTX를
-# 쓰고 download_url로 이 엔드포인트를 가리킨다 — 전극 검사기 AI가 실제로 쓰는
-# 공유 인프라이므로 유지한다 (예전 "/api/generate-spec"이 쓰던 것과 같은 폴더/엔드포인트).
+# agent/routes.py의 "/api/agent/build-markdown"가 OUTPUT_DIR(./generated_files)에
+# Markdown 사양서를 쓰고 download_url로 이 엔드포인트를 가리킨다 — 전극 검사기 AI가
+# 실제로 쓰는 공유 인프라이므로 유지한다 (예전 "/api/generate-spec"이 쓰던 것과 같은
+# 폴더/엔드포인트).
+_DOWNLOAD_MEDIA_TYPES = {
+    ".md": "text/markdown; charset=utf-8",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+
 @app.get("/api/download/{file_name}")
 async def download_file(file_name: str):
     """
-    생성된 PPTX 파일을 다운로드합니다.
+    생성된 사양서 파일을 다운로드합니다.
     """
     file_path = OUTPUT_DIR / file_name
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
 
+    media_type = _DOWNLOAD_MEDIA_TYPES.get(file_path.suffix.lower(), "application/octet-stream")
     return FileResponse(
         path=file_path,
         filename=f"설비사양서_{file_name}",
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        media_type=media_type,
     )
 
 
