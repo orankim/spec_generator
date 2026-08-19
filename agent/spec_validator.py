@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from . import units
+from . import categorical_match, units
 from .schemas import (
     ComplianceRecord,
     Operator,
@@ -315,15 +315,51 @@ def _accuracy_hard_requirement_record(spec: SpecificationSchema, requirement: Re
     )
 
 
+_CATEGORICAL_LABELS = {
+    "inline": "Inline",
+    "offline": "Offline",
+    "non_contact": "Non-contact",
+    "contact": "Contact",
+}
+
+
+def _categorical_hard_requirement_record(
+    item: str,
+    required: Optional[str],
+    confirmed: Optional[str],
+) -> Optional[ComplianceRecord]:
+    """
+    Inspection Mode(Inline/Offline)/Measurement Method(Contact/Non-contact)/
+    Measurement Principle처럼 숫자가 아니라 범주형 값인 hard requirement를
+    비교한다. required가 None이면(사용자가 그 조건을 요구하지 않았으면) 애초에
+    평가하지 않는다 — Range/Accuracy와 동일한 원칙.
+    """
+    if required is None:
+        return None
+    required_label = _CATEGORICAL_LABELS.get(required, required)
+    if confirmed is None:
+        return ComplianceRecord(
+            item=item, result="UNKNOWN",
+            reason=f"요구 {item} {required_label} / 장비의 {item}을(를) 확인하지 못했습니다.",
+            hard=True,
+        )
+    confirmed_label = _CATEGORICAL_LABELS.get(confirmed, confirmed)
+    result = "PASS" if confirmed == required else "FAIL"
+    reason = f"요구 {item} {required_label} / 장비 {item} {confirmed_label} → {result}"
+    return ComplianceRecord(item=item, result=result, reason=reason, hard=True)
+
+
 def build_hard_requirement_report(
     spec: SpecificationSchema,
     requirement: Optional[RequirementSchema],
 ) -> List[ComplianceRecord]:
     """
-    측정 범위/정확도 hard requirement를 요구값 대 "장비 실측값"으로 PASS/FAIL
-    판정한다(LLM이 아니라 agent.units의 순수 함수로 판정 — candidate_matcher.
-    build_candidates()가 이미 채운 measurement_range_full/equipment_accuracy_um을
-    그대로 재사용하므로 비교 로직을 중복 구현하지 않는다).
+    측정 범위/정확도/검사 모드/측정 방식/측정 원리 hard requirement를 요구값 대
+    "장비 실측값"으로 PASS/FAIL 판정한다(LLM이 아니라 agent.units/agent.
+    categorical_match의 순수 함수로 판정 — candidate_matcher.build_candidates()가
+    이미 채운 measurement_range_full/equipment_accuracy_um/equipment.inline_offline/
+    measurement_method/measurement_principle을 그대로 재사용하므로 비교 로직을
+    중복 구현하지 않는다).
     """
     if requirement is None:
         return []
@@ -334,6 +370,26 @@ def build_hard_requirement_report(
     accuracy_record = _accuracy_hard_requirement_record(spec, requirement)
     if accuracy_record is not None:
         records.append(accuracy_record)
+    mode_record = _categorical_hard_requirement_record(
+        "Inspection Mode", requirement.inline_offline, spec.equipment.inline_offline
+    )
+    if mode_record is not None:
+        records.append(mode_record)
+    method_record = _categorical_hard_requirement_record(
+        "Measurement Method", requirement.measurement_method, spec.equipment.measurement_method
+    )
+    if method_record is not None:
+        records.append(method_record)
+    if requirement.measurement_principle is not None:
+        required_principle = (
+            categorical_match.extract_measurement_principle(requirement.measurement_principle)
+            or requirement.measurement_principle
+        )
+        principle_record = _categorical_hard_requirement_record(
+            "Measurement Principle", required_principle, spec.equipment.measurement_principle
+        )
+        if principle_record is not None:
+            records.append(principle_record)
     return records
 
 

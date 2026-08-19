@@ -133,9 +133,19 @@ def test_spec_validator_requires_accuracy_for_thickness_requirement():
 # ==========================================
 # 통합: 요청서 18절의 테스트 케이스 3종
 # ==========================================
-def _run_case(stub_requirement: RequirementSchema, followup: dict, stub_llm_spec: SpecificationSchema):
+def _run_case(stub_requirement: RequirementSchema, followup: dict, stub_llm_spec: SpecificationSchema, user_text: str = "(테스트용 입력)"):
+    """
+    followup은 실제 제품에서 "추가 질문에 대한 사용자 답변"을 흉내낸다 — 여기서
+    설정하는 값(target.material/width_mm 등)은 raw_text에 근거가 없어도 정상이다
+    (사용자가 팔로우업 폼에 직접 입력한 값이므로 apply_deterministic_extraction의
+    "LLM 환각은 신뢰하지 않는다" 정책과 무관하게 항상 보존되어야 하는 값).
+    user_text는 실제 최초 자연어 질문을 그대로 넘겨야 한다 — RequirementParser가
+    이제 raw_text에 없는 값은 LLM이 뭘 채웠든 지우므로("전극"처럼 구체적이지 않은
+    재질명 포함), 무의미한 placeholder 문장을 쓰면 stub_requirement가 채운 값도
+    함께 지워진다.
+    """
     with mock.patch("agent.ollama_client.parse_structured", return_value=stub_requirement):
-        requirement, validation = analyze_requirement(user_text="(테스트용 입력)")
+        requirement, validation = analyze_requirement(user_text=user_text)
 
     for path, value in followup.items():
         keys = path.split(".")
@@ -166,53 +176,83 @@ def _run_case(stub_requirement: RequirementSchema, followup: dict, stub_llm_spec
 
 
 def test_case_1_width_thickness_surface_defect_non_contact():
+    text = "500mm 폭의 전극을 검사하고 두께와 표면 결함을 측정하는 비접촉 검사기가 필요하다."
     stub_req = RequirementSchema(
         target=RequirementTarget(material="전극", width_mm=500),
         inspection_items=["thickness", "surface_defect"],
         measurement_method="non_contact",
     )
     with mock.patch("agent.ollama_client.parse_structured", return_value=stub_req):
-        _, validation = analyze_requirement(user_text="500mm 폭의 전극을 검사하고 두께와 표면 결함을 측정하는 비접촉 검사기가 필요하다.")
+        requirement, validation = analyze_requirement(user_text=text)
     assert validation.is_valid is False  # 정확도/최소결함/두께범위 질문이 나와야 함
+    # "폭 500mm"는 raw_text에 명확한 근거가 있으므로 결정론적 추출로 정상 채워진다.
+    assert requirement.target.width_mm == 500.0
+    # "전극"은 구체적 재질명이 아니므로(양극/음극/분리막 중 하나가 아님) 미정으로
+    # 남아야 한다 — 팔로우업에서 사용자가 직접 답해야 하는 항목.
+    assert requirement.target.material is None
 
     stub_spec = SpecificationSchema()
     stub_spec.equipment.name = "전극 두께/표면결함 비접촉 검사기"
     specification, _ = _run_case(
         stub_req,
-        {"required_accuracy_um": 1.0, "minimum_defect_size_um": 10.0, "target.thickness_range_um": "0~200"},
+        {
+            "target.material": "전극",  # 팔로우업 질문("예: 양극, 음극, 분리막, 전극 전반")에 대한 사용자의 실제 답변
+            "required_accuracy_um": 1.0,
+            "minimum_defect_size_um": 10.0,
+            "target.thickness_range_um": "0~200",
+        },
         stub_spec,
+        user_text=text,
     )
     assert specification.measurement_performance.accuracy_um.value == 1.0
     assert specification.measurement_performance.accuracy_um.status == "USER_DEFINED"
 
 
 def test_case_2_thickness_range_and_accuracy():
+    text = "전극 두께를 0~200um 범위에서 측정하고 1um 이하의 정확도가 필요하다."
     stub_req = RequirementSchema(
         target=RequirementTarget(material="전극", thickness_range_um="0~200"),
         inspection_items=["thickness"],
         required_accuracy_um=1.0,
     )
     with mock.patch("agent.ollama_client.parse_structured", return_value=stub_req):
-        _, validation = analyze_requirement(user_text="전극 두께를 0~200um 범위에서 측정하고 1um 이하의 정확도가 필요하다.")
+        _, validation = analyze_requirement(user_text=text)
     assert "target.width_mm" in validation.missing_fields
+    assert "target.material" in validation.missing_fields  # "전극"은 구체적 재질명이 아니므로 팔로우업 필요
 
     stub_spec = SpecificationSchema()
     stub_spec.equipment.name = "전극 두께 정밀 측정기"
-    specification, _ = _run_case(stub_req, {"target.width_mm": 300}, stub_spec)
+    specification, _ = _run_case(
+        stub_req,
+        {"target.width_mm": 300, "target.material": "전극"},
+        stub_spec,
+        user_text=text,
+    )
     assert specification.measurement_performance.accuracy_um.value == 1.0
 
 
 def test_case_3_3d_profile_min_defect_size():
+    text = "3D 표면 형상을 측정하고 최소 10um 크기의 표면 결함을 검출할 수 있는 검사기가 필요하다."
     stub_req = RequirementSchema(
         target=RequirementTarget(material="전극", width_mm=400),
         inspection_items=["profile_3d"],
         minimum_defect_size_um=10.0,
     )
     with mock.patch("agent.ollama_client.parse_structured", return_value=stub_req):
-        _, validation = analyze_requirement(user_text="3D 표면 형상을 측정하고 최소 10um 크기의 표면 결함을 검출할 수 있는 검사기가 필요하다.")
-    assert validation.is_valid is True  # profile_3d + minimum_defect_size_um만 있으면 충족
+        _, validation = analyze_requirement(user_text=text)
+    # 이 문장은 재질/폭에 대한 근거가 전혀 없으므로(사용자가 명시하지 않음),
+    # LLM이 뭘 채웠든 결정론적 추출이 지워야 하고 팔로우업이 필요해야 한다 —
+    # "profile_3d + minimum_defect_size_um만 있으면 충족"은 material/width_mm이
+    # LLM 환각으로 살아남는다는 잘못된 전제였다.
+    assert "target.material" in validation.missing_fields
+    assert "target.width_mm" in validation.missing_fields
 
     stub_spec = SpecificationSchema()
     stub_spec.equipment.name = "3D 표면 프로파일 검사기"
-    specification, _ = _run_case(stub_req, {}, stub_spec)
+    specification, _ = _run_case(
+        stub_req,
+        {"target.material": "전극", "target.width_mm": 400},
+        stub_spec,
+        user_text=text,
+    )
     assert specification.defect_detection.minimum_defect_size_um.value == 10.0

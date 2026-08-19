@@ -68,7 +68,13 @@ def _prefill_from_requirement(requirement: RequirementSchema) -> SpecificationSc
     spec.inspection_target.substrate = requirement.target.substrate
 
     spec.inspection_items = list(requirement.inspection_items)
-    spec.equipment.measurement_principle = requirement.measurement_principle
+    # spec.equipment.inline_offline/measurement_method/measurement_principle은 여기서
+    # requirement 값으로 미리 채우지 않는다 — Equipment는 "실제로 선택된 장비"를
+    # 서술하는 절이므로(manufacturer/model과 동일하게), 그 값은 아래
+    # _apply_chosen_candidate()가 후보 문서에서 실제로 확인한 값으로만 채운다.
+    # (과거에는 여기서 requirement.measurement_principle을 직접 대입했지만,
+    # generate_specification()의 병합 단계에 실제로 반영하는 코드가 없어 죽은 코드였다
+    # — 요구값과 실측값을 별도 필드로 분리하는 이 파일의 원칙에 맞춰 완전히 제거한다.)
 
     if requirement.required_accuracy_um is not None:
         spec.measurement_performance.accuracy_um = SourcedNumber(
@@ -224,9 +230,15 @@ def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[Candidat
             spec.notes.append(f"설비명이 후보 문서({chosen.source_document})에서 자동 추출되었습니다 — 정확한지 확인하세요.")
 
     for match in chosen.matches:
-        if match.found_value is None or match.source is None:
+        if match.source is None or (match.found_value is None and match.found_text is None):
             continue
-        if match.field_key == "measurement_range" and match.found_min is not None:
+        if match.field_key == "inline_offline" and match.found_text:
+            spec.equipment.inline_offline = spec.equipment.inline_offline or match.found_text
+        elif match.field_key == "measurement_method" and match.found_text:
+            spec.equipment.measurement_method = spec.equipment.measurement_method or match.found_text
+        elif match.field_key == "measurement_principle" and match.found_text:
+            spec.equipment.measurement_principle = spec.equipment.measurement_principle or match.found_text
+        elif match.field_key == "measurement_range" and match.found_min is not None:
             spec.measurement_performance.measurement_range_full = SourcedRange(
                 min=match.found_min,
                 max=match.found_value,

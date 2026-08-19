@@ -157,7 +157,10 @@ class RequirementSchema(BaseModel):
     # Equipment
     equipment_type: Optional[str] = None
     measurement_method: Optional[Literal["non_contact", "contact"]] = None
-    measurement_principle: Optional[Literal["laser", "oct", "interferometry", "vision", "other"]] = None
+    # 자유 문자열로 둔다("Spectral Reflectometry" 등 sample_specs 원문 그대로 담을 수
+    # 있어야 함) — agent.categorical_match가 결정론적으로 canonical 라벨(OCT,
+    # Interferometry, Laser, Vision, Spectral Reflectometry)로 정규화해 채운다.
+    measurement_principle: Optional[str] = None
     inline_offline: Optional[Literal["inline", "offline"]] = None
 
     # Measurement Requirements — 레거시 float 필드는 하위호환을 위해 유지한다.
@@ -257,6 +260,11 @@ class Equipment(BaseModel):
     inspection_method: Optional[str] = None
     measurement_principle: Optional[str] = None
     inline_offline: Optional[Literal["inline", "offline"]] = None
+    measurement_method: Optional[Literal["non_contact", "contact"]] = Field(
+        default=None,
+        description="후보 문서에서 확인된 실제 접촉/비접촉 방식 (agent.candidate_matcher가 채움). "
+        "requirement.measurement_method(사용자 요구값)와는 별개 — 요구값/실측값 혼동 방지 원칙(요청서)에 따름.",
+    )
 
 
 class InspectionTarget(BaseModel):
@@ -501,6 +509,14 @@ class CandidateFieldMatch(BaseModel):
         default=None, description="item이 범위(예: Measurement Range)일 때만 채움 — found_value는 그 범위의 max."
     )
     found_unit: Optional[str] = None
+    requirement_text: Optional[str] = Field(
+        default=None,
+        description="범주형(문자열) 요구값 — 예: Inline/Offline, Non-contact/Contact, OCT. "
+        "숫자 필드(requirement_value)로 표현할 수 없는 항목(Inspection Mode 등)에 쓴다.",
+    )
+    found_text: Optional[str] = Field(
+        default=None, description="범주형(문자열) 후보 확인값. found_value(숫자)와 대칭되는 문자열 버전."
+    )
     result: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
     evidence_text: Optional[str] = Field(default=None, description="근거로 삼은 원문 발췌")
     source: Optional[SourceRef] = None
