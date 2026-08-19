@@ -14,10 +14,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from renderers.markdown_renderer import render_markdown
+
 from . import ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, retrieve_and_generate
-from .pptx_electrode_builder import ElectrodeSpecPPTXBuilder
 from .requirement_parser import apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import RequirementSchema, SpecificationSchema
@@ -30,18 +31,8 @@ router = APIRouter(prefix="/api/agent", tags=["electrode-agent"])
 # 저장소 루트 기준 절대경로가 기본값이다 — cwd에 따라 build_rag_ollama.py와
 # 서로 다른 디렉터리를 가리키는 문제를 방지한다 (agent/paths.py 참고).
 DB_PATH = os.environ.get("CHROMA_DB_PATH", DEFAULT_CHROMA_DB_PATH)
-TEMPLATE_PATH = os.environ.get("ELECTRODE_TEMPLATE_PATH", "./template_electrode.pptx")
 OUTPUT_DIR = Path("./generated_files")
 OUTPUT_DIR.mkdir(exist_ok=True)
-
-_builder: Optional[ElectrodeSpecPPTXBuilder] = None
-
-
-def _get_builder() -> ElectrodeSpecPPTXBuilder:
-    global _builder
-    if _builder is None:
-        _builder = ElectrodeSpecPPTXBuilder(template_path=TEMPLATE_PATH)
-    return _builder
 
 
 class AnalyzeRequest(BaseModel):
@@ -101,26 +92,35 @@ async def generate_spec_api(req: GenerateSpecRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class BuildPptxRequest(BaseModel):
+class BuildMarkdownRequest(BaseModel):
     specification: Dict[str, Any]
+    # 있으면 Markdown에 Hard Requirement/Compliance 비교 표까지 함께 채운다
+    # (renderers.markdown_renderer.render_markdown의 선택적 requirement 인자).
+    requirement: Optional[Dict[str, Any]] = None
+    validation: Optional[Dict[str, Any]] = None
 
 
-@router.post("/build-pptx")
-async def build_pptx_api(req: BuildPptxRequest):
+@router.post("/build-markdown")
+async def build_markdown_api(req: BuildMarkdownRequest):
     try:
         specification = SpecificationSchema(**req.specification)
+        requirement = RequirementSchema(**req.requirement) if req.requirement else None
+        from .schemas import ValidationResult
+
+        validation = ValidationResult(**req.validation) if req.validation else None
+
+        title = specification.equipment.name or f"{specification.inspection_target.material or '전극'} 검사기 사양서"
+        markdown_text = render_markdown(specification, requirement=requirement, validation=validation, title=title)
+
         file_id = str(uuid.uuid4())[:8]
-        output_filename = f"electrode_inspection_spec_{file_id}.pptx"
+        output_filename = f"electrode_inspection_spec_{file_id}.md"
         output_path = OUTPUT_DIR / output_filename
-        builder = _get_builder()
-        builder.build(specification, output_path=str(output_path))
+        output_path.write_text(markdown_text, encoding="utf-8")
         return {
             "status": "success",
             "file_name": output_filename,
             "download_url": f"/api/download/{output_filename}",
         }
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.exception("PPTX 생성 실패")
+        logger.exception("Markdown 사양서 생성 실패")
         raise HTTPException(status_code=500, detail=str(e))

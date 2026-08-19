@@ -51,9 +51,9 @@ def test_legacy_upload_specs_api_removed(client):
     assert resp.status_code == 404
 
 
-def test_download_endpoint_still_exists_for_agent_pptx(client):
-    """agent/routes.py의 build-pptx가 쓰는 다운로드 엔드포인트는 반드시 유지되어야 한다."""
-    resp = client.get("/api/download/does_not_exist.pptx")
+def test_download_endpoint_still_exists_for_agent_markdown(client):
+    """agent/routes.py의 build-markdown이 쓰는 다운로드 엔드포인트는 반드시 유지되어야 한다."""
+    resp = client.get("/api/download/does_not_exist.md")
     assert resp.status_code == 404  # 라우트는 존재하되, 파일이 없어서 404 (405/501이 아님)
 
 
