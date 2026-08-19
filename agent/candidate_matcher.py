@@ -28,6 +28,21 @@ _RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
 _ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
 
 
+def _is_range_label(label_lower: str) -> bool:
+    """
+    "Measurement Range"라는 정확한 문구가 없어도 "Thickness Range"/"Vertical Range"
+    처럼 측정 범위를 가리키는 표 라벨이 실제 사양서에 흔히 쓰인다(sample_specs
+    SPEC-003/004/007/008에서 실측됨) — 이런 라벨은 _RANGE_LABEL_HINTS의 고정 문구와
+    매칭되지 않아 값이 문서에 명확히 있는데도 UNKNOWN으로 잘못 판정되는 버그가
+    있었다. 이 corpus의 정상적인 범위 라벨은 전부 "Range"/"범위"로 끝나므로(다른
+    무관한 "…Range" 표 라벨이 같은 표에 섞여 있는 사례는 없음), 고정 문구 힌트에
+    더해 라벨이 "range"/"범위"로 끝나는지도 함께 확인한다.
+    """
+    if any(h in label_lower for h in _RANGE_LABEL_HINTS):
+        return True
+    return label_lower.endswith("range") or label_lower.endswith("범위")
+
+
 def extract_manufacturer_model(text: str) -> Tuple[Optional[str], Optional[str]]:
     """
     문서 원문에서 "Manufacturer: X"/"Model: Y" 같은 명시적 라인을 정규식으로 뽑는다.
@@ -94,7 +109,7 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
 
         for label, value in _extract_table_rows(text):
             label_lower = label.lower()
-            if fact.range is None and any(h in label_lower for h in _RANGE_LABEL_HINTS):
+            if fact.range is None and _is_range_label(label_lower):
                 range_result = units.parse_range(value)
                 if range_result is not None:
                     fact.range = range_result
