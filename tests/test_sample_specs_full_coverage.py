@@ -33,7 +33,7 @@ from agent import spec_retriever
 from agent.candidate_matcher import build_candidates
 from agent.pipeline import retrieve_and_generate
 from agent.requirement_parser import apply_deterministic_extraction
-from agent.schemas import RequirementSchema, SpecificationSchema
+from agent.schemas import RequirementSchema, RequirementTarget, SpecificationSchema
 from agent.spec_validator import build_hard_requirement_report
 from build_rag_ollama import build_vector_db
 
@@ -164,3 +164,49 @@ def test_end_to_end_pipeline_selects_correct_candidate_for_non_standard_label(db
     assert specification.equipment.name == "OCTVision OCT-E100"
     assert by_item["Measurement Range"].result == "PASS"
     assert by_item["Accuracy"].result == "PASS"
+
+
+def test_chat_ui_regression_baseline_multisense_ms600(db):
+    """
+    챗봇 UI 개편(item 18) 기준 사례 "Test10" 그대로: "폭 600 mm 이상의 전극을
+    검사하면서 두께와 표면 결함을 동시에 검사할 수 있는 Inline 복합 검사기를
+    찾아줘. 측정 범위는 0~300 μm이고 정확도는 ±1 μm 이하여야 해." — MultiSense
+    MS-600(SPEC-010.md, 실측 범위 0~300μm/정확도 ±0.8μm)이 선택되고 Hard
+    Requirement가 정상적으로 유지되는지 확인한다. 프론트엔드를 챗봇으로 갈아끼워도
+    이 결과가 절대 바뀌면 안 된다(요청서 9절 원칙: "현재 정상 동작하는 Test10을
+    깨지 않는다").
+    """
+    requirement = RequirementSchema(
+        raw_text=(
+            "폭 600 mm 이상의 전극을 검사하면서 두께와 표면 결함을 동시에 검사할 수 있는 "
+            "Inline 복합 검사기를 찾아줘. 측정 범위는 0~300 μm이고 정확도는 ±1 μm 이하여야 해."
+        ),
+        target=RequirementTarget(width_mm=600),
+        inspection_items=["thickness", "surface_defect"],
+        inline_offline="inline",
+    )
+    apply_deterministic_extraction(requirement)
+    assert requirement.measurement_range.min == 0.0 and requirement.measurement_range.max == 300.0
+    assert requirement.required_accuracy_um == 1.0
+
+    fake_llm_response = SpecificationSchema()
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        specification, validation, retrieved_docs = retrieve_and_generate(requirement, db_path=db, k_per_query=100)
+
+    assert specification.equipment.name == "MultiSense MS-600"
+    assert specification.measurement_performance.measurement_range_full.min == 0.0
+    assert specification.measurement_performance.measurement_range_full.max == 300.0
+    assert specification.measurement_performance.equipment_accuracy_um.value == 0.8
+
+    hard_report = build_hard_requirement_report(specification, requirement)
+    candidates = build_candidates(requirement, retrieved_docs)
+    chosen = next(c for c in candidates if c.source_document == "SPEC-010.md")
+    from agent.spec_validator import build_inspection_item_hard_requirement_records
+
+    hard_report += build_inspection_item_hard_requirement_records(chosen)
+    by_item = {r.item: r for r in hard_report}
+
+    assert by_item["Measurement Range"].result == "PASS"
+    assert by_item["Accuracy"].result == "PASS"
+    assert by_item["Inspection Mode"].result == "PASS"
+    assert by_item["Surface Defect Detection"].result == "PASS"

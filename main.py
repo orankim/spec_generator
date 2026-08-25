@@ -50,55 +50,217 @@ if not check_ollama_available(OLLAMA_HOST):
 # 1. 공통 페이지 레이아웃 (공통 스타일)
 # ==========================================
 PAGE_STYLE = """
-    body { font-family: '맑은 고딕', sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background-color: #f5f6f8; }
-    .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    h2 { color: #1a2530; margin-bottom: 20px; }
-    .nav { display: flex; gap: 10px; margin-bottom: 20px; }
-    .nav a { flex: 1; text-align: center; padding: 12px; border-radius: 6px; text-decoration: none; color: #2b6cb0; background: #e8eef5; font-weight: bold; }
-    .nav a.active { background: #2b6cb0; color: white; }
-    textarea { width: 100%; height: 120px; padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; box-sizing: border-box; resize: vertical; }
-    input[type="file"] { width: 100%; padding: 12px; border: 1px dashed #aaa; border-radius: 6px; box-sizing: border-box; background: #fafafa; }
-    button { background-color: #2b6cb0; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; margin-top: 15px; width: 100%; }
-    button:hover { background-color: #2c5282; }
-    button:disabled { background-color: #a0aec0; cursor: not-allowed; }
-    #loading { display: none; margin-top: 20px; color: #2b6cb0; font-weight: bold; text-align: center; }
-    #result { display: none; margin-top: 20px; padding: 15px; background: #e6fffa; border: 1px solid #319795; border-radius: 6px; text-align: center; }
-    a.download-btn { display: inline-block; margin-top: 10px; padding: 10px 20px; background: #319795; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; }
-    ul#fileList { list-style: none; padding: 0; margin: 10px 0 0; font-size: 13px; color: #555; }
-    ul#fileList li { padding: 4px 0; border-bottom: 1px solid #eee; }
-
-    .step { display: none; margin-top: 20px; }
-    .step.active { display: block; }
-    .field-row { margin-bottom: 12px; }
-    .field-row label { display: block; font-size: 13px; color: #444; margin-bottom: 4px; }
-    .field-row input[type="text"], .field-row input[type="number"], .field-row select {
-        width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px;
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+        font-family: -apple-system, "Segoe UI", "맑은 고딕", sans-serif;
+        background: #eef1f5;
+        color: #1a2530;
     }
-    .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-    .checkbox-group label { background: #f0f2f5; border: 1px solid #ddd; border-radius: 20px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
-    .checkbox-group input { margin-right: 4px; }
-    .summary-box { background: #f8f9fb; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin: 15px 0; font-size: 14px; line-height: 1.7; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold; margin-left: 6px; }
-    .badge-error { background: #fed7d7; color: #9b2c2c; }
-    .badge-warning { background: #feebc8; color: #9c4221; }
-    .badge-info { background: #bee3f8; color: #2c5282; }
-    .issue-list { list-style: none; padding: 0; margin: 10px 0; }
-    .issue-list li { padding: 6px 10px; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
-    .issue-list li.error { background: #fff5f5; color: #9b2c2c; border-left: 3px solid #e53e3e; }
-    .issue-list li.warning { background: #fffaf0; color: #9c4221; border-left: 3px solid #dd6b20; }
-    .issue-list li.info { background: #ebf8ff; color: #2c5282; border-left: 3px solid #3182ce; }
-    .issue-list li.success { background: #f0fff4; color: #276749; border-left: 3px solid #38a169; }
-    .tab-toggle { display: flex; gap: 8px; margin-bottom: 15px; }
-    .tab-toggle button { width: auto; flex: 1; background: #e8eef5; color: #2b6cb0; margin-top: 0; }
-    .tab-toggle button.active { background: #2b6cb0; color: white; }
+
+    /* ===== App shell ===== */
+    .app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        max-width: 920px;
+        margin: 0 auto;
+        background: #ffffff;
+        box-shadow: 0 0 0 1px #e2e8f0;
+    }
+    .app-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+    }
+    .app-header .icon { font-size: 26px; line-height: 1; }
+    .app-header h1 { font-size: 16px; margin: 0; color: #1a2530; font-weight: 700; }
+    .app-header p { font-size: 12px; margin: 2px 0 0; color: #718096; }
+
+    /* ===== Messages ===== */
+    .messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+    .msg-row { display: flex; }
+    .msg-row.user { justify-content: flex-end; }
+    .msg-row.ai { justify-content: flex-start; }
+    .bubble {
+        max-width: 82%;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 14px;
+        line-height: 1.65;
+        word-break: break-word;
+    }
+    /* white-space:pre-wrap은 .bubble 전체가 아니라 일반 텍스트 메시지에만 적용한다 —
+       .bubble에 두면 카드 컴포넌트(.card 등)의 들여쓰기된 템플릿 리터럴 안 개행/공백까지
+       상속되어(white-space는 상속 속성) 카드 사이에 의도치 않은 빈 공백이 렌더링된다. */
+    .msg-text { white-space: pre-wrap; }
+    .card, .card * { white-space: normal; }
+    .bubble.user { background: #2b6cb0; color: #ffffff; border-bottom-right-radius: 3px; }
+    .bubble.ai { background: #f7f8fa; color: #1a2530; border: 1px solid #e2e8f0; border-bottom-left-radius: 3px; }
+    .bubble.error { background: #fff5f5; border: 1px solid #feb2b2; color: #822727; }
+
+    /* ===== Cards (used inside AI bubbles) ===== */
+    .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .bubble .card { margin-top: 4px; }
+    .card + .card { margin-top: 10px; }
+    .card-header {
+        padding: 9px 14px;
+        background: #f0f4f8;
+        border-bottom: 1px solid #e2e8f0;
+        font-weight: 700;
+        font-size: 13px;
+        color: #2d3748;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .card-body { padding: 10px 14px; }
+    .card-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 6px 0;
+        border-bottom: 1px dashed #edf2f7;
+        font-size: 13px;
+    }
+    .card-row:last-child { border-bottom: none; }
+    .card-row .label { color: #718096; flex-shrink: 0; }
+    .card-row .value {
+        color: #1a2530;
+        font-weight: 600;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+    .card-row .value.muted { color: #a0aec0; font-weight: 400; }
+
+    /* ===== Status badges ===== */
+    .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .02em;
+        white-space: nowrap;
+    }
+    .badge-pass { background: #e6fffa; color: #276749; border: 1px solid #9ae6b4; }
+    .badge-fail { background: #fff5f5; color: #9b2c2c; border: 1px solid #feb2b2; }
+    .badge-unknown { background: #fffaf0; color: #9c4221; border: 1px solid #fbd38d; }
+    .badge-verified { background: #ebf8ff; color: #2c5282; border: 1px solid #90cdf4; }
+    .badge-inferred { background: #faf5ff; color: #553c9a; border: 1px solid #d6bcfa; }
+    .badge-userdefined { background: #f0fff4; color: #22543d; border: 1px solid #9ae6b4; }
+    .badge-unset { background: #f7fafc; color: #a0aec0; border: 1px solid #e2e8f0; }
+
+    .banner { padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+    .banner-pass { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; }
+    .banner-fail { background: #fff5f5; border: 1px solid #feb2b2; color: #822727; }
+    .banner-unknown { background: #fffaf0; border: 1px solid #fbd38d; color: #7b341e; }
+
+    /* ===== Hard requirement comparison list ===== */
+    .hard-req-list { list-style: none; margin: 0; padding: 0; }
+    .hard-req-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px dashed #edf2f7;
+        font-size: 13px;
+    }
+    .hard-req-list li:last-child { border-bottom: none; }
+    .hard-req-list .item-name { color: #2d3748; font-weight: 600; flex-shrink: 0; }
+    .hard-req-list .reason { color: #4a5568; flex: 1; text-align: right; }
+
+    /* ===== Search progress ===== */
+    .progress-list { list-style: none; margin: 0; padding: 0; }
+    .progress-list li { padding: 3px 0; font-size: 13px; color: #4a5568; }
+    .progress-list li.done { color: #2d3748; }
+    .progress-list li.done::before { content: "✓ "; color: #38a169; font-weight: 700; }
+    .progress-list li.pending::before { content: "… "; color: #a0aec0; }
+
+    /* ===== Source (VERIFIED evidence) ===== */
+    details.source-detail { margin-top: 4px; font-size: 12px; }
+    details.source-detail summary { color: #3182ce; cursor: pointer; list-style: none; }
+    details.source-detail summary::-webkit-details-marker { display: none; }
+    details.source-detail summary::before { content: "📄 근거 보기"; }
+    details.source-detail[open] summary::before { content: "📄 근거 숨기기"; }
+    details.source-detail .source-body { color: #718096; margin-top: 4px; padding-left: 4px; }
+
+    /* ===== Example question chips (shown before first message) ===== */
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip {
+        border: 1px solid #cbd5e0;
+        background: #ffffff;
+        color: #2b6cb0;
+        border-radius: 16px;
+        padding: 6px 14px;
+        font-size: 13px;
+        cursor: pointer;
+    }
+    .chip:hover { background: #ebf8ff; }
+
+    /* ===== Input bar ===== */
+    .input-bar {
+        display: flex;
+        gap: 10px;
+        padding: 14px 20px;
+        border-top: 1px solid #e2e8f0;
+        background: #ffffff;
+        flex-shrink: 0;
+    }
+    .input-bar textarea {
+        flex: 1;
+        resize: none;
+        border: 1px solid #cbd5e0;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 14px;
+        font-family: inherit;
+        max-height: 140px;
+    }
+    .input-bar textarea:focus { outline: none; border-color: #2b6cb0; }
+    .input-bar button {
+        border: none;
+        background: #2b6cb0;
+        color: white;
+        padding: 0 22px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .input-bar button:hover:not(:disabled) { background: #2c5282; }
+    .input-bar button:disabled { background: #a0aec0; cursor: not-allowed; }
+
+    a.download-btn {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 8px 16px;
+        background: #319795;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 13px;
+    }
 """
 
 
 def render_page(title: str, body_html: str) -> str:
-    """
-    페이지 공통 레이아웃. 전극 검사기 AI가 유일한 기능이므로 더 이상 탭 네비게이션이
-    필요 없다 — 상단에 고정 타이틀만 표시한다.
-    """
+    """페이지 공통 레이아웃. 전극 검사기 AI(챗봇)가 유일한 기능이므로 body_html이
+    전체 앱 셸(.app)을 직접 구성한다 — 예전 위저드 UI가 쓰던 카드형 컨테이너/탭
+    네비게이션 wrapper는 채팅 인터페이스에 맞지 않아 제거했다."""
     return f"""
     <!DOCTYPE html>
     <html lang="ko">
@@ -109,12 +271,7 @@ def render_page(title: str, body_html: str) -> str:
         <style>{PAGE_STYLE}</style>
     </head>
     <body>
-        <div class="container">
-            <div class="nav">
-                <span style="flex:1; text-align:center; padding:12px; border-radius:6px; background:#2b6cb0; color:white; font-weight:bold;">🔬 전극 검사기 AI</span>
-            </div>
-            {body_html}
-        </div>
+        {body_html}
     </body>
     </html>
     """
@@ -141,205 +298,96 @@ async def read_root():
 @app.get("/agent", response_class=HTMLResponse)
 async def agent_page():
     """
-    전극 검사기 사양서 자동 생성 Agent 화면.
-    자연어 입력 / 조건 선택 입력 -> 요구사항 확인(부족한 정보는 추가 질문) ->
-    사내 사양서 검색 및 사양서 생성 -> 검증 결과 확인 -> PPTX 생성 순서로 진행된다.
+    전극 검사기 사양서 자동 생성 AI — 대화형(챗봇) 인터페이스.
+
+    기존 "입력 -> 분석 버튼 -> 요구사항 확인 -> 사양서 생성" 단계형 위저드를,
+    하나의 대화 흐름 안에서 조건을 계속 추가/수정하며 재검색할 수 있는 채팅
+    인터페이스로 개편했다. Backend 파이프라인(RequirementParser/RequirementSchema/
+    RAG 검색/CandidateMatcher/Hard Requirement 판정)은 전혀 바꾸지 않았다 —
+    /api/agent/analyze-requirement · /api/agent/generate-spec · /api/agent/
+    build-markdown을 기존과 동일하게 그대로 호출하고, 새로 추가된 것은 후속
+    메시지를 대화 상태(state.currentRequirement)에 결정론적으로 "패치"하는
+    /api/agent/update-requirement 하나뿐이다(agent/requirement_parser.py의
+    apply_conversational_patch — LLM을 호출하지 않는다).
+
+    Conversation State(요청서 7절)는 서버에 별도로 저장하지 않고 이 페이지의
+    JS 전역 `state` 객체가 그대로 들고 있다 — 매 API 호출마다 현재 요구사항
+    전체를 함께 보내는 기존 방식(예전 UI의 `existing_requirement`)을 그대로
+    확장한 것이라, 서버 쪽에 세션/DB 같은 새 인프라를 추가하지 않는다.
     """
     body_html = """
-            <h2>🔬 전극 검사기 사양서 자동 생성 AI</h2>
-            <p>요구사항을 자연어로 입력하거나 조건을 직접 선택하세요. AI가 이해한 내용을 먼저 확인시켜 드리고, 부족한 정보는 추가로 여쭤봅니다.</p>
-
-            <!-- STEP 1: 입력 -->
-            <div id="step1" class="step active">
-                <div class="tab-toggle">
-                    <button id="modeTextBtn" class="active" onclick="switchMode('text')" type="button">자연어로 입력</button>
-                    <button id="modeSelectBtn" onclick="switchMode('select')" type="button">조건 직접 선택</button>
-                </div>
-
-                <div id="modeText">
-                    <textarea id="nlInput" placeholder="예: 500mm 폭 전극의 두께와 표면 결함을 검사할 수 있는 비접촉 검사기가 필요해."></textarea>
-                </div>
-
-                <div id="modeSelect" style="display:none;">
-                    <div class="field-row">
-                        <label>검사 대상</label>
-                        <div class="checkbox-group">
-                            <label><input type="radio" name="selMaterial" value="양극"> 양극</label>
-                            <label><input type="radio" name="selMaterial" value="음극"> 음극</label>
-                            <label><input type="radio" name="selMaterial" value="분리막"> 분리막</label>
-                            <label><input type="radio" name="selMaterial" value="전극"> 전극(공통)</label>
-                        </div>
-                    </div>
-                    <div class="field-row">
-                        <label>폭 (mm)</label>
-                        <input type="number" id="selWidth" placeholder="예: 500">
-                    </div>
-                    <div class="field-row">
-                        <label>검사 항목</label>
-                        <div class="checkbox-group">
-                            <label><input type="checkbox" class="inspItem" value="thickness"> 두께</label>
-                            <label><input type="checkbox" class="inspItem" value="surface_defect"> 표면 결함</label>
-                            <label><input type="checkbox" class="inspItem" value="profile_3d"> 3D 프로파일</label>
-                            <label><input type="checkbox" class="inspItem" value="coating"> 코팅</label>
-                        </div>
-                    </div>
-                    <div class="field-row">
-                        <label>측정 방식</label>
-                        <div class="checkbox-group">
-                            <label><input type="radio" name="selMethod" value="non_contact"> 비접촉</label>
-                            <label><input type="radio" name="selMethod" value="contact"> 접촉</label>
-                        </div>
-                    </div>
-                    <div class="field-row">
-                        <label>측정 원리</label>
-                        <div class="checkbox-group">
-                            <label><input type="radio" name="selPrinciple" value="laser"> Laser</label>
-                            <label><input type="radio" name="selPrinciple" value="oct"> OCT</label>
-                            <label><input type="radio" name="selPrinciple" value="interferometry"> Interferometry</label>
-                            <label><input type="radio" name="selPrinciple" value="vision"> Vision</label>
-                            <label><input type="radio" name="selPrinciple" value="other"> 기타</label>
-                        </div>
+            <div class="app">
+                <div class="app-header">
+                    <div class="icon">🔋</div>
+                    <div>
+                        <h1>전극 검사기 AI</h1>
+                        <p>전극 검사 설비 요구사항 분석 및 추천</p>
                     </div>
                 </div>
 
-                <button id="analyzeBtn" onclick="analyze()">요구사항 분석</button>
+                <div id="messages" class="messages"></div>
+
+                <form id="chatForm" class="input-bar">
+                    <textarea id="chatInput" rows="1" placeholder="메시지를 입력하세요..."></textarea>
+                    <button type="submit" id="sendBtn">전송</button>
+                </form>
             </div>
-
-            <!-- STEP 2: 요구사항 확인 + 추가 질문 -->
-            <div id="step2" class="step">
-                <h3>AI가 이해한 요구사항</h3>
-                <div id="reqSummary" class="summary-box"></div>
-
-                <div id="followupSection" style="display:none;">
-                    <p><strong>추가로 다음 정보가 필요합니다.</strong></p>
-                    <ul id="questionList" class="issue-list"></ul>
-                    <div id="followupFields"></div>
-                    <button onclick="submitFollowup()">추가 정보 제출</button>
-                </div>
-
-                <button id="proceedBtn" onclick="proceedToGenerate()" style="display:none;">사내 사양서 검색 &amp; 사양서 생성</button>
-                <button onclick="goToStep('step1')" style="background:#a0aec0;">◀ 다시 입력하기</button>
-            </div>
-
-            <!-- STEP 3: 생성된 사양서 확인 -->
-            <div id="step3" class="step">
-                <h3>생성된 사양서 (검토 후 PPTX로 만드세요)</h3>
-                <div id="specSummary" class="summary-box"></div>
-
-                <div id="hardReqWrap">
-                    <p><strong>사용자 요구조건 검증 (Hard Requirement)</strong></p>
-                    <ul id="hardReqList" class="issue-list"></ul>
-                </div>
-
-                <div id="issuesWrap">
-                    <p><strong>자동 검증 결과</strong></p>
-                    <ul id="issuesList" class="issue-list"></ul>
-                </div>
-
-                <div id="confirmWrap">
-                    <p><strong>사용자 확인이 필요한 항목 (AI 추정값)</strong></p>
-                    <ul id="confirmList" class="issue-list"></ul>
-                </div>
-
-                <button onclick="buildMarkdown()">📄 마크다운 사양서 생성</button>
-                <button onclick="goToStep('step2')" style="background:#a0aec0;">◀ 요구사항 다시 확인</button>
-
-                <div id="agentResult" style="display:none; margin-top:15px; padding:15px; background:#e6fffa; border:1px solid #319795; border-radius:6px; text-align:center;">
-                    <h3>🎉 사양서가 생성되었습니다!</h3>
-                    <a id="agentDownloadLink" class="download-btn" href="#" download>마크다운 사양서 다운로드</a>
-                </div>
-            </div>
-
-            <div id="loading">⏳ 처리 중입니다...</div>
 
             <script>
-                const state = { requirement: null, validation: null, specification: null, specValidation: null };
-
-                const FIELD_LABELS = {
-                    'target.material': '검사 대상 (예: 양극, 음극, 분리막, 전극)',
-                    'target.width_mm': '검사 대상 폭 (mm, 숫자만)',
-                    'inspection_items': '검사 항목 (쉼표로 구분, 예: thickness,surface_defect)',
-                    'target.thickness_range_um': '두께 범위 (예: 0~200)',
-                    'required_accuracy_um': '요구 정확도 (um, 숫자만)',
-                    'minimum_defect_size_um': '최소 검출 결함 크기 (um, 숫자만)',
+                // ================================================================
+                // Conversation State — 요청서 7절. 서버 세션 없이 브라우저 메모리에만
+                // 둔다. 매 API 호출은 이 상태 중 필요한 조각(current_requirement 등)을
+                // 그대로 요청 본문에 실어 보낸다 — 서버는 여전히 요청 단위로 무상태다.
+                // ================================================================
+                const state = {
+                    conversationId: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+                    messages: [],            // {id, role, type, content, timestamp}
+                    currentRequirement: null,
+                    currentCandidates: null, // 마지막 generate-spec의 hard_requirement_report
+                    lastSearchResult: null,  // {specification, validation, hardRequirementReport, retrievedSourcesCount}
                 };
-                const NUMERIC_PATHS = ['target.width_mm', 'required_accuracy_um', 'minimum_defect_size_um'];
 
-                function setLoading(on) { document.getElementById('loading').style.display = on ? 'block' : 'none'; }
+                const EXAMPLE_QUESTIONS = [
+                    '두께 측정 장비 찾기',
+                    '표면 결함 검사기 찾기',
+                    'Inline 검사기 찾기',
+                    'OCT 기반 장비 찾기',
+                    '3D Profile 검사기 찾기',
+                ];
+                const EXAMPLE_QUESTION_TEXT = {
+                    '두께 측정 장비 찾기': '전극 두께를 측정할 수 있는 검사기를 찾아줘.',
+                    '표면 결함 검사기 찾기': '전극 표면 결함(스크래치, 이물)을 검사할 수 있는 검사기를 찾아줘.',
+                    'Inline 검사기 찾기': 'Inline으로 실시간 검사할 수 있는 전극 검사기를 찾아줘.',
+                    'OCT 기반 장비 찾기': 'OCT 기반으로 측정하는 전극 검사기를 찾아줘.',
+                    '3D Profile 검사기 찾기': '전극의 3D 프로파일(형상)을 측정할 수 있는 검사기를 찾아줘.',
+                };
 
-                function goToStep(id) {
-                    document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
-                    document.getElementById(id).classList.add('active');
+                function escapeHtml(text) {
+                    const div = document.createElement('div');
+                    div.textContent = (text === null || text === undefined) ? '' : String(text);
+                    return div.innerHTML;
                 }
 
-                function switchMode(mode) {
-                    document.getElementById('modeText').style.display = mode === 'text' ? 'block' : 'none';
-                    document.getElementById('modeSelect').style.display = mode === 'select' ? 'block' : 'none';
-                    document.getElementById('modeTextBtn').classList.toggle('active', mode === 'text');
-                    document.getElementById('modeSelectBtn').classList.toggle('active', mode === 'select');
+                function genId() {
+                    return 'm-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
                 }
 
-                function setByPath(obj, path, value) {
-                    const keys = path.split('.');
-                    let cur = obj;
-                    for (let i = 0; i < keys.length - 1; i++) {
-                        if (cur[keys[i]] === undefined || cur[keys[i]] === null) cur[keys[i]] = {};
-                        cur = cur[keys[i]];
+                function addMessage(msg) {
+                    const full = Object.assign({ id: genId(), timestamp: new Date().toISOString() }, msg);
+                    state.messages.push(full);
+                    return full;
+                }
+
+                function lastMessageOfType(type) {
+                    for (let i = state.messages.length - 1; i >= 0; i--) {
+                        if (state.messages[i].type === type) return state.messages[i];
                     }
-                    cur[keys[keys.length - 1]] = value;
+                    return null;
                 }
 
-                function collectSelection() {
-                    const material = document.querySelector('input[name="selMaterial"]:checked');
-                    const width = document.getElementById('selWidth').value;
-                    const items = [...document.querySelectorAll('.inspItem:checked')].map(el => el.value);
-                    const method = document.querySelector('input[name="selMethod"]:checked');
-                    const principle = document.querySelector('input[name="selPrinciple"]:checked');
-                    return {
-                        target: {
-                            material: material ? material.value : null,
-                            width_mm: width ? parseFloat(width) : null,
-                        },
-                        inspection_items: items,
-                        measurement_method: method ? method.value : null,
-                        measurement_principle: principle ? principle.value : null,
-                    };
-                }
-
-                async function analyze() {
-                    const isTextMode = document.getElementById('modeText').style.display !== 'none';
-                    let payload;
-                    if (isTextMode) {
-                        const text = document.getElementById('nlInput').value.trim();
-                        if (!text) { alert('요구사항을 입력해 주세요.'); return; }
-                        payload = { user_text: text };
-                    } else {
-                        payload = { selection: collectSelection() };
-                    }
-                    await callAnalyze(payload);
-                }
-
-                async function callAnalyze(payload) {
-                    setLoading(true);
-                    try {
-                        const res = await fetch('/api/agent/analyze-requirement', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload),
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.detail || '요구사항 분석 실패');
-                        state.requirement = data.requirement;
-                        state.validation = data.validation;
-                        renderRequirementSummary();
-                        goToStep('step2');
-                    } catch (err) {
-                        alert('요구사항 분석 중 오류가 발생했습니다:\\n\\n' + err.message);
-                    } finally {
-                        setLoading(false);
-                    }
-                }
-
+                // ================================================================
+                // 렌더링 — 메시지 type별 Component(순수 함수, HTML 문자열 반환)
+                // ================================================================
                 function fmtRange(range) {
                     if (!range || range.min === null || range.min === undefined || range.max === null || range.max === undefined) return '미정';
                     return `${range.min} ~ ${range.max} ${range.unit || ''}`.trim();
@@ -352,228 +400,447 @@ async def agent_page():
                     return `${prefix}${rv.value} ${rv.unit || ''} ${opLabel}`.trim();
                 }
 
-                function renderRequirementSummary() {
-                    const req = state.requirement;
-                    const val = state.validation;
+                const STATUS_BADGE = {
+                    USER_DEFINED: '<span class="badge badge-userdefined">USER_DEFINED</span>',
+                    VERIFIED: '<span class="badge badge-verified">VERIFIED</span>',
+                    INFERRED: '<span class="badge badge-inferred">INFERRED</span>',
+                    UNKNOWN: '<span class="badge badge-unknown">UNKNOWN</span>',
+                };
 
-                    document.getElementById('reqSummary').innerHTML = `
-                        <strong>검사 대상:</strong> ${req.target.material || '미정'}<br>
-                        <strong>폭:</strong> ${req.target.width_mm ?? '미정'} mm<br>
-                        <strong>검사 항목:</strong> ${(req.inspection_items || []).join(', ') || '미정'}<br>
-                        <strong>측정 범위:</strong> ${fmtRange(req.measurement_range)}<br>
-                        <strong>요구 정확도:</strong> ${fmtReqValue(req.accuracy, true)}<br>
-                        <strong>측정 방식:</strong> ${req.measurement_method || '미정'}<br>
-                        <strong>측정 원리:</strong> ${req.measurement_principle || '미정'}<br>
-                        <strong>검사 모드:</strong> ${req.inline_offline || '미정'}
+                function sourceDetailHtml(source) {
+                    if (!source || !source.document) return '';
+                    const parts = [escapeHtml(source.document)];
+                    if (source.chunk_id !== null && source.chunk_id !== undefined) parts.push('chunk_' + escapeHtml(source.chunk_id));
+                    if (source.section) parts.push(escapeHtml(source.section));
+                    return `<details class="source-detail"><summary></summary><div class="source-body">${parts.join(' · ')}</div></details>`;
+                }
+
+                // 값 + 단위 + status 배지 + (VERIFIED면) 근거 문서/chunk. 요청서 13절.
+                function fmtSourcedCell(sn) {
+                    if (!sn || sn.value === null || sn.value === undefined) {
+                        return '<span class="value muted">미정</span>';
+                    }
+                    const badge = STATUS_BADGE[sn.status] || '';
+                    const valueText = escapeHtml(sn.value) + (sn.unit ? ' ' + escapeHtml(sn.unit) : '');
+                    let html = `<span class="value">${valueText}</span> ${badge}`;
+                    if (sn.status === 'VERIFIED' && sn.source && sn.source.document) {
+                        html += sourceDetailHtml(sn.source);
+                    }
+                    return html;
+                }
+
+                function fmtSourcedRangeCell(sr) {
+                    if (!sr || sr.min === null || sr.min === undefined || sr.max === null || sr.max === undefined) {
+                        return '<span class="value muted">미정</span>';
+                    }
+                    const badge = STATUS_BADGE[sr.status] || '';
+                    const valueText = `${escapeHtml(sr.min)} ~ ${escapeHtml(sr.max)} ${escapeHtml(sr.unit || '')}`.trim();
+                    let html = `<span class="value">${valueText}</span> ${badge}`;
+                    if (sr.status === 'VERIFIED' && sr.source && sr.source.document) {
+                        html += sourceDetailHtml(sr.source);
+                    }
+                    return html;
+                }
+
+                function renderTextMessage(content) {
+                    return `<span class="msg-text">${escapeHtml(content.text)}</span>`;
+                }
+
+                function renderErrorMessage(content) {
+                    return `<span class="msg-text">⚠️ ${escapeHtml(content.text)}</span>`;
+                }
+
+                // ----- RequirementSummaryCard (요청서 6절) -----
+                function renderRequirementSummaryCard(content) {
+                    const req = content.requirement || {};
+                    const target = req.target || {};
+                    const rows = [
+                        ['검사 대상', target.material || '미정'],
+                        ['검사 방식', req.inline_offline || '미정'],
+                        ['최소 검사 폭', target.width_mm !== null && target.width_mm !== undefined ? `${target.width_mm} mm` : '미정'],
+                        ['검사 항목', (req.inspection_items || []).length ? req.inspection_items.join(', ') : '미정'],
+                        ['측정 범위', fmtRange(req.measurement_range)],
+                        ['측정 방식', req.measurement_method || '미정'],
+                        ['측정 원리', req.measurement_principle || '미정'],
+                        ['요구 정확도', fmtReqValue(req.accuracy, true)],
+                    ];
+                    const rowsHtml = rows.map(([label, value]) => {
+                        const isUnset = value === '미정';
+                        return `<div class="card-row"><span class="label">${escapeHtml(label)}</span><span class="value${isUnset ? ' muted' : ''}">${escapeHtml(value)}</span></div>`;
+                    }).join('');
+                    return `
+                        <div class="card">
+                            <div class="card-header">📋 AI가 이해한 요구사항</div>
+                            <div class="card-body">${rowsHtml}</div>
+                        </div>
                     `;
+                }
 
-                    const followupSection = document.getElementById('followupSection');
-                    const proceedBtn = document.getElementById('proceedBtn');
-                    const questionList = document.getElementById('questionList');
-                    const followupFields = document.getElementById('followupFields');
-                    questionList.innerHTML = '';
-                    followupFields.innerHTML = '';
+                // ----- SearchProgressCard (요청서 10절) -----
+                // 가짜 진행률이 아니라 실제 API 호출 하나(/generate-spec)의 in-flight
+                // 여부에 그대로 연결된다 — 'running'이면 전부 pending, 'done'이면 전부
+                // done으로 한 번에 바뀐다(백엔드가 이 4단계를 한 호출 안에서 순서대로
+                // 수행하는 것은 사실이며, 이 카드는 그 사실을 정직하게 보여줄 뿐 임의의
+                // 시간 간격으로 채워지는 연출이 아니다).
+                function renderSearchProgressCard(content) {
+                    const steps = ['Requirement Parsing 완료', '관련 사양서 검색', '후보 장비 생성', 'Hard Requirement 검증'];
+                    const done = content.status === 'done';
+                    const itemsHtml = steps.map(s => `<li class="${done ? 'done' : 'pending'}">${escapeHtml(s)}</li>`).join('');
+                    return `
+                        <div class="card">
+                            <div class="card-header">${done ? '✅ 검색 완료' : '⏳ 요구사항을 분석하고 검색 중입니다...'}</div>
+                            <div class="card-body"><ul class="progress-list">${itemsHtml}</ul></div>
+                        </div>
+                    `;
+                }
 
-                    if (!val.is_valid) {
-                        followupSection.style.display = 'block';
-                        proceedBtn.style.display = 'none';
-                        (val.questions || []).forEach(q => {
-                            const li = document.createElement('li');
-                            li.className = 'info';
-                            li.textContent = q;
-                            questionList.appendChild(li);
-                        });
-                        (val.missing_fields || []).forEach(path => {
-                            const label = FIELD_LABELS[path] || path;
-                            const row = document.createElement('div');
-                            row.className = 'field-row';
-                            row.innerHTML = `<label>${label}</label><input type="text" data-path="${path}">`;
-                            followupFields.appendChild(row);
-                        });
-                    } else {
-                        followupSection.style.display = 'none';
-                        proceedBtn.style.display = 'block';
+                // ----- EquipmentCard (요청서 11절) -----
+                function equipmentBanner(hasFail, hasUnknown, hasRecords) {
+                    if (hasFail) return '<div class="banner banner-fail">⚠️ 조건을 모두 충족하는 장비를 찾지 못했습니다 — 가장 유사한 후보입니다.</div>';
+                    if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 일부 조건은 사양서에서 확인하지 못했습니다(UNKNOWN).</div>';
+                    if (hasRecords) return '<div class="banner banner-pass">✅ Hard Requirement 조건을 모두 충족합니다.</div>';
+                    return '';
+                }
+
+                function renderDownloadArea(content, msgId) {
+                    if (content.downloadUrl) {
+                        return `<a class="download-btn" href="${escapeHtml(content.downloadUrl)}" download>마크다운 사양서 다운로드</a>`;
                     }
+                    return `<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">📄 마크다운 사양서 생성</button>`;
                 }
 
-                async function submitFollowup() {
-                    const updated = JSON.parse(JSON.stringify(state.requirement));
-                    document.querySelectorAll('#followupFields input').forEach(inp => {
-                        const path = inp.dataset.path;
-                        let val = inp.value.trim();
-                        if (!val) return;
-                        if (path === 'inspection_items') {
-                            val = val.split(',').map(s => s.trim()).filter(Boolean);
-                        } else if (NUMERIC_PATHS.includes(path)) {
-                            val = parseFloat(val);
-                        }
-                        setByPath(updated, path, val);
-                    });
-                    await callAnalyze({ existing_requirement: updated });
-                }
+                function renderEquipmentCard(content, msgId) {
+                    const spec = content.specification;
+                    const eq = spec.equipment || {};
+                    const target = spec.inspection_target || {};
+                    const mp = spec.measurement_performance || {};
+                    const dd = spec.defect_detection || {};
+                    const primarySources = (spec.primary_sources && spec.primary_sources.length > 0) ? spec.primary_sources : (spec.sources || []);
 
-                async function proceedToGenerate() {
-                    setLoading(true);
-                    try {
-                        const res = await fetch('/api/agent/generate-spec', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ requirement: state.requirement }),
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.detail || '사양서 생성 실패');
-                        state.specification = data.specification;
-                        state.specValidation = data.validation;
-                        renderSpecSummary(data.retrieved_sources || [], data.hard_requirement_report || []);
-                        goToStep('step3');
-                    } catch (err) {
-                        alert('사양서 생성 중 오류가 발생했습니다:\\n\\n' + err.message);
-                    } finally {
-                        setLoading(false);
-                    }
-                }
-
-                function fmtSourced(sn) {
-                    if (!sn || sn.value === null || sn.value === undefined) return 'N/A';
-                    const statusLabel = {USER_DEFINED: '사용자 요구사항', VERIFIED: (sn.source && sn.source.document) || '문서', INFERRED: 'AI 추정', UNKNOWN: '근거 없음'}[sn.status] || sn.status || '-';
-                    return `${sn.value}${sn.unit ? ' ' + sn.unit : ''} (${statusLabel})`;
-                }
-
-                function fmtSourcedRange(sr) {
-                    if (!sr || sr.min === null || sr.min === undefined || sr.max === null || sr.max === undefined) return 'N/A';
-                    const statusLabel = {USER_DEFINED: '사용자 요구사항', VERIFIED: (sr.source && sr.source.document) || '문서', INFERRED: 'AI 추정', UNKNOWN: '근거 없음'}[sr.status] || sr.status || '-';
-                    return `${sr.min} ~ ${sr.max} ${sr.unit || ''} (${statusLabel})`.replace('  (', ' (');
-                }
-
-                function renderHardRequirementReport(records) {
-                    const list = document.getElementById('hardReqList');
-                    list.innerHTML = '';
-                    if (!records || records.length === 0) {
-                        list.innerHTML = '<li class="info">평가할 hard requirement가 없습니다(요구사항에 측정 범위/정확도가 지정되지 않음).</li>';
-                        return;
-                    }
-                    const cls = { PASS: 'success', FAIL: 'error', UNKNOWN: 'warning' };
-                    records.forEach(r => {
-                        const li = document.createElement('li');
-                        li.className = cls[r.result] || 'info';
-                        li.textContent = `[${r.item}] ${r.reason} → 판정: ${r.result}`;
-                        list.appendChild(li);
-                    });
-                }
-
-                function renderSpecSummary(retrievedSources, hardRequirementReport) {
-                    const spec = state.specification;
-                    const val = state.specValidation;
-                    const req = state.requirement || {};
-
-                    const noResultsWarning = retrievedSources.length === 0
-                        ? `<div style="margin-top:8px; padding:8px 10px; background:#fff5f5; border:1px solid #feb2b2; border-radius:4px; color:#822727;">
-                               ⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다 (검색된 chunk 0개). 아래 값은 사용자가 직접 입력한 요구사항 외에는 근거가 없습니다.
-                           </div>`
+                    const noResults = content.retrievedSourcesCount === 0
+                        ? '<div class="banner banner-unknown">⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다(검색된 chunk 0개). 아래 값은 사용자가 입력한 요구사항 외에는 근거가 없습니다.</div>'
                         : '';
 
-                    // Hard Requirement 중 하나라도 FAIL이면, 아래 표시되는 설비가 "조건을
-                    // 충족하는 장비"가 아니라 "가장 유사하지만 조건을 다 채우지 못한 후보"임을
-                    // 먼저 알린다 — FAIL 후보를 적합 장비처럼 오인시키지 않기 위함(요청서).
-                    // FAIL이 없어도 UNKNOWN(문서에서 확인하지 못함)이 하나라도 있으면 "모두
-                    // 충족"이라고 말하면 안 된다 — agent.candidate_matcher.build_candidates()의
-                    // hard_requirements_pass 계산(fail_count == 0 and unknown_count == 0)과
-                    // 동일한 기준을 여기서도 지켜야 한다(실사용자 보고 버그: Accuracy가
-                    // UNKNOWN인데도 Inspection Mode 하나만 PASS라서 "✅ 모두 충족합니다"로
-                    // 잘못 표시되었다).
-                    const hardRecords = hardRequirementReport || [];
+                    const rows = [
+                        ['측정 범위', fmtSourcedRangeCell(mp.measurement_range_full)],
+                        ['정확도', fmtSourcedCell(mp.equipment_accuracy_um)],
+                        ['분해능', fmtSourcedCell(mp.resolution_um)],
+                        ['최소 검출 결함 크기', fmtSourcedCell(dd.equipment_minimum_defect_size_um || dd.minimum_defect_size_um)],
+                        ['검사 폭', target.width_mm !== null && target.width_mm !== undefined ? `<span class="value">${escapeHtml(target.width_mm)} mm</span>` : '<span class="value muted">미정</span>'],
+                        ['검사 방식', eq.inline_offline ? `<span class="value">${escapeHtml(eq.inline_offline)}</span>` : '<span class="value muted">미정</span>'],
+                    ];
+                    const rowsHtml = rows.map(([label, valueHtml]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span>${valueHtml}</div>`).join('');
+
+                    return `
+                        <div class="card">
+                            <div class="card-header">🥇 추천 장비 — ${escapeHtml(eq.name || 'N/A')}</div>
+                            <div class="card-body">
+                                ${equipmentBanner(content.hasFail, content.hasUnknown, content.hasRecords)}
+                                ${noResults}
+                                ${rowsHtml}
+                                <div class="card-row"><span class="label">검사 항목</span><span class="value">${escapeHtml((spec.inspection_items || []).join(', ') || 'N/A')}</span></div>
+                                <div class="card-row"><span class="label">참고 문서</span><span class="value">${escapeHtml(primarySources.join(', ') || '없음')} (chunk ${escapeHtml(content.retrievedSourcesCount)}개)</span></div>
+                                ${renderDownloadArea(content, msgId)}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // ----- RequirementComparison (요청서 12/13절) -----
+                // 정책: UNKNOWN을 PASS로 표시하지 않는다 — Backend(agent.candidate_matcher/
+                // agent.spec_validator)가 이미 PASS/FAIL/UNKNOWN을 코드로 확정해 보내주므로
+                // 여기서는 그 값을 그대로(재판단 없이) 배지로만 옮긴다.
+                const RESULT_BADGE = {
+                    PASS: '<span class="badge badge-pass">PASS</span>',
+                    FAIL: '<span class="badge badge-fail">FAIL</span>',
+                    UNKNOWN: '<span class="badge badge-unknown">UNKNOWN</span>',
+                };
+
+                function renderComparisonCard(content) {
+                    const records = content.hardRequirementReport || [];
+                    if (records.length === 0) {
+                        return `
+                            <div class="card">
+                                <div class="card-header">Hard Requirement 검증</div>
+                                <div class="card-body"><span class="value muted">평가할 조건이 지정되지 않았습니다.</span></div>
+                            </div>
+                        `;
+                    }
+                    const itemsHtml = records.map(r => {
+                        const badge = RESULT_BADGE[r.result] || RESULT_BADGE.UNKNOWN;
+                        const src = (r.result !== 'UNKNOWN' && r.source && r.source.document) ? sourceDetailHtml(r.source) : '';
+                        return `<li><span class="item-name">${escapeHtml(r.item)}</span><span class="reason">${escapeHtml(r.reason || '')} ${badge}${src}</span></li>`;
+                    }).join('');
+                    return `
+                        <div class="card">
+                            <div class="card-header">사용자 요구조건 검증 (Hard Requirement)</div>
+                            <div class="card-body"><ul class="hard-req-list">${itemsHtml}</ul></div>
+                        </div>
+                    `;
+                }
+
+                function renderMessageContent(msg) {
+                    switch (msg.type) {
+                        case 'text': return renderTextMessage(msg.content);
+                        case 'requirement_summary': return renderRequirementSummaryCard(msg.content);
+                        case 'search_status': return renderSearchProgressCard(msg.content);
+                        case 'equipment_result': return renderEquipmentCard(msg.content, msg.id);
+                        case 'comparison_result': return renderComparisonCard(msg.content);
+                        case 'error': return renderErrorMessage(msg.content);
+                        default: return '';
+                    }
+                }
+
+                function renderExampleChips() {
+                    if (state.messages.length > 0) return '';
+                    const chips = EXAMPLE_QUESTIONS.map(q => `<button type="button" class="chip" data-question="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('');
+                    return `<div class="chip-row">${chips}</div>`;
+                }
+
+                function renderAll() {
+                    const container = document.getElementById('messages');
+                    const wasAtBottom = (container.scrollTop + container.clientHeight) >= (container.scrollHeight - 40);
+
+                    container.innerHTML = '';
+                    if (state.messages.length === 0) {
+                        container.appendChild(makeAiBubble(WELCOME_TEXT, renderExampleChips()));
+                    } else {
+                        state.messages.forEach(msg => {
+                            const isUser = msg.role === 'user';
+                            const row = document.createElement('div');
+                            row.className = 'msg-row ' + (isUser ? 'user' : 'ai');
+                            const bubble = document.createElement('div');
+                            bubble.className = 'bubble ' + (isUser ? 'user' : (msg.type === 'error' ? 'ai error' : 'ai'));
+                            // .bubble은 텍스트 메시지의 줄바꿈(\\n)을 살리려고 white-space:
+                            // pre-wrap을 쓴다 — 그런데 카드 컴포넌트들은 들여쓰기된 템플릿
+                            // 리터럴을 반환하므로, trim() 없이 그대로 넣으면 앞뒤 공백/개행이
+                            // 그대로 렌더링되어 카드 위에 빈 공백이 보이는 문제가 있다.
+                            bubble.innerHTML = renderMessageContent(msg).trim();
+                            row.appendChild(bubble);
+                            container.appendChild(row);
+                        });
+                    }
+                    if (wasAtBottom || state.messages.length <= 1) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                    wireExampleChips();
+                    wireCardActions();
+                }
+
+                function wireCardActions() {
+                    document.querySelectorAll('.build-markdown-btn').forEach(btn => {
+                        btn.addEventListener('click', () => buildMarkdownForMessage(btn.dataset.msgId));
+                    });
+                }
+
+                // 요청서 흐름의 마지막 단계(최종 사양서 다운로드) — EquipmentCard에 심은
+                // 버튼에서 호출된다. 그 검색을 만든 시점의 requirement/validation을 그대로
+                // 함께 보내(각 메시지 content에 스냅샷으로 저장해둠) 기존 build-markdown
+                // API(agent/routes.py, renderers/markdown_renderer.py)를 그대로 재사용한다.
+                async function buildMarkdownForMessage(msgId) {
+                    const msg = state.messages.find(m => m.id === msgId);
+                    if (!msg) return;
+                    try {
+                        const data = await postJSON('/api/agent/build-markdown', {
+                            specification: msg.content.specification,
+                            requirement: msg.content.requirement,
+                            validation: msg.content.validation,
+                        });
+                        msg.content.downloadUrl = data.download_url;
+                        renderAll();
+                    } catch (err) {
+                        addMessage({ role: 'assistant', type: 'error', content: { text: '마크다운 사양서 생성 중 오류: ' + err.message } });
+                        renderAll();
+                    }
+                }
+
+                function makeAiBubble(text, extraHtml) {
+                    const row = document.createElement('div');
+                    row.className = 'msg-row ai';
+                    const bubble = document.createElement('div');
+                    bubble.className = 'bubble ai';
+                    bubble.innerHTML = `<span class="msg-text">${escapeHtml(text)}</span>` + (extraHtml || '');
+                    row.appendChild(bubble);
+                    return row;
+                }
+
+                function wireExampleChips() {
+                    document.querySelectorAll('.chip').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const question = btn.dataset.question;
+                            handleUserMessage(EXAMPLE_QUESTION_TEXT[question] || question);
+                        });
+                    });
+                }
+
+                const WELCOME_TEXT = '안녕하세요.\\n\\n전극 검사 설비의 요구사항을 알려주시면 사양서를 검색하여 적합한 검사 장비를 찾아드리겠습니다.\\n\\n예를 들어,\\n\\n"폭 800 mm 이상의 전극을 Inline으로 검사하고, 0~500 μm 범위를 측정할 수 있는 장비를 찾아줘."\\n\\n와 같이 입력할 수 있습니다.';
+
+                // ================================================================
+                // 메시지 처리 — 요청서 5/7/8/9/14/15절
+                // ================================================================
+                function isExplanationQuery(text) {
+                    return /왜|이유|설명해|근거가|어째서/.test(text);
+                }
+
+                // 요청서 14절: 근거 없는 내용을 새로 생성하지 않는다 — LLM을 호출하지
+                // 않고, 이미 검증된 lastSearchResult(hard_requirement_report)만 문구로
+                // 옮긴다.
+                function buildExplanationMessage() {
+                    const result = state.lastSearchResult;
+                    if (!result) return '아직 추천된 장비가 없습니다. 먼저 요구사항을 말씀해 주세요.';
+                    const spec = result.specification;
+                    const records = result.hardRequirementReport || [];
+                    const passLines = records.filter(r => r.result === 'PASS').map(r => `✓ ${r.item} 조건 만족`);
+                    const failLines = records.filter(r => r.result === 'FAIL').map(r => `✗ ${r.item} 조건 미충족`);
+                    const unknownLines = records.filter(r => r.result === 'UNKNOWN').map(r => `? ${r.item}은(는) 사양서에서 확인되지 않았습니다.`);
+
+                    let text = `${(spec.equipment && spec.equipment.name) || '이 장비'}가 추천된 이유는 다음과 같습니다.\\n\\n`;
+                    const blocks = [];
+                    if (passLines.length) blocks.push(passLines.join('\\n'));
+                    if (failLines.length) blocks.push('다만,\\n\\n' + failLines.join('\\n'));
+                    if (unknownLines.length) blocks.push(unknownLines.join('\\n'));
+                    text += blocks.length ? blocks.join('\\n\\n') : '(평가된 Hard Requirement 항목이 없습니다.)';
+                    return text;
+                }
+
+                function buildFollowupQuestionText(validation) {
+                    const questions = validation.questions || [];
+                    if (!questions.length) return '';
+                    const numbered = questions.map((q, i) => `${i + 1}. ${q}`).join('\\n');
+                    return `더 적합한 장비를 찾기 위해 몇 가지 조건을 추가로 알려주시면 좋습니다(꼭 전부 답하지 않아도 지금 조건으로 검색은 계속 진행됩니다).\\n\\n${numbered}`;
+                }
+
+                async function postJSON(url, payload) {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || (url + ' 요청 실패'));
+                    return data;
+                }
+
+                async function runSearch(requirement) {
+                    const progressMsg = addMessage({ role: 'assistant', type: 'search_status', content: { status: 'running' } });
+                    renderAll();
+
+                    const data = await postJSON('/api/agent/generate-spec', { requirement: requirement });
+
+                    progressMsg.content = { status: 'done' };
+
+                    const hardRecords = data.hard_requirement_report || [];
                     const hasFail = hardRecords.some(r => r.result === 'FAIL');
                     const hasUnknown = hardRecords.some(r => r.result === 'UNKNOWN');
-                    const allConfirmedPass = hardRecords.length > 0 && !hasFail && !hasUnknown;
-                    let matchBanner = '';
-                    if (hasFail) {
-                        matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#fff5f5; border:1px solid #feb2b2; border-radius:4px; color:#822727; font-weight:bold;">
-                            ⚠️ 조건을 모두 충족하는 장비를 찾지 못했습니다. 아래는 가장 유사한 후보이며, 충족하지 못한 조건은 "사용자 요구조건 검증" 목록에서 FAIL로 표시됩니다.
-                        </div>`;
-                    } else if (hasUnknown) {
-                        matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#fffaf0; border:1px solid #fbd38d; border-radius:4px; color:#7b341e; font-weight:bold;">
-                            ⚠️ 일부 조건은 문서에서 확인하지 못했습니다(UNKNOWN). 아래 설비가 모든 조건을 충족한다고 단정할 수 없으니 "사용자 요구조건 검증" 목록을 확인하세요.
-                        </div>`;
-                    } else if (allConfirmedPass) {
-                        matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#f0fff4; border:1px solid #9ae6b4; border-radius:4px; color:#276749; font-weight:bold;">
-                            ✅ 아래 장비는 지정하신 Hard Requirement 조건을 모두 충족합니다.
-                        </div>`;
-                    }
+                    const retrievedSourcesCount = (data.retrieved_sources || []).length;
 
-                    const requiredAccuracyDisplay = req.accuracy
-                        ? fmtReqValue(req.accuracy, true)
-                        : (req.required_accuracy_um != null ? `±${req.required_accuracy_um} um 이하` : '미정');
+                    state.lastSearchResult = {
+                        specification: data.specification,
+                        validation: data.validation,
+                        hardRequirementReport: hardRecords,
+                        retrievedSourcesCount: retrievedSourcesCount,
+                    };
+                    state.currentCandidates = hardRecords;
 
-                    const primarySources = (spec.primary_sources && spec.primary_sources.length > 0)
-                        ? spec.primary_sources
-                        : (spec.sources || []);
-
-                    document.getElementById('specSummary').innerHTML = `
-                        ${matchBanner}
-                        <strong>설비명:</strong> ${spec.equipment.name || 'N/A'}<br>
-                        <strong>검사 대상:</strong> ${spec.inspection_target.material || 'N/A'} (${spec.inspection_target.width_mm ?? '?'} mm)<br>
-                        <strong>검사 항목:</strong> ${(spec.inspection_items || []).join(', ') || 'N/A'}<br>
-                        <strong>측정 범위:</strong> ${fmtSourcedRange(spec.measurement_performance.measurement_range_full)}<br>
-                        <strong>요구 정확도:</strong> ${requiredAccuracyDisplay}<br>
-                        <strong>장비 정확도:</strong> ${fmtSourced(spec.measurement_performance.equipment_accuracy_um)}<br>
-                        <strong>분해능:</strong> ${fmtSourced(spec.measurement_performance.resolution_um)}<br>
-                        <strong>최소 검출 결함 크기:</strong> ${fmtSourced(spec.defect_detection.minimum_defect_size_um)}<br>
-                        <strong>참고 문서:</strong> ${primarySources.join(', ') || '없음'} (검색된 chunk ${retrievedSources.length}개)
-                        ${noResultsWarning}
-                    `;
-
-                    renderHardRequirementReport(hardRequirementReport);
-
-                    const issuesList = document.getElementById('issuesList');
-                    issuesList.innerHTML = '';
-                    if (!val.issues || val.issues.length === 0) {
-                        issuesList.innerHTML = '<li class="info">발견된 문제가 없습니다.</li>';
-                    } else {
-                        val.issues.forEach(issue => {
-                            const li = document.createElement('li');
-                            li.className = issue.level;
-                            li.textContent = `[${issue.field}] ${issue.message}`;
-                            issuesList.appendChild(li);
-                        });
-                    }
-
-                    const confirmList = document.getElementById('confirmList');
-                    confirmList.innerHTML = '';
-                    if (!spec.needs_confirmation || spec.needs_confirmation.length === 0) {
-                        confirmList.innerHTML = '<li class="info">AI가 추정한 값이 없습니다.</li>';
-                    } else {
-                        spec.needs_confirmation.forEach(path => {
-                            const li = document.createElement('li');
-                            li.className = 'info';
-                            li.textContent = `확인 필요: ${path}`;
-                            confirmList.appendChild(li);
-                        });
-                    }
-
-                    document.getElementById('agentResult').style.display = 'none';
+                    addMessage({
+                        role: 'assistant', type: 'equipment_result',
+                        content: {
+                            specification: data.specification, retrievedSourcesCount: retrievedSourcesCount,
+                            hasFail: hasFail, hasUnknown: hasUnknown, hasRecords: hardRecords.length > 0,
+                            // build-markdown 호출 시 이 검색을 만든 시점 그대로 재사용하기 위한 스냅샷.
+                            requirement: requirement, validation: data.validation,
+                        },
+                    });
+                    addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
                 }
 
-                async function buildMarkdown() {
-                    setLoading(true);
+                async function handleUserMessage(rawText) {
+                    const text = (rawText || '').trim();
+                    if (!text) return;
+
+                    addMessage({ role: 'user', type: 'text', content: { text: text } });
+                    renderAll();
+
+                    if (isExplanationQuery(text) && state.lastSearchResult) {
+                        addMessage({ role: 'assistant', type: 'text', content: { text: buildExplanationMessage() } });
+                        renderAll();
+                        return;
+                    }
+
+                    setInputDisabled(true);
                     try {
-                        const res = await fetch('/api/agent/build-markdown', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ specification: state.specification, requirement: state.requirement, validation: state.specValidation }),
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.detail || '마크다운 사양서 생성 실패');
-                        document.getElementById('agentDownloadLink').href = data.download_url;
-                        document.getElementById('agentResult').style.display = 'block';
+                        if (!state.currentRequirement) {
+                            // 최초 메시지 — 기존 LLM 기반 전체 파싱(agent.requirement_parser.
+                            // parse_requirement_text)을 그대로 재사용한다.
+                            const data = await postJSON('/api/agent/analyze-requirement', { user_text: text });
+                            state.currentRequirement = data.requirement;
+                            addMessage({ role: 'assistant', type: 'requirement_summary', content: { requirement: data.requirement, validation: data.validation } });
+                            if (!data.validation.is_valid) {
+                                addMessage({ role: 'assistant', type: 'text', content: { text: buildFollowupQuestionText(data.validation) } });
+                            }
+                            renderAll();
+                            await runSearch(state.currentRequirement);
+                        } else {
+                            // 후속 메시지 — LLM을 다시 부르지 않고 결정론적 패치만 적용한다
+                            // (agent.requirement_parser.apply_conversational_patch, 요청서
+                            // 22절 원칙 6).
+                            const data = await postJSON('/api/agent/update-requirement', { current_requirement: state.currentRequirement, message: text });
+                            state.currentRequirement = data.requirement;
+                            if (data.changed_fields && data.changed_fields.length > 0) {
+                                addMessage({ role: 'assistant', type: 'text', content: { text: '기존 요구사항에 다음 조건을 반영했습니다: ' + data.changed_fields.join(', ') + '\\n\\n새로운 조건을 기준으로 다시 검색하겠습니다.' } });
+                                addMessage({ role: 'assistant', type: 'requirement_summary', content: { requirement: data.requirement, validation: data.validation } });
+                            } else {
+                                addMessage({ role: 'assistant', type: 'text', content: { text: '이 메시지에서 반영할 새 조건을 찾지 못해 기존 요구사항으로 계속 검색하겠습니다.' } });
+                            }
+                            renderAll();
+                            await runSearch(state.currentRequirement);
+                        }
+                        renderAll();
                     } catch (err) {
-                        alert('마크다운 사양서 생성 중 오류가 발생했습니다:\\n\\n' + err.message);
+                        addMessage({ role: 'assistant', type: 'error', content: { text: err.message } });
+                        renderAll();
                     } finally {
-                        setLoading(false);
+                        setInputDisabled(false);
                     }
                 }
+
+                function setInputDisabled(disabled) {
+                    document.getElementById('chatInput').disabled = disabled;
+                    document.getElementById('sendBtn').disabled = disabled;
+                }
+
+                // ================================================================
+                // 입력창 wiring
+                // ================================================================
+                const chatForm = document.getElementById('chatForm');
+                const chatInput = document.getElementById('chatInput');
+
+                chatForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const text = chatInput.value;
+                    chatInput.value = '';
+                    chatInput.style.height = 'auto';
+                    handleUserMessage(text);
+                });
+
+                chatInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        chatForm.requestSubmit();
+                    }
+                });
+
+                chatInput.addEventListener('input', () => {
+                    chatInput.style.height = 'auto';
+                    chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + 'px';
+                });
+
+                // 최종 사양서 다운로드(요청서 흐름의 마지막 단계) — EquipmentCard가 아니라
+                // 별도 텍스트 메시지로 안내한다. 검색 결과가 있을 때만 노출한다.
+                renderAll();
             </script>
     """
-    return HTMLResponse(content=render_page("전극 검사기 사양서 AI Agent", body_html))
+    return HTMLResponse(content=render_page("전극 검사기 사양서 AI", body_html))
 
 
 # ==========================================
