@@ -607,13 +607,18 @@ def test_defect_item_unknown_when_no_defect_info_retrieved():
 
 
 def test_defect_item_skipped_when_not_requested():
-    """thickness만 요구했으면 결함 종류 검증 자체를 하지 않는다(Range/Accuracy와 동일 원칙)."""
+    """thickness만 요구했으면 결함 종류(Defect Types) 검증은 하지 않는다 — 다만
+    thickness 자체는 이제 별도 항목(Thickness Measurement)으로 판정되므로, 결함
+    종류 관련 항목(Surface/Edge Defect Detection)만 없는지 확인한다."""
     requirement = RequirementSchema(inspection_items=["thickness"])
     doc = _mk_doc(
         "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole |\n", filename="SPEC-001.md"
     )
     candidates = build_candidates(requirement, [doc])
-    assert not any(m.field_key.startswith("inspection_item_") for m in candidates[0].matches)
+    items = {m.item for m in candidates[0].matches}
+    assert "Surface Defect Detection" not in items
+    assert "Edge Defect Detection" not in items
+    assert "Thickness Measurement" in items
 
 
 def test_select_best_candidate_prefers_candidate_supporting_both_requested_defect_items():
@@ -875,13 +880,15 @@ def test_reported_bug_test12_full_pipeline_surfaces_width_speed_in_hard_requirem
     hard_report += build_inspection_item_hard_requirement_records(chosen)
     by_item = {r.item: r for r in hard_report}
 
-    assert set(by_item) == {"Width", "Speed", "Inspection Mode", "3D Profile Detection"}
+    assert set(by_item) == {"Width", "Speed", "Inspection Mode", "3D Profile Detection", "Thickness Measurement"}
     assert by_item["Width"].result == "FAIL"
     assert by_item["Width"].specification == 500.0
     assert by_item["Speed"].result == "FAIL"
     assert by_item["Speed"].specification == 100.0
     assert by_item["Inspection Mode"].result == "PASS"
     assert by_item["3D Profile Detection"].result == "PASS"
+    # 이 문서에는 Measurement Range 표가 없으므로(두께 측정 근거 없음) 정직하게 UNKNOWN.
+    assert by_item["Thickness Measurement"].result == "UNKNOWN"
 
     # 가장 중요한 정책: 4개 중 2개(Width/Speed)가 FAIL이므로 "모두 충족"으로
     # 표시되면 절대 안 된다.
@@ -889,3 +896,105 @@ def test_reported_bug_test12_full_pipeline_surfaces_width_speed_in_hard_requirem
     has_unknown = any(r.result == "UNKNOWN" for r in hard_report)
     all_confirmed_pass = len(hard_report) > 0 and not has_fail and not has_unknown
     assert all_confirmed_pass is False
+
+
+# ---------------------------------------------------------------
+# Test10(실사용자 보고): "폭 600 mm 이상의 전극을 Inline으로 검사하면서 두께와
+# 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘. 측정 범위는 0~300 μm이고
+# 정확도는 ±1 μm 이하여야 해." → 이어서 "정확도 조건은 빼줘." 두 턴짜리
+# 대화형 시나리오를 spec_generator/spec_validator 전체 파이프라인으로
+# 재현한다(candidate_matcher 판정에서 그치지 않고 최종 SpecificationSchema로부터
+# build_hard_requirement_report가 다시 계산할 수 있는지까지 확인 — /generate-spec이
+# 실제로 쓰는 경로와 동일).
+#
+# 문제 3/4: inspection_items=[thickness, surface_defect] 둘 다 독립적으로
+# Hard Requirement Report에 나타나야 하고(Thickness가 누락되면 안 됨), 요구사항이
+# 암시하는 항목(Width/Inspection Mode/Thickness/Surface Defect/Measurement Range/
+# Accuracy) 전부가 실제로 비교 결과에 등장해야 한다.
+# ---------------------------------------------------------------
+_TEST10_DOC = Document(
+    page_content=(
+        "## General\n\n- Manufacturer: NovaScan\n- Model: NS-800\n"
+        "- Equipment Type: Electrode Inline Inspection System\n"
+        "- Inspection Mode: Inline\n\n"
+        "## Inspection Target\n\n- Maximum Electrode Width: 800 mm\n\n"
+        "## Measurement Performance\n\n| Item | Specification |\n|---|---|\n"
+        "| Measurement Range (Z) | 0 ~ 300 μm |\n"
+        "| Accuracy | ±1.0 μm |\n\n"
+        "## Defect Inspection\n\n| Item | Specification |\n|---|---|\n"
+        "| Defect Types | Scratch, Pin Hole, Coating Defect |\n"
+    ),
+    metadata={"filename": "SPEC-900.md", "source": "SPEC-900.md", "source_type": "markdown", "chunk_id": 0},
+)
+
+
+def _test10_initial_requirement() -> RequirementSchema:
+    return RequirementSchema(
+        target=RequirementTarget(width_mm=600.0),
+        inline_offline="inline",
+        inspection_items=["thickness", "surface_defect"],
+        measurement_range=RequirementRange(min=0.0, max=300.0, unit="um"),
+        accuracy=RequirementValue(value=1.0, unit="um", operator="<="),
+    )
+
+
+def _test10_build_hard_report(requirement: RequirementSchema):
+    fake_llm_response = SpecificationSchema()
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        spec = generate_specification(requirement, [_TEST10_DOC], "", model="test-model")
+    candidates = build_candidates(requirement, [_TEST10_DOC])
+    chosen = select_best_candidate(candidates)
+    hard_report = build_hard_requirement_report(spec, requirement)
+    hard_report += build_inspection_item_hard_requirement_records(chosen)
+    return hard_report
+
+
+def test_reported_bug_test10_initial_search_includes_all_six_hard_requirements():
+    requirement = _test10_initial_requirement()
+    hard_report = _test10_build_hard_report(requirement)
+    by_item = {r.item: r for r in hard_report}
+
+    assert set(by_item) == {
+        "Measurement Range",
+        "Accuracy",
+        "Width",
+        "Inspection Mode",
+        "Thickness Measurement",
+        "Surface Defect Detection",
+    }
+    assert by_item["Measurement Range"].result == "PASS"
+    assert by_item["Accuracy"].result == "PASS"
+    assert by_item["Width"].result == "PASS"
+    assert by_item["Inspection Mode"].result == "PASS"
+    assert by_item["Thickness Measurement"].result == "PASS"
+    assert by_item["Surface Defect Detection"].result == "PASS"
+
+    has_fail = any(r.result == "FAIL" for r in hard_report)
+    has_unknown = any(r.result == "UNKNOWN" for r in hard_report)
+    assert has_fail is False and has_unknown is False
+
+
+def test_reported_bug_test10_removing_accuracy_drops_only_accuracy_hard_requirement():
+    """
+    "정확도 조건은 빼줘." 이후에는 Accuracy가 Hard Requirement Report에서 완전히
+    사라져야 하고(문제 1/4), 나머지 5개(Measurement Range/Width/Inspection Mode/
+    Thickness/Surface Defect)는 그대로 유지되어야 한다.
+    """
+    requirement = _test10_initial_requirement()
+    apply_conversational_patch(requirement, "정확도 조건은 빼줘.")
+    assert requirement.accuracy is None
+    assert requirement.required_accuracy_um is None
+
+    hard_report = _test10_build_hard_report(requirement)
+    by_item = {r.item: r for r in hard_report}
+
+    assert "Accuracy" not in by_item
+    assert set(by_item) == {
+        "Measurement Range",
+        "Width",
+        "Inspection Mode",
+        "Thickness Measurement",
+        "Surface Defect Detection",
+    }
+    for item in by_item:
+        assert by_item[item].result == "PASS"
