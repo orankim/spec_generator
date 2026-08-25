@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import categorical_match, ollama_client, units
 from .schemas import RequirementRange, RequirementSchema, RequirementValue
@@ -388,3 +388,170 @@ def apply_deterministic_extraction(requirement: RequirementSchema, *, trust_llm_
         requirement.measurement_principle = None
 
     requirement.sync_legacy_fields()
+
+
+# ==========================================
+# 대화형 조건 추가/변경/삭제(챗봇 UI) — 이미 여러 턴에 걸쳐 조건이 쌓인
+# RequirementSchema에, 새로 들어온 한 메시지만 근거로 삼아 "패치"를 적용한다.
+#
+# apply_deterministic_extraction()의 두 모드 중 어느 쪽도 이 용도에 맞지 않는다:
+#   - trust_llm_guess=True: 이미 값이 있으면 절대 안 건드린다 -> "정확도를 ±2 μm로
+#     변경해줘"처럼 기존 값을 바꾸려는 메시지가 무시된다.
+#   - trust_llm_guess=False: 이 메시지에 근거가 없는 필드는 전부 None으로 지운다 ->
+#     "Inline으로 사용할 거야."처럼 한 조건만 말하는 메시지가 이전 턴에 확정된
+#     다른 조건(측정 범위 등)까지 지워버린다.
+# 그래서 세 번째 규칙이 필요하다: "이 메시지에 근거가 있으면 덮어쓰고, 없으면
+# 이전 값을 그대로 둔다." 명시적 삭제 의도("~는 빼줘")만 예외적으로 필드를 지운다.
+# 이 경로는 LLM을 전혀 호출하지 않는다(요청서 22절 원칙 6: "대화형 UI라고 해서
+# 모든 내용을 LLM에게 다시 판단시키지 않는다") — parse_requirement_text()가 이미
+# 검증한 동일한 정규식/단위 파싱 함수만 재사용한다.
+# ==========================================
+_REMOVE_INTENT_KEYWORDS: Tuple[str, ...] = ("빼줘", "빼주세요", "제거", "삭제", "없애", "제외해", "제외할")
+_THICKNESS_KEYWORDS: Tuple[str, ...] = ("두께", "thickness")
+
+# 삭제 의도 키워드와 함께 등장하면 해당 필드를 지운다고 판단할, 필드별 키워드.
+_FIELD_REMOVE_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "target.width_mm": ("폭", "width"),
+    "measurement_range": ("측정 범위", "측정범위", "범위"),
+    "accuracy": ("정확도", "accuracy"),
+    "resolution": ("분해능", "resolution"),
+    "minimum_defect_size": ("결함 크기", "결함크기", "최소 검출"),
+    "measurement_speed": ("속도", "speed"),
+    "inline_offline": ("검사 모드", "inline", "offline", "인라인", "오프라인"),
+    "measurement_method": ("측정 방식", "접촉", "contact"),
+    "measurement_principle": ("측정 원리", "원리"),
+}
+
+
+def _detect_removed_fields(text: str) -> set:
+    """"폭 조건은 빼줘"처럼 특정 조건을 명시적으로 제거하라는 의도를 감지한다.
+    짧은 후속 메시지 하나 안에서 삭제 의도 키워드와 필드 키워드가 함께 등장하면
+    그 필드를 제거 대상으로 본다 — 문장이 짧아 근접도까지 따지면 오히려 정상
+    케이스를 놓치는 경우가 많으므로 co-occurrence만으로 판단한다."""
+    if not any(kw in text for kw in _REMOVE_INTENT_KEYWORDS):
+        return set()
+    removed = set()
+    for field, keywords in _FIELD_REMOVE_KEYWORDS.items():
+        if any(kw in text for kw in keywords):
+            removed.add(field)
+    return removed
+
+
+def _extract_inspection_items_from_text(text: str) -> List[str]:
+    """conversational patch 전용 검사 항목 추출 — LLM 없이 categorical_match와 동일한
+    원칙(키워드 근거 없으면 채우지 않는다)으로, 이미 parse_requirement_text의
+    hallucination 필터가 쓰는 _INSPECTION_ITEM_KEYWORDS를 그대로 재사용한다."""
+    text_lower = text.lower()
+    found: List[str] = []
+    if any(kw in text for kw in _THICKNESS_KEYWORDS):
+        found.append("thickness")
+    for item, keywords in _INSPECTION_ITEM_KEYWORDS.items():
+        if any(kw.lower() in text_lower for kw in keywords):
+            found.append(item)
+    return found
+
+
+def apply_conversational_patch(requirement: RequirementSchema, message_text: str) -> RequirementSchema:
+    """
+    대화 중 새로 들어온 메시지(message_text)만 근거로 기존 requirement를 "패치"한다
+    (요청서 7/8절: 조건 추가/변경/삭제). 이 메시지에 근거가 있는 필드만 덮어쓰고,
+    나머지는 이전 턴에서 확정된 값을 그대로 보존한다. requirement는 in-place로
+    수정되며 그대로 반환한다(호출부 편의를 위함).
+    """
+    text = unicodedata.normalize("NFC", message_text)
+    removed_fields = _detect_removed_fields(text)
+    working_text = text
+
+    material = _extract_material(text)
+    if material is not None:
+        requirement.target.material = material
+
+    if "target.width_mm" in removed_fields:
+        requirement.target.width_mm = None
+    else:
+        width_span = _extract_width_mm_with_span(working_text)
+        if width_span is not None:
+            width_mm, start, end = width_span
+            requirement.target.width_mm = width_mm
+            working_text = _mask(working_text, start, end)
+
+    if "measurement_range" in removed_fields:
+        requirement.measurement_range = None
+    else:
+        range_result = units.parse_range_with_span(working_text)
+        if range_result is not None:
+            lo, hi, unit, start, end = range_result
+            requirement.measurement_range = RequirementRange(min=lo, max=hi, unit=unit)
+            working_text = _mask(working_text, start, end)
+        else:
+            bound = _find_keyword_value(working_text, _RANGE_KEYWORDS)
+            if bound is not None:
+                value, unit, operator, start, end = bound
+                if operator in (None, "<="):
+                    requirement.measurement_range = RequirementRange(min=0.0, max=value, unit=unit)
+                    working_text = _mask(working_text, start, end)
+
+    if "accuracy" in removed_fields:
+        requirement.accuracy = None
+        requirement.required_accuracy_um = None
+    else:
+        found = _find_keyword_value(working_text, _ACCURACY_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.accuracy = RequirementValue(value=value, unit=unit, operator=operator or "<=")
+            working_text = _mask(working_text, start, end)
+
+    if "resolution" in removed_fields:
+        requirement.resolution = None
+        requirement.required_resolution_um = None
+    else:
+        found = _find_keyword_value(working_text, _RESOLUTION_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.resolution = RequirementValue(value=value, unit=unit, operator=operator or "<=")
+            working_text = _mask(working_text, start, end)
+
+    if "minimum_defect_size" in removed_fields:
+        requirement.minimum_defect_size = None
+        requirement.minimum_defect_size_um = None
+    else:
+        found = _find_keyword_value(working_text, _DEFECT_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.minimum_defect_size = RequirementValue(value=value, unit=unit, operator=operator or "<=")
+            working_text = _mask(working_text, start, end)
+
+    if "measurement_speed" in removed_fields:
+        requirement.measurement_speed = None
+        requirement.scan_speed_requirement = None
+
+    if "inline_offline" in removed_fields:
+        requirement.inline_offline = None
+    else:
+        inline_offline = categorical_match.extract_inspection_mode(text)
+        if inline_offline is not None:
+            requirement.inline_offline = inline_offline
+
+    if "measurement_method" in removed_fields:
+        requirement.measurement_method = None
+    else:
+        measurement_method = categorical_match.extract_measurement_method(text)
+        if measurement_method is not None:
+            requirement.measurement_method = measurement_method
+
+    if "measurement_principle" in removed_fields:
+        requirement.measurement_principle = None
+    else:
+        measurement_principle = categorical_match.extract_measurement_principle(text)
+        if measurement_principle is not None:
+            requirement.measurement_principle = measurement_principle
+
+    # 검사 항목은 교체가 아니라 "추가"가 기본이다 — "표면 결함도 봐줘" 같은 후속
+    # 메시지가 이전에 확정된 다른 항목(thickness 등)을 지우면 안 된다.
+    for item in _extract_inspection_items_from_text(text):
+        if item not in requirement.inspection_items:
+            requirement.inspection_items.append(item)
+
+    requirement.raw_text = ((requirement.raw_text or "") + "\n" + message_text).strip()
+    requirement.sync_legacy_fields()
+    return requirement

@@ -19,7 +19,7 @@ from renderers.markdown_renderer import render_markdown
 from . import candidate_matcher, ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, retrieve_and_generate
-from .requirement_parser import apply_deterministic_extraction
+from .requirement_parser import apply_conversational_patch, apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import RequirementSchema, SpecificationSchema
 from .spec_validator import build_hard_requirement_report, build_inspection_item_hard_requirement_records
@@ -62,6 +62,52 @@ async def analyze_requirement_api(req: AnalyzeRequest):
         raise
     except Exception as e:
         logger.exception("요구사항 분석 실패")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _diff_field_paths(before: Dict[str, Any], after: Dict[str, Any], prefix: str = "") -> List[str]:
+    """before/after(model_dump() 결과) 사이에서 값이 달라진 필드의 dotted path 목록을
+    만든다. 채팅 UI가 "다음 조건을 추가/변경했습니다: ..."를 보여줄 때만 쓰는
+    표시용 정보라, RequirementSchema에 종속되지 않는 범용 dict 비교로 충분하다."""
+    changed: List[str] = []
+    keys = set(before.keys()) | set(after.keys())
+    for key in sorted(keys):
+        path = f"{prefix}.{key}" if prefix else key
+        before_value, after_value = before.get(key), after.get(key)
+        if isinstance(before_value, dict) and isinstance(after_value, dict):
+            changed.extend(_diff_field_paths(before_value, after_value, path))
+        elif before_value != after_value:
+            changed.append(path)
+    return changed
+
+
+class UpdateRequirementRequest(BaseModel):
+    current_requirement: Dict[str, Any]
+    message: str
+
+
+@router.post("/update-requirement")
+async def update_requirement_api(req: UpdateRequirementRequest):
+    """
+    대화형 UI의 후속 메시지 전용 엔드포인트. /analyze-requirement(최초 메시지,
+    LLM 기반 전체 파싱)와 달리 LLM을 호출하지 않는다 — 이미 여러 턴에 걸쳐 쌓인
+    current_requirement에 새 메시지(message)만 근거로 삼아 결정론적으로 패치를
+    적용한다(agent.requirement_parser.apply_conversational_patch). 요청서 22절
+    원칙 6(대화형이라고 모든 걸 LLM에 다시 판단시키지 않는다)을 지키기 위함이다.
+    """
+    try:
+        requirement = RequirementSchema(**req.current_requirement)
+        before = requirement.model_dump()
+        apply_conversational_patch(requirement, req.message)
+        after = requirement.model_dump()
+        validation = validate_requirement(requirement)
+        return {
+            "requirement": requirement.model_dump(),
+            "validation": validation.model_dump(),
+            "changed_fields": _diff_field_paths(before, after),
+        }
+    except Exception as e:
+        logger.exception("요구사항 업데이트 실패")
         raise HTTPException(status_code=500, detail=str(e))
 
 
