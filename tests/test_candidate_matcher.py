@@ -23,9 +23,10 @@ import pytest
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_core.documents import Document
 
-from agent import spec_retriever
+from agent import categorical_match, spec_retriever
 from agent.candidate_matcher import build_candidates, select_best_candidate
 from agent.pipeline import retrieve_and_generate
+from agent.requirement_parser import apply_conversational_patch
 from agent.schemas import (
     RequirementRange,
     RequirementSchema,
@@ -300,7 +301,11 @@ def test_F_spec_001_passes_hard_requirement_for_reported_query(db):
         accuracy=RequirementValue(value=1.0, unit="um", operator="<="),
         required_accuracy_um=1.0,
     )
-    retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=5)
+    # k_per_query=5는 fake-hash 임베딩(의미 유사도를 반영하지 않음) 하에서 Width
+    # hard requirement의 근거 chunk("Maximum Electrode Width")가 우연히 top-k 밖으로
+    # 밀려날 수 있어 100으로 넉넉히 잡는다(실제 서비스의 bge-m3 임베딩에서는
+    # k_per_query=5로도 충분 — 다른 hard requirement 테스트와 동일한 이유).
+    retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=100)
     candidates = build_candidates(requirement, retrieved_docs)
     spec001 = next((c for c in candidates if c.source_document == "SPEC-001.md"), None)
     assert spec001 is not None, "SPEC-001.md 후보가 만들어지지 않았습니다"
@@ -668,3 +673,219 @@ def test_build_inspection_item_hard_requirement_records_surfaces_candidate_match
 
 def test_build_inspection_item_hard_requirement_records_empty_for_none_candidate():
     assert build_inspection_item_hard_requirement_records(None) == []
+
+
+# ---------------------------------------------------------------
+# Test12(실사용자 보고): Width/Speed가 hard requirement로 전혀 생성되지 않아
+# Inspection Mode 하나만 PASS인데도 "Hard Requirement 조건을 모두 충족합니다"로
+# 잘못 안내되었다. Width/Speed 추출·판정과 profile_3d 검사 항목 판정(Equipment
+# Type/Measurement Principle 서술 텍스트 기반, "3D Profile"/"profile_3d"/
+# "3d_profile" 등 표기 차이에 흔들리지 않는 정규화)을 검증한다.
+# ---------------------------------------------------------------
+def test_width_extracted_and_evaluated_pass():
+    requirement = RequirementSchema(target=RequirementTarget(width_mm=500.0))
+    doc = _mk_doc("## Inspection Target\n\n- Maximum Electrode Width: 800 mm\n", filename="SPEC-001.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["Width"].result == "PASS"
+    assert by_item["Width"].found_value == 800.0
+
+
+def test_width_extracted_and_evaluated_fail():
+    """요구 폭 800mm인데 장비 최대 폭이 500mm뿐이면 FAIL이어야 한다(Test12의 핵심 버그)."""
+    requirement = RequirementSchema(target=RequirementTarget(width_mm=800.0))
+    doc = _mk_doc("## Inspection Target\n\n- Maximum Electrode Width: 500 mm\n", filename="SPEC-001.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["Width"].result == "FAIL"
+    assert candidates[0].hard_requirements_pass is False
+
+
+def test_width_unknown_when_not_reported():
+    requirement = RequirementSchema(target=RequirementTarget(width_mm=800.0))
+    doc = _mk_doc("## General\n\n- Manufacturer: X\n", filename="SPEC-999.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["Width"].result == "UNKNOWN"
+
+
+def test_width_alternate_label_maximum_width():
+    """SPEC-006/008/009/010처럼 "Maximum Electrode Width"가 아니라 "Maximum Width"만 쓰는 경우."""
+    requirement = RequirementSchema(target=RequirementTarget(width_mm=800.0))
+    doc = _mk_doc("## Inspection Target\n\n- Maximum Width: 1200 mm\n", filename="SPEC-009.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["Width"].result == "PASS"
+    assert by_item["Width"].found_value == 1200.0
+
+
+def test_width_not_evaluated_when_not_requested():
+    requirement = RequirementSchema()
+    doc = _mk_doc("## Inspection Target\n\n- Maximum Width: 500 mm\n", filename="SPEC-001.md")
+    candidates = build_candidates(requirement, [doc])
+    assert "Width" not in {m.item for m in candidates[0].matches}
+
+
+def test_speed_extracted_and_evaluated_pass():
+    requirement = RequirementSchema(measurement_speed=RequirementValue(value=500.0, unit="mm/s", operator=">="))
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Maximum Line Speed | 1000 mm/s |\n", filename="SPEC-009.md"
+    )
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["Speed"].result == "PASS"
+    assert by_item["Speed"].found_value == 1000.0
+
+
+def test_speed_extracted_and_evaluated_fail():
+    requirement = RequirementSchema(measurement_speed=RequirementValue(value=500.0, unit="mm/s", operator=">="))
+    doc = _mk_doc("| Item | Specification |\n|---|---|\n| Measurement Speed | 100 mm/s |\n", filename="SPEC-001.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["Speed"].result == "FAIL"
+    assert candidates[0].hard_requirements_pass is False
+
+
+def test_speed_unknown_when_not_reported():
+    requirement = RequirementSchema(measurement_speed=RequirementValue(value=500.0, unit="mm/s", operator=">="))
+    doc = _mk_doc("## General\n\n- Manufacturer: X\n", filename="SPEC-999.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["Speed"].result == "UNKNOWN"
+
+
+# ---------------------------------------------------------------
+# profile_3d 검사 항목 지원 여부 — agent.categorical_match.match_inspection_item_capability
+# ---------------------------------------------------------------
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Electrode 3D Inspection System", True),
+        ("3D Laser Profilometry", True),
+        ("High Speed 3D Inspection System", True),
+        ("3D Laser + Vision", True),
+        ("profile_3d", True),  # 요청서 예시: 표기가 달라도 "3d" 부분 문자열로 정규화
+        ("3d_profile", True),
+        ("2D Vision Inspection System", False),
+        ("Machine Vision", None),
+        ("OCT", None),
+        (None, None),
+    ],
+)
+def test_match_inspection_item_capability_profile_3d(text, expected):
+    assert categorical_match.match_inspection_item_capability("profile_3d", text) is expected
+
+
+def test_match_inspection_item_capability_unknown_item_returns_none():
+    assert categorical_match.match_inspection_item_capability("thickness", "anything") is None
+
+
+def test_profile_3d_hard_requirement_pass_via_equipment_type():
+    requirement = RequirementSchema(inspection_items=["profile_3d"])
+    doc = _mk_doc("## General\n\n- Equipment Type: Electrode 3D Inspection System\n", filename="SPEC-001.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["3D Profile Detection"].result == "PASS"
+
+
+def test_profile_3d_hard_requirement_fail_via_explicit_2d_marker():
+    requirement = RequirementSchema(inspection_items=["profile_3d"])
+    doc = _mk_doc("## General\n\n- Equipment Type: 2D Vision Inspection System\n", filename="SPEC-006.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["3D Profile Detection"].result == "FAIL"
+
+
+def test_profile_3d_hard_requirement_unknown_when_no_info():
+    requirement = RequirementSchema(inspection_items=["profile_3d"])
+    doc = _mk_doc("## General\n\n- Manufacturer: X\n", filename="SPEC-999.md")
+    candidates = build_candidates(requirement, [doc])
+    by_item = {m.item: m for m in candidates[0].matches}
+    assert by_item["3D Profile Detection"].result == "UNKNOWN"
+
+
+def test_reported_bug_test12_es200_width_fails_despite_inline_pass(db):
+    """
+    Test12(실사용자 보고) 재현: 대화로 "폭 800mm 이상, Inline, 3D Profile"까지
+    조건을 쌓으면, OptiScan ES-200(SPEC-001.md, 실제 최대 폭 500mm)은 Inspection
+    Mode/3D Profile은 PASS지만 Width는 FAIL이어야 한다. 수정 전에는 Width가 hard
+    requirement로 아예 생성되지 않아 Inspection Mode 하나만 보고 "모두 충족"으로
+    잘못 판정되었다.
+    """
+    requirement = RequirementSchema(
+        target=RequirementTarget(width_mm=500.0),
+        inspection_items=["thickness", "profile_3d"],
+        inline_offline="inline",
+    )
+    apply_conversational_patch(requirement, "폭 조건을 800 mm 이상으로 변경해줘.")
+    assert requirement.target.width_mm == 800.0
+
+    retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=100)
+    candidates = build_candidates(requirement, retrieved_docs)
+    spec001 = next(c for c in candidates if c.source_document == "SPEC-001.md")
+    by_item = {m.item: m for m in spec001.matches}
+
+    assert set(by_item) >= {"Width", "Inspection Mode", "3D Profile Detection"}
+    assert by_item["Inspection Mode"].result == "PASS"
+    assert by_item["3D Profile Detection"].result == "PASS"
+    assert by_item["Width"].result == "FAIL", "실제 최대 폭 500mm < 요구 800mm이므로 FAIL이어야 한다"
+    assert by_item["Width"].found_value == 500.0
+    assert spec001.hard_requirements_pass is False
+
+
+def test_reported_bug_test12_full_pipeline_surfaces_width_speed_in_hard_requirement_report():
+    """
+    spec_generator/spec_validator 전체 파이프라인이 Width/Speed를 실제로 Hard
+    Requirement Report에 반영하는지 확인한다 — candidate_matcher 판정에서 그치지
+    않고 SpecificationSchema(inspection_target.equipment_max_width_mm/
+    inspection_performance.line_speed_mm_s)에 저장되어 build_hard_requirement_
+    report가 최종 사양서만으로 다시 계산할 수 있어야 한다(agent/routes.py의
+    /generate-spec이 실제로 쓰는 경로와 동일).
+    """
+    requirement = RequirementSchema(
+        target=RequirementTarget(width_mm=800.0),
+        inspection_items=["thickness", "profile_3d"],
+        inline_offline="inline",
+        measurement_speed=RequirementValue(value=500.0, unit="mm/s", operator=">="),
+    )
+    doc = Document(
+        page_content=(
+            "## General\n\n- Manufacturer: OptiScan\n- Model: ES-200\n"
+            "- Equipment Type: Electrode 3D Inspection System\n"
+            "- Inspection Mode: Inline\n\n"
+            "## Inspection Target\n\n- Maximum Electrode Width: 500 mm\n\n"
+            "## Measurement Performance\n\n| Item | Specification |\n|---|---|\n"
+            "| Measurement Speed | 100 mm/s |\n"
+        ),
+        metadata={"filename": "SPEC-001.md", "source": "SPEC-001.md", "source_type": "markdown", "chunk_id": 0},
+    )
+    fake_llm_response = SpecificationSchema()
+
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        spec = generate_specification(requirement, [doc], "", model="test-model")
+
+    assert spec.inspection_target.equipment_max_width_mm.value == 500.0
+    assert spec.inspection_target.equipment_max_width_mm.status == "VERIFIED"
+    assert spec.inspection_performance.line_speed_mm_s.value == 100.0
+    assert spec.inspection_performance.line_speed_mm_s.status == "VERIFIED"
+
+    candidates = build_candidates(requirement, [doc])
+    chosen = select_best_candidate(candidates)
+    hard_report = build_hard_requirement_report(spec, requirement)
+    hard_report += build_inspection_item_hard_requirement_records(chosen)
+    by_item = {r.item: r for r in hard_report}
+
+    assert set(by_item) == {"Width", "Speed", "Inspection Mode", "3D Profile Detection"}
+    assert by_item["Width"].result == "FAIL"
+    assert by_item["Width"].specification == 500.0
+    assert by_item["Speed"].result == "FAIL"
+    assert by_item["Speed"].specification == 100.0
+    assert by_item["Inspection Mode"].result == "PASS"
+    assert by_item["3D Profile Detection"].result == "PASS"
+
+    # 가장 중요한 정책: 4개 중 2개(Width/Speed)가 FAIL이므로 "모두 충족"으로
+    # 표시되면 절대 안 된다.
+    has_fail = any(r.result == "FAIL" for r in hard_report)
+    has_unknown = any(r.result == "UNKNOWN" for r in hard_report)
+    all_confirmed_pass = len(hard_report) > 0 and not has_fail and not has_unknown
+    assert all_confirmed_pass is False

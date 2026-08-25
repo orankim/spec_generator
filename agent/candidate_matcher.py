@@ -45,24 +45,35 @@ _DEFECT_TYPES_RE = re.compile(r"(?:^|\n)[-*]?\s*Defect Types\s*[:：]\s*(.+)", r
 _DEFECT_INSPECTION_NOT_SUPPORTED_RE = re.compile(
     r"#{1,3}\s*Defect Inspection\s*\n+\s*[-*]?\s*Not Supported\b", re.IGNORECASE
 )
+# "## General" 절의 불릿 리스트 형태(Manufacturer/Model/Inspection Mode 등과 동일).
+_EQUIPMENT_TYPE_RE = re.compile(r"(?:^|\n)[-*]?\s*Equipment Type\s*[:：]\s*(.+)", re.IGNORECASE)
+# "## Inspection Target" 절의 불릿 리스트 형태(sample_specs: "Maximum Electrode Width"/
+# "Maximum Width" 두 표기가 섞여 있다).
+_MAXIMUM_WIDTH_RE = re.compile(r"(?:^|\n)[-*]?\s*Maximum(?:\s+Electrode)?\s+Width\s*[:：]\s*(.+)", re.IGNORECASE)
 
 _RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
 _ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
 _DEFECT_SIZE_LABEL_HINTS = ("minimum detectable defect", "minimum defect size", "최소 검출", "최소 결함")
 _DEFECT_TYPES_LABEL_HINTS = ("defect types",)
+# "Measurement Speed"/"Line Speed"/"Maximum Line Speed" 모두 "speed"로 끝난다.
+_SPEED_LABEL_HINTS = ("speed",)
 
 # requirement.inspection_items 중 "이 결함 종류를 실제로 검출하는가"로 검증 가능한
-# 항목만 다룬다(thickness/coating/profile_3d는 사양서에 이런 형태의 명시적 목록이
-# 없어 안전하게 판정할 근거가 부족하다 — 근거 없이 FAIL을 만들어내는 것을 피한다).
+# 항목만 다룬다(thickness/coating은 사양서에 이런 형태의 명시적 목록이 없어 안전하게
+# 판정할 근거가 부족하다 — 근거 없이 FAIL을 만들어내는 것을 피한다).
 # "defect"는 Scratch/Contamination/Pit/Void 등 특정 이름이 없는 일반 결함 목록도
 # surface_defect로 인정하기 위한 포괄 키워드다.
 _INSPECTION_ITEM_DEFECT_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "surface_defect": ("scratch", "crack", "pinhole", "pin hole", "particle", "contamination", "pit", "void", "defect"),
     "edge_defect": ("edge",),
 }
+# profile_3d는 Defect Types 목록이 아니라 Equipment Type/Measurement Principle
+# 서술 텍스트(agent.categorical_match.match_inspection_item_capability)로 판정한다 —
+# 별도 처리이므로 위 딕셔너리에는 넣지 않는다.
 _INSPECTION_ITEM_LABELS = {
     "surface_defect": "Surface Defect Detection",
     "edge_defect": "Edge Defect Detection",
+    "profile_3d": "3D Profile Detection",
 }
 
 
@@ -150,6 +161,14 @@ class _CandidateFact:
         self.defect_types_doc: Optional[Document] = None
         self.defect_inspection_not_supported: bool = False
         self.defect_inspection_not_supported_doc: Optional[Document] = None
+        self.equipment_type_text: Optional[str] = None
+        self.equipment_type_doc: Optional[Document] = None
+        self.width_mm: Optional[float] = None
+        self.width_mm_doc: Optional[Document] = None
+        self.width_mm_text: Optional[str] = None
+        self.speed: Optional[Tuple[float, str]] = None
+        self.speed_doc: Optional[Document] = None
+        self.speed_text: Optional[str] = None
 
 
 def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
@@ -197,6 +216,25 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                     fact.defect_size_doc = doc
                     fact.defect_size_text = f"Minimum Detectable Defect: {m.group(1).strip()}"
 
+        if fact.equipment_type_text is None:
+            m = _EQUIPMENT_TYPE_RE.search(text)
+            if m:
+                fact.equipment_type_text = m.group(1).strip()
+                fact.equipment_type_doc = doc
+
+        if fact.width_mm is None:
+            m = _MAXIMUM_WIDTH_RE.search(text)
+            if m:
+                value_unit = units.parse_value_unit(m.group(1))
+                if value_unit is not None:
+                    value, unit = value_unit
+                    try:
+                        fact.width_mm = units.convert(value, unit, "mm")
+                        fact.width_mm_doc = doc
+                        fact.width_mm_text = f"Maximum Width: {m.group(1).strip()}"
+                    except units.UnitError:
+                        pass
+
         if not fact.defect_inspection_not_supported and fact.defect_types_text is None:
             if _DEFECT_INSPECTION_NOT_SUPPORTED_RE.search(text):
                 fact.defect_inspection_not_supported = True
@@ -234,6 +272,12 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
             ):
                 fact.defect_types_text = value.strip()
                 fact.defect_types_doc = doc
+            if fact.speed is None and any(h in label_lower for h in _SPEED_LABEL_HINTS):
+                value_unit = units.parse_value_unit(value)
+                if value_unit is not None:
+                    fact.speed = value_unit
+                    fact.speed_doc = doc
+                    fact.speed_text = f"{label}: {value}"
     return fact
 
 
@@ -276,6 +320,26 @@ def _required_defect_size(requirement: RequirementSchema) -> Optional[Tuple[floa
     return None
 
 
+def _required_width(requirement: RequirementSchema) -> Optional[Tuple[float, str, str]]:
+    """요구 폭은 "이 폭 이상을 처리할 수 있어야 한다"는 뜻이므로 operator는 항상
+    ">="다 — RequirementSchema.target.width_mm에는 operator 정보가 없는 단일
+    float 필드라서(사용자가 폭을 요구할 때 이하/미만을 의도하는 경우가 없는
+    도메인이므로) 여기서 고정한다."""
+    if requirement.target.width_mm is None:
+        return None
+    return requirement.target.width_mm, "mm", ">="
+
+
+def _required_speed(requirement: RequirementSchema) -> Optional[Tuple[float, str, str]]:
+    if requirement.measurement_speed is not None and requirement.measurement_speed.value is not None:
+        return (
+            requirement.measurement_speed.value,
+            requirement.measurement_speed.unit or "mm/s",
+            requirement.measurement_speed.operator or ">=",
+        )
+    return None
+
+
 def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Document]) -> List[CandidateEquipment]:
     """
     retrieved_docs를 문서(장비) 단위로 그룹화하고, 각 후보의 측정 범위/정확도를
@@ -289,6 +353,8 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
     required_range = _required_range(requirement)
     required_accuracy = _required_accuracy(requirement)
     required_defect_size = _required_defect_size(requirement)
+    required_width = _required_width(requirement)
+    required_speed = _required_speed(requirement)
 
     candidates: List[CandidateEquipment] = []
     for idx, (source, docs) in enumerate(sorted(by_source.items()), start=1):
@@ -380,6 +446,61 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                 )
             )
 
+        if required_width is not None:
+            req_value, req_unit, operator = required_width
+            candidate_width = (fact.width_mm, "mm") if fact.width_mm is not None else None
+            try:
+                # "장비가 요구 폭 이상을 처리할 수 있는가"도 값 하나짜리 hard requirement라
+                # evaluate_hard_requirements의 required_accuracy/candidate_accuracy 파라미터를
+                # 그대로 재사용한다(비교 로직 중복 구현 방지 — Accuracy/Minimum Defect Size와 동일).
+                ok, _reasons = units.evaluate_hard_requirements(
+                    required_accuracy=required_width, candidate_accuracy=candidate_width
+                )
+            except units.UnitError:
+                ok, candidate_width = False, None
+            result = "PASS" if ok else ("UNKNOWN" if candidate_width is None else "FAIL")
+            matches.append(
+                CandidateFieldMatch(
+                    item="Width",
+                    field_key="width",
+                    hard=True,
+                    requirement_value=req_value,
+                    requirement_unit=req_unit,
+                    operator=operator,
+                    found_value=candidate_width[0] if candidate_width else None,
+                    found_unit=candidate_width[1] if candidate_width else None,
+                    result=result,
+                    evidence_text=fact.width_mm_text,
+                    source=_source_ref(fact.width_mm_doc) if fact.width_mm_doc else None,
+                )
+            )
+
+        if required_speed is not None:
+            req_value, req_unit, operator = required_speed
+            candidate_speed = fact.speed
+            try:
+                ok, _reasons = units.evaluate_hard_requirements(
+                    required_accuracy=required_speed, candidate_accuracy=candidate_speed
+                )
+            except units.UnitError:
+                ok, candidate_speed = False, None
+            result = "PASS" if ok else ("UNKNOWN" if candidate_speed is None else "FAIL")
+            matches.append(
+                CandidateFieldMatch(
+                    item="Speed",
+                    field_key="speed",
+                    hard=True,
+                    requirement_value=req_value,
+                    requirement_unit=req_unit,
+                    operator=operator,
+                    found_value=candidate_speed[0] if candidate_speed else None,
+                    found_unit=candidate_speed[1] if candidate_speed else None,
+                    result=result,
+                    evidence_text=fact.speed_text,
+                    source=_source_ref(fact.speed_doc) if fact.speed_doc else None,
+                )
+            )
+
         # Inspection Mode(Inline/Offline)/Measurement Type(Contact/Non-contact)/
         # Measurement Principle — 숫자가 아니라 범주형 값이므로 agent.categorical_match로
         # 정규화한 문자열을 그대로(==) 비교한다. 사용자가 해당 조건을 요구하지 않았으면
@@ -460,6 +581,36 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
         # PASS로 잘못 보여주지 않기 위함(실사용자 보고: Edge Defect + Surface Defect를
         # 동시에 요구했을 때 Edge Defect를 지원하지 않는 장비도 구분 없이 PASS 취급됨).
         for item in requirement.inspection_items:
+            if item in categorical_match.INSPECTION_ITEM_CAPABILITY_KEYWORDS:
+                # profile_3d 등 — Defect Types 목록이 아니라 Equipment Type/
+                # Measurement Principle 서술 텍스트에서 positive/negative 키워드로
+                # 판정한다(agent.categorical_match.match_inspection_item_capability —
+                # "3D Profile"/"profile_3d"/"3d_profile" 등 표기가 달라도 "3d" 부분
+                # 문자열로 정규화되어 동일하게 매칭된다).
+                capability_doc = fact.equipment_type_doc or fact.measurement_principle_doc
+                capability_text = " ".join(
+                    t for t in (fact.equipment_type_text, fact.measurement_principle_text) if t
+                )
+                capability = categorical_match.match_inspection_item_capability(item, capability_text)
+                if capability is True:
+                    item_result, found_text = "PASS", capability_text
+                elif capability is False:
+                    item_result, found_text = "FAIL", capability_text
+                else:
+                    item_result, found_text, capability_doc = "UNKNOWN", None, None
+                matches.append(
+                    CandidateFieldMatch(
+                        item=_INSPECTION_ITEM_LABELS.get(item, item),
+                        field_key=f"inspection_item_{item}",
+                        hard=True,
+                        requirement_text=item,
+                        found_text=found_text,
+                        result=item_result,
+                        evidence_text=capability_text or None,
+                        source=_source_ref(capability_doc) if capability_doc else None,
+                    )
+                )
+                continue
             keywords = _INSPECTION_ITEM_DEFECT_KEYWORDS.get(item)
             if keywords is None:
                 continue
