@@ -238,11 +238,19 @@ def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[Candidat
         if match.source is None or (match.found_value is None and match.found_text is None):
             continue
         if match.field_key == "inline_offline" and match.found_text:
-            spec.equipment.inline_offline = spec.equipment.inline_offline or match.found_text
+            # `or spec.equipment.inline_offline`로 기존 값을 우선하면 안 된다 — LLM이
+            # narrowed context를 보고 이 필드를 먼저 자유 문자열로 채워 넣을 수 있고
+            # (예: 원문 그대로 "Machine Vision"), 그 비canonical 값이 여기서 덮어써지지
+            # 않고 남아 있으면 build_hard_requirement_report가 요구값의 canonical
+            # 라벨(예: "Vision")과 문자열이 달라 실제로는 만족하는 조건을 FAIL로
+            # 잘못 판정한다(실사용자 보고 버그: SPEC-006.md "Machine Vision" vs 요구
+            # "Vision" → 의미상 동일한데 FAIL). measurement_range_full/equipment_accuracy_um과
+            # 동일하게, 후보 문서에서 결정론적으로 추출한 canonical 값이 항상 우선해야 한다.
+            spec.equipment.inline_offline = match.found_text
         elif match.field_key == "measurement_method" and match.found_text:
-            spec.equipment.measurement_method = spec.equipment.measurement_method or match.found_text
+            spec.equipment.measurement_method = match.found_text
         elif match.field_key == "measurement_principle" and match.found_text:
-            spec.equipment.measurement_principle = spec.equipment.measurement_principle or match.found_text
+            spec.equipment.measurement_principle = match.found_text
         elif match.field_key == "measurement_range" and match.found_min is not None:
             spec.measurement_performance.measurement_range_full = SourcedRange(
                 min=match.found_min,
