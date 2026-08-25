@@ -272,6 +272,13 @@ class InspectionTarget(BaseModel):
     product_type: Optional[str] = None
     electrode_type: Optional[str] = None
     width_mm: Optional[float] = None
+    equipment_max_width_mm: Optional[SourcedNumber] = Field(
+        default=None,
+        description="후보 문서(장비)에서 실제로 확인된 최대 대응 가능 폭(예: 'Maximum Electrode "
+        "Width'). width_mm은 사용자가 요구사항에서 명시하면 SpecGenerator가 그 값으로 고정하는 "
+        "필드(요구값 보호)이므로, 요구값과 장비의 실측값을 혼동하지 않도록 별도 필드에 둔다"
+        "(measurement_performance.equipment_accuracy_um과 동일한 원칙).",
+    )
     length_mm: Optional[float] = None
     thickness_um: Optional[float] = None
     coating_thickness_um: Optional[float] = None

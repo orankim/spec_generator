@@ -125,6 +125,7 @@ def _verify_sourced_numbers(spec: SpecificationSchema, retrieved_docs: List[Docu
     _collect_needs_confirmation()에 의해 자동으로 needs_confirmation에 잡힌다.
     """
     for section_name in (
+        "inspection_target",
         "measurement_performance",
         "spatial_performance",
         "inspection_performance",
@@ -160,6 +161,7 @@ def _confirmed_source_documents(spec: SpecificationSchema) -> set:
     신뢰가 검증된 문서를 우선하기 위해 쓰인다."""
     confirmed = set()
     for section_name in (
+        "inspection_target",
         "measurement_performance",
         "spatial_performance",
         "inspection_performance",
@@ -286,6 +288,23 @@ def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[Candidat
                 status="VERIFIED",
                 source=match.source.model_copy(),
             )
+        elif match.field_key == "width":
+            spec.inspection_target.equipment_max_width_mm = SourcedNumber(
+                value=match.found_value,
+                unit=match.found_unit,
+                status="VERIFIED",
+                source=match.source.model_copy(),
+            )
+        elif match.field_key == "speed":
+            # inspection_performance.line_speed_mm_s는 _prefill_from_requirement()가
+            # 건드리지 않는(요구값으로 보호되지 않는) 필드라, accuracy/defect_size와
+            # 달리 별도 "equipment_" 필드를 새로 만들 필요 없이 그대로 재사용한다.
+            spec.inspection_performance.line_speed_mm_s = SourcedNumber(
+                value=match.found_value,
+                unit=match.found_unit,
+                status="VERIFIED",
+                source=match.source.model_copy(),
+            )
 
 
 def _collect_verified_source_documents(spec: SpecificationSchema) -> List[str]:
@@ -296,6 +315,7 @@ def _collect_verified_source_documents(spec: SpecificationSchema) -> List[str]:
     """
     documents = set()
     for section_name in (
+        "inspection_target",
         "measurement_performance",
         "spatial_performance",
         "inspection_performance",
@@ -317,6 +337,7 @@ def _collect_verified_source_documents(spec: SpecificationSchema) -> List[str]:
 def _collect_needs_confirmation(spec: SpecificationSchema) -> List[str]:
     needs_confirmation: List[str] = []
     for section_name in (
+        "inspection_target",
         "measurement_performance",
         "spatial_performance",
         "inspection_performance",

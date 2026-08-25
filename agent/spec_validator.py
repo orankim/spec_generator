@@ -23,6 +23,7 @@ from .schemas import (
 )
 
 _NUMERIC_SECTIONS = (
+    "inspection_target",
     "measurement_performance",
     "spatial_performance",
     "inspection_performance",
@@ -344,6 +345,56 @@ def _defect_size_hard_requirement_record(spec: SpecificationSchema, requirement:
     )
 
 
+def _width_hard_requirement_record(spec: SpecificationSchema, requirement: RequirementSchema) -> Optional[ComplianceRecord]:
+    """요구 폭은 "이 폭 이상을 처리할 수 있어야 한다"는 뜻이므로 operator는 항상
+    ">="다(agent.candidate_matcher._required_width와 동일한 원칙)."""
+    if requirement.target.width_mm is None:
+        return None
+    req_value, req_unit, operator = requirement.target.width_mm, "mm", ">="
+
+    equipment_width = spec.inspection_target.equipment_max_width_mm
+    if equipment_width is None or equipment_width.value is None:
+        return ComplianceRecord(
+            item="Width", unit=req_unit, requirement=req_value, specification=None,
+            operator=operator, result="UNKNOWN", reason="장비가 대응 가능한 최대 폭을 확인하지 못했습니다.", hard=True,
+        )
+
+    spec_value = equipment_width.value
+    spec_unit = equipment_width.unit or req_unit
+    ok = units.compare_values(spec_value, spec_unit, req_value, req_unit, operator)
+    result = "PASS" if ok else "FAIL"
+    reason = f"요구 폭 {operator} {req_value:g}{req_unit} / 장비 최대 폭 {spec_value:g}{spec_unit} → {result}"
+    return ComplianceRecord(
+        item="Width", unit=req_unit, requirement=req_value, specification=spec_value,
+        operator=operator, result=result, reason=reason, source=equipment_width.source, hard=True,
+    )
+
+
+def _speed_hard_requirement_record(spec: SpecificationSchema, requirement: RequirementSchema) -> Optional[ComplianceRecord]:
+    if requirement.measurement_speed is None or requirement.measurement_speed.value is None:
+        return None
+    req_value = requirement.measurement_speed.value
+    req_unit = requirement.measurement_speed.unit or "mm/s"
+    operator: Operator = requirement.measurement_speed.operator or ">="
+
+    equipment_speed = spec.inspection_performance.line_speed_mm_s
+    if equipment_speed is None or equipment_speed.value is None:
+        return ComplianceRecord(
+            item="Speed", unit=req_unit, requirement=req_value, specification=None,
+            operator=operator, result="UNKNOWN", reason="장비의 실제 검사 속도를 확인하지 못했습니다.", hard=True,
+        )
+
+    spec_value = equipment_speed.value
+    spec_unit = equipment_speed.unit or req_unit
+    ok = units.compare_values(spec_value, spec_unit, req_value, req_unit, operator)
+    result = "PASS" if ok else "FAIL"
+    reason = f"요구 속도 {operator} {req_value:g}{req_unit} / 장비 속도 {spec_value:g}{spec_unit} → {result}"
+    return ComplianceRecord(
+        item="Speed", unit=req_unit, requirement=req_value, specification=spec_value,
+        operator=operator, result=result, reason=reason, source=equipment_speed.source, hard=True,
+    )
+
+
 _CATEGORICAL_LABELS = {
     "inline": "Inline",
     "offline": "Offline",
@@ -403,6 +454,12 @@ def build_hard_requirement_report(
     defect_size_record = _defect_size_hard_requirement_record(spec, requirement)
     if defect_size_record is not None:
         records.append(defect_size_record)
+    width_record = _width_hard_requirement_record(spec, requirement)
+    if width_record is not None:
+        records.append(width_record)
+    speed_record = _speed_hard_requirement_record(spec, requirement)
+    if speed_record is not None:
+        records.append(speed_record)
     mode_record = _categorical_hard_requirement_record(
         "Inspection Mode", requirement.inline_offline, spec.equipment.inline_offline
     )

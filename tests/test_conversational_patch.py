@@ -118,3 +118,50 @@ def test_raw_text_accumulates_across_turns_for_audit_trail():
     apply_conversational_patch(requirement, "Inline으로 사용할 거야.")
     assert "전극 두께 검사기를 찾아줘." in requirement.raw_text
     assert "Inline으로 사용할 거야." in requirement.raw_text
+
+
+# ---------------------------------------------------------------
+# Test12(실사용자 보고) 재현: "그리고 검사 속도는 500 mm/s 이상으로 추가해줘."를
+# 보내도 requirement.measurement_speed가 전혀 채워지지 않고 있었다 — Speed
+# 조건이 conversation patch 로직에서 아예 처리되지 않았기 때문이다(요청서
+# "확인 사항 1"). Speed 추출/변경/삭제를 다른 필드와 동일한 패턴으로 지원한다.
+# ---------------------------------------------------------------
+def test_speed_condition_is_captured_from_conversational_message():
+    requirement = RequirementSchema(inspection_items=["thickness"])
+    apply_conversational_patch(requirement, "그리고 검사 속도는 500 mm/s 이상으로 추가해줘.")
+    assert requirement.measurement_speed is not None
+    assert requirement.measurement_speed.value == 500.0
+    assert requirement.measurement_speed.unit == "mm/s"
+    assert requirement.measurement_speed.operator == ">="
+
+
+def test_speed_condition_change_overwrites_existing_value():
+    requirement = RequirementSchema(measurement_speed=RequirementValue(value=300.0, unit="mm/s", operator=">="))
+    apply_conversational_patch(requirement, "속도 조건을 600 mm/s 이상으로 변경해줘.")
+    assert requirement.measurement_speed.value == 600.0
+
+
+def test_speed_condition_removed_when_explicitly_requested():
+    requirement = RequirementSchema(measurement_speed=RequirementValue(value=500.0, unit="mm/s", operator=">="))
+    apply_conversational_patch(requirement, "속도 조건은 빼줘.")
+    assert requirement.measurement_speed is None
+
+
+def test_test12_multi_turn_width_speed_mode_item_all_survive():
+    """Test12 요청서 시나리오 그대로: 초기 요구사항(폭 500mm 이상, Inline, 3D
+    Profile) -> 폭을 800mm로 변경 -> 속도 500mm/s 이상 추가. 최종적으로 4개
+    조건이 모두 RequirementSchema에 남아 있어야 한다."""
+    requirement = RequirementSchema(
+        target=RequirementTarget(width_mm=500.0),
+        inspection_items=["thickness", "profile_3d"],
+        inline_offline="inline",
+    )
+    apply_conversational_patch(requirement, "폭 조건을 800 mm 이상으로 변경해줘.")
+    apply_conversational_patch(requirement, "그리고 검사 속도는 500 mm/s 이상으로 추가해줘.")
+
+    assert requirement.target.width_mm == 800.0
+    assert requirement.measurement_speed.value == 500.0
+    assert requirement.measurement_speed.unit == "mm/s"
+    assert requirement.measurement_speed.operator == ">="
+    assert requirement.inline_offline == "inline"
+    assert "profile_3d" in requirement.inspection_items

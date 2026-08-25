@@ -22,7 +22,7 @@ agent.requirement_parser(요구사항 raw_text)와 agent.candidate_matcher(후�
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 # (매칭 키워드, canonical 라벨) — 위에서부터 순서대로 검사해 첫 매치를 쓴다.
 # non_contact 계열이 "contact"라는 부분 문자열을 포함하므로 반드시 먼저 검사한다.
@@ -82,3 +82,34 @@ def extract_measurement_method(text: Optional[str]) -> Optional[str]:
     """text에서 접촉/비접촉을 찾아 "non_contact"/"contact"(RequirementSchema.
     measurement_method와 동일한 값)로 정규화한다. 못 찾으면 None."""
     return _find_first(text, MEASUREMENT_METHOD_KEYWORDS)
+
+
+# ==========================================
+# 검사 항목(inspection_items) 지원 여부 — 장비 문서의 Equipment Type/Measurement
+# Principle 같은 서술 텍스트에 특정 검사 항목을 실제로 수행한다는 근거(positive) 또는
+# 반증(negative)이 있는지 판정한다. "3D Profile"/"profile_3d"/"3d_profile" 같은
+# 표현이 전부 같은 의미로 인식되도록, 소문자화 후 "3d"라는 단일 키워드로 정규화해
+# 부분 문자열 비교한다(대소문자/공백/언더스코어 표기 차이에 흔들리지 않음) — 향후
+# 다른 검사 항목을 추가할 때도 이 표(positive, negative) 하나만 채우면 된다.
+# ==========================================
+INSPECTION_ITEM_CAPABILITY_KEYWORDS: Dict[str, Tuple[Tuple[str, ...], Tuple[str, ...]]] = {
+    "profile_3d": (("3d", "profilometry", "3차원"), ("2d",)),
+}
+
+
+def match_inspection_item_capability(item: str, text: Optional[str]) -> Optional[bool]:
+    """장비 문서 원문(예: "Equipment Type: Electrode 3D Inspection System")에서
+    특정 검사 항목(item)을 실제로 지원한다는 근거가 있는지 판정한다.
+    True = 지원 근거 있음(PASS), False = 명시적 반증 있음(FAIL), None = 판단할
+    근거가 없음(UNKNOWN) — 이 모듈의 다른 함수와 동일하게 LLM 없이 결정론적으로
+    처리하며, 근거 없이 PASS/FAIL을 단정하지 않는다."""
+    spec = INSPECTION_ITEM_CAPABILITY_KEYWORDS.get(item)
+    if spec is None or not text:
+        return None
+    positive, negative = spec
+    text_lower = text.lower()
+    if any(kw in text_lower for kw in positive):
+        return True
+    if any(kw in text_lower for kw in negative):
+        return False
+    return None

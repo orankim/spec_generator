@@ -131,6 +131,7 @@ _ACCURACY_KEYWORDS: Tuple[str, ...] = ("정확도", "accuracy")
 _RESOLUTION_KEYWORDS: Tuple[str, ...] = ("분해능", "resolution")
 _DEFECT_KEYWORDS: Tuple[str, ...] = ("결함 크기", "결함크기", "defect size", "결함")
 _RANGE_KEYWORDS: Tuple[str, ...] = ("측정 범위", "측정범위", "measurement range", "범위", "최대")
+_SPEED_KEYWORDS: Tuple[str, ...] = ("검사 속도", "검사속도", "속도", "speed")
 
 _KEYWORD_WINDOW = 20
 
@@ -366,6 +367,18 @@ def apply_deterministic_extraction(requirement: RequirementSchema, *, trust_llm_
             requirement.minimum_defect_size = None
             requirement.minimum_defect_size_um = None
 
+    # 검사 속도 — 정확도/분해능/결함크기와 달리 "작을수록 좋다"가 아니라 "빠를수록
+    # 좋다"이므로 명시적 operator가 없으면 기본값을 ">="로 둔다(요구서 예시:
+    # "검사 속도는 500 mm/s 이상으로 추가해줘" -> "이상" -> ">=").
+    if requirement.measurement_speed is None or not trust_llm_guess:
+        found = _find_keyword_value(working_text, _SPEED_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.measurement_speed = RequirementValue(value=value, unit=unit, operator=operator or ">=")
+            working_text = _mask(working_text, start, end)
+        elif not trust_llm_guess:
+            requirement.measurement_speed = None
+
     # Inline/Offline, 접촉/비접촉, 측정 원리 — 숫자가 아니라 범주형 값이므로
     # agent.categorical_match의 키워드 매칭으로 판단한다(요청서 6절: "무리하게
     # LLM으로 PASS/FAIL을 판단하지 마세요" — 추출 자체도 Python 코드로 결정론적으로).
@@ -524,6 +537,12 @@ def apply_conversational_patch(requirement: RequirementSchema, message_text: str
     if "measurement_speed" in removed_fields:
         requirement.measurement_speed = None
         requirement.scan_speed_requirement = None
+    else:
+        found = _find_keyword_value(working_text, _SPEED_KEYWORDS)
+        if found is not None:
+            value, unit, operator, start, end = found
+            requirement.measurement_speed = RequirementValue(value=value, unit=unit, operator=operator or ">=")
+            working_text = _mask(working_text, start, end)
 
     if "inline_offline" in removed_fields:
         requirement.inline_offline = None

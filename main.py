@@ -463,6 +463,8 @@ async def agent_page():
                         ['측정 방식', req.measurement_method || '미정'],
                         ['측정 원리', req.measurement_principle || '미정'],
                         ['요구 정확도', fmtReqValue(req.accuracy, true)],
+                        ['요구 검사 속도', req.measurement_speed && req.measurement_speed.value != null
+                            ? `${req.measurement_speed.value} ${req.measurement_speed.unit || ''} 이상`.trim() : '미정'],
                     ];
                     const rowsHtml = rows.map(([label, value]) => {
                         const isUnset = value === '미정';
@@ -515,18 +517,26 @@ async def agent_page():
                     const target = spec.inspection_target || {};
                     const mp = spec.measurement_performance || {};
                     const dd = spec.defect_detection || {};
+                    const ip = spec.inspection_performance || {};
                     const primarySources = (spec.primary_sources && spec.primary_sources.length > 0) ? spec.primary_sources : (spec.sources || []);
 
                     const noResults = content.retrievedSourcesCount === 0
                         ? '<div class="banner banner-unknown">⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다(검색된 chunk 0개). 아래 값은 사용자가 입력한 요구사항 외에는 근거가 없습니다.</div>'
                         : '';
 
+                    // 검사 폭/속도는 target.width_mm(요구값 echo)이 아니라 후보 문서에서
+                    // 실제로 확인된 equipment_max_width_mm/line_speed_mm_s를 보여준다 —
+                    // 다른 행(정확도/최소 검출 결함 크기 등)과 동일하게 "요구값을 그냥
+                    // 되돌려 보여주면서 마치 확인된 것처럼 보이는" 문제를 피하기 위함이다
+                    // (실사용자 보고 버그: Width/Speed hard requirement가 FAIL인데도
+                    // 카드에는 요구값이 그대로 표시되어 통과한 것처럼 보였다).
                     const rows = [
                         ['측정 범위', fmtSourcedRangeCell(mp.measurement_range_full)],
                         ['정확도', fmtSourcedCell(mp.equipment_accuracy_um)],
                         ['분해능', fmtSourcedCell(mp.resolution_um)],
                         ['최소 검출 결함 크기', fmtSourcedCell(dd.equipment_minimum_defect_size_um || dd.minimum_defect_size_um)],
-                        ['검사 폭', target.width_mm !== null && target.width_mm !== undefined ? `<span class="value">${escapeHtml(target.width_mm)} mm</span>` : '<span class="value muted">미정</span>'],
+                        ['대응 가능 폭', fmtSourcedCell(target.equipment_max_width_mm)],
+                        ['검사 속도', fmtSourcedCell(ip.line_speed_mm_s)],
                         ['검사 방식', eq.inline_offline ? `<span class="value">${escapeHtml(eq.inline_offline)}</span>` : '<span class="value muted">미정</span>'],
                     ];
                     const rowsHtml = rows.map(([label, valueHtml]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span>${valueHtml}</div>`).join('');
