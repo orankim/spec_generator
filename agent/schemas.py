@@ -341,6 +341,13 @@ class InspectionPerformance(BaseModel):
 class DefectDetection(BaseModel):
     defect_detection: Optional[bool] = Field(default=None, description="결함 검사 기능 지원 여부")
     minimum_defect_size_um: Optional[SourcedNumber] = None
+    equipment_minimum_defect_size_um: Optional[SourcedNumber] = Field(
+        default=None,
+        description="후보 문서(장비)에서 실제로 확인된 최소 검출 결함 크기. minimum_defect_size_um은 "
+        "사용자가 요구사항에서 명시하면 SpecGenerator가 그 값으로 고정하는 필드(요구값 보호)이므로, "
+        "요구값과 장비의 실측값을 혼동하지 않도록 별도 필드에 둔다(measurement_performance."
+        "equipment_accuracy_um과 동일한 원칙).",
+    )
     defect_types: List[str] = Field(
         default_factory=list,
         description="실제 사양서/요구사항에서 확인된 결함 종류만 (예: pinhole, scratch, crack, "

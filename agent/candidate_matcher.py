@@ -1,7 +1,8 @@
 """
 CandidateMatcher — RAG 검색 결과(retrieved_docs)를 문서(장비) 단위로 그룹화하고,
-측정 범위/정확도 같은 hard requirement를 실제 원문에서 추출해 agent.units의 순수
-비교 함수(evaluate_hard_requirements/range_covers)로 PASS/FAIL을 판정한다.
+측정 범위/정확도/최소 검출 결함 크기 같은 hard requirement를 실제 원문에서 추출해
+agent.units의 순수 비교 함수(evaluate_hard_requirements/range_covers)로 PASS/FAIL을
+판정한다.
 
 핵심 원칙: LLM은 이 판정에 전혀 관여하지 않는다. 이미 agent.spec_retriever가
 retrieved_docs를 만드는 과정에서 range_boost/identity_chunk 로직으로 각 후보 문서의
@@ -30,9 +31,15 @@ _MODEL_RE = re.compile(r"(?:^|\n)[-*]?\s*Model\s*[:：]\s*(.+)", re.IGNORECASE)
 _INSPECTION_MODE_RE = re.compile(r"(?:^|\n)[-*]?\s*Inspection Mode\s*[:：]\s*(.+)", re.IGNORECASE)
 _MEASUREMENT_TYPE_RE = re.compile(r"(?:^|\n)[-*]?\s*Measurement Type\s*[:：]\s*(.+)", re.IGNORECASE)
 _MEASUREMENT_PRINCIPLE_RE = re.compile(r"(?:^|\n)[-*]?\s*Measurement Principle\s*[:：]\s*(.+)", re.IGNORECASE)
+# "Minimum Detectable Defect"는 sample_specs에서 표(SPEC-001/005/006/007/008/009/010)와
+# 불릿(SPEC-002: "- Minimum Detectable Defect: 5 μm") 두 형태가 섞여 있으므로, 표는
+# 기존 라벨 힌트 매칭으로, 불릿은 Inspection Mode/Measurement Principle과 동일한 방식으로
+# 별도 정규식을 둔다.
+_MINIMUM_DEFECT_RE = re.compile(r"(?:^|\n)[-*]?\s*Minimum Detectable Defect\s*[:：]\s*(.+)", re.IGNORECASE)
 
 _RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
 _ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
+_DEFECT_SIZE_LABEL_HINTS = ("minimum detectable defect", "minimum defect size", "최소 검출", "최소 결함")
 
 
 def _is_range_label(label_lower: str) -> bool:
@@ -112,6 +119,9 @@ class _CandidateFact:
         self.measurement_principle: Optional[str] = None
         self.measurement_principle_doc: Optional[Document] = None
         self.measurement_principle_text: Optional[str] = None
+        self.defect_size: Optional[Tuple[float, str]] = None
+        self.defect_size_doc: Optional[Document] = None
+        self.defect_size_text: Optional[str] = None
 
 
 def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
@@ -150,6 +160,15 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                     fact.measurement_principle_doc = doc
                     fact.measurement_principle_text = f"Measurement Principle: {m.group(1).strip()}"
 
+        if fact.defect_size is None:
+            m = _MINIMUM_DEFECT_RE.search(text)
+            if m:
+                value_unit = units.parse_value_unit(m.group(1))
+                if value_unit is not None:
+                    fact.defect_size = value_unit
+                    fact.defect_size_doc = doc
+                    fact.defect_size_text = f"Minimum Detectable Defect: {m.group(1).strip()}"
+
         for label, value in _extract_table_rows(text):
             label_lower = label.lower()
             if fact.range is None and _is_range_label(label_lower):
@@ -164,6 +183,12 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                     fact.accuracy = value_unit
                     fact.accuracy_doc = doc
                     fact.accuracy_text = f"{label}: {value}"
+            if fact.defect_size is None and any(h in label_lower for h in _DEFECT_SIZE_LABEL_HINTS):
+                value_unit = units.parse_value_unit(value)
+                if value_unit is not None:
+                    fact.defect_size = value_unit
+                    fact.defect_size_doc = doc
+                    fact.defect_size_text = f"{label}: {value}"
     return fact
 
 
@@ -191,6 +216,21 @@ def _required_accuracy(requirement: RequirementSchema) -> Optional[Tuple[float, 
     return None
 
 
+def _required_defect_size(requirement: RequirementSchema) -> Optional[Tuple[float, str, str]]:
+    """사용자가 요구한 최소 검출 결함 크기 — 장비가 "이 크기 이하의 결함까지" 검출할 수
+    있어야 한다는 뜻이므로 accuracy와 동일하게 operator는 항상 "<="다(작을수록 더
+    미세한 결함까지 잡아낸다는 의미이므로 후보의 실측값이 요구값보다 작거나 같아야 PASS)."""
+    if requirement.minimum_defect_size is not None and requirement.minimum_defect_size.value is not None:
+        return (
+            requirement.minimum_defect_size.value,
+            requirement.minimum_defect_size.unit or "um",
+            requirement.minimum_defect_size.operator or "<=",
+        )
+    if requirement.minimum_defect_size_um is not None:
+        return requirement.minimum_defect_size_um, "um", "<="
+    return None
+
+
 def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Document]) -> List[CandidateEquipment]:
     """
     retrieved_docs를 문서(장비) 단위로 그룹화하고, 각 후보의 측정 범위/정확도를
@@ -203,6 +243,7 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
 
     required_range = _required_range(requirement)
     required_accuracy = _required_accuracy(requirement)
+    required_defect_size = _required_defect_size(requirement)
 
     candidates: List[CandidateEquipment] = []
     for idx, (source, docs) in enumerate(sorted(by_source.items()), start=1):
@@ -261,6 +302,36 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.accuracy_text,
                     source=_source_ref(fact.accuracy_doc) if fact.accuracy_doc else None,
+                )
+            )
+
+        if required_defect_size is not None:
+            candidate_defect_size = fact.defect_size
+            req_value, req_unit, operator = required_defect_size
+            try:
+                # evaluate_hard_requirements의 required_accuracy/candidate_accuracy 파라미터는
+                # "(value, unit, operator) vs (value, unit)를 operator 방향으로 비교"하는 범용
+                # 로직이라 accuracy 전용이 아니다 — 결함 크기도 동일한 형태(값이 작을수록
+                # 우수, operator="<=")이므로 그대로 재사용해 비교 로직을 중복 구현하지 않는다.
+                ok, _reasons = units.evaluate_hard_requirements(
+                    required_accuracy=required_defect_size, candidate_accuracy=candidate_defect_size
+                )
+            except units.UnitError:
+                ok, candidate_defect_size = False, None
+            result = "PASS" if ok else ("UNKNOWN" if candidate_defect_size is None else "FAIL")
+            matches.append(
+                CandidateFieldMatch(
+                    item="Minimum Defect Size",
+                    field_key="minimum_defect_size",
+                    hard=True,
+                    requirement_value=req_value,
+                    requirement_unit=req_unit,
+                    operator=operator,
+                    found_value=candidate_defect_size[0] if candidate_defect_size else None,
+                    found_unit=candidate_defect_size[1] if candidate_defect_size else None,
+                    result=result,
+                    evidence_text=fact.defect_size_text,
+                    source=_source_ref(fact.defect_size_doc) if fact.defect_size_doc else None,
                 )
             )
 
