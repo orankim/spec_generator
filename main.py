@@ -182,6 +182,13 @@ PAGE_STYLE = """
     .hard-req-list .item-name { color: #2d3748; font-weight: 600; flex-shrink: 0; }
     .hard-req-list .reason { color: #4a5568; flex: 1; text-align: right; }
 
+    /* ===== Ranking(추천 순위) vs Compliance(요구조건 충족) 요약 — EquipmentCard ===== */
+    .confirm-block { font-size: 12px; line-height: 1.7; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; }
+    .confirm-block strong { display: block; font-size: 11px; margin-bottom: 2px; }
+    .confirm-pass { background: #f0fff4; color: #276749; }
+    .confirm-fail { background: #fff5f5; color: #9b2c2c; }
+    .confirm-unknown { background: #fffaf0; color: #9c4221; }
+
     /* ===== Search progress ===== */
     .progress-list { list-style: none; margin: 0; padding: 0; }
     .progress-list li { padding: 3px 0; font-size: 13px; color: #4a5568; }
@@ -388,13 +395,16 @@ async def agent_page():
                 // ================================================================
                 // 렌더링 — 메시지 type별 Component(순수 함수, HTML 문자열 반환)
                 // ================================================================
+                // 값이 없으면 null을 반환한다(문자열 '미정'이 아니라) — 호출부가 행 자체를
+                // 렌더링하지 않고 건너뛸 수 있게 하기 위함이다(요청서: 값 없는 일반 항목은
+                // "미정"으로 표시하지 말고 아예 숨긴다. Hard Requirement 비교 영역만 예외).
                 function fmtRange(range) {
-                    if (!range || range.min === null || range.min === undefined || range.max === null || range.max === undefined) return '미정';
+                    if (!range || range.min === null || range.min === undefined || range.max === null || range.max === undefined) return null;
                     return `${range.min} ~ ${range.max} ${range.unit || ''}`.trim();
                 }
 
                 function fmtReqValue(rv, withPlusMinus) {
-                    if (!rv || rv.value === null || rv.value === undefined) return '미정';
+                    if (!rv || rv.value === null || rv.value === undefined) return null;
                     const opLabel = {'<=': '이하', '>=': '이상', '<': '미만', '>': '초과'}[rv.operator] || '';
                     const prefix = withPlusMinus ? '±' : '';
                     return `${prefix}${rv.value} ${rv.unit || ''} ${opLabel}`.trim();
@@ -416,9 +426,12 @@ async def agent_page():
                 }
 
                 // 값 + 단위 + status 배지 + (VERIFIED면) 근거 문서/chunk. 요청서 13절.
+                // 값이 없으면 null을 반환한다 — 호출부(EquipmentCard)가 그 행을 아예
+                // 렌더링하지 않는다("미정"으로 표시하지 않는다. Hard Requirement 비교
+                // 영역은 이 함수를 쓰지 않고 항상 PASS/FAIL/UNKNOWN을 명시한다).
                 function fmtSourcedCell(sn) {
                     if (!sn || sn.value === null || sn.value === undefined) {
-                        return '<span class="value muted">미정</span>';
+                        return null;
                     }
                     const badge = STATUS_BADGE[sn.status] || '';
                     const valueText = escapeHtml(sn.value) + (sn.unit ? ' ' + escapeHtml(sn.unit) : '');
@@ -431,7 +444,7 @@ async def agent_page():
 
                 function fmtSourcedRangeCell(sr) {
                     if (!sr || sr.min === null || sr.min === undefined || sr.max === null || sr.max === undefined) {
-                        return '<span class="value muted">미정</span>';
+                        return null;
                     }
                     const badge = STATUS_BADGE[sr.status] || '';
                     const valueText = `${escapeHtml(sr.min)} ~ ${escapeHtml(sr.max)} ${escapeHtml(sr.unit || '')}`.trim();
@@ -451,29 +464,33 @@ async def agent_page():
                 }
 
                 // ----- RequirementSummaryCard (요청서 6절) -----
+                // 정책: 사용자가 실제로 입력했거나 대화 중 확정된 값만 보여준다 — 값이
+                // 없는 항목은 "미정"으로 채워 넣지 않고 행 자체를 렌더링하지 않는다
+                // (실사용자 보고: "측정 원리 미정" 같은 줄이 반복되어 정보 밀도가 낮았다).
                 function renderRequirementSummaryCard(content) {
                     const req = content.requirement || {};
                     const target = req.target || {};
+                    const speed = req.measurement_speed && req.measurement_speed.value != null
+                        ? `${req.measurement_speed.value} ${req.measurement_speed.unit || ''} 이상`.trim() : null;
                     const rows = [
-                        ['검사 대상', target.material || '미정'],
-                        ['검사 방식', req.inline_offline || '미정'],
-                        ['최소 검사 폭', target.width_mm !== null && target.width_mm !== undefined ? `${target.width_mm} mm` : '미정'],
-                        ['검사 항목', (req.inspection_items || []).length ? req.inspection_items.join(', ') : '미정'],
+                        ['검사 대상', target.material || null],
+                        ['검사 방식', req.inline_offline || null],
+                        ['최소 검사 폭', (target.width_mm !== null && target.width_mm !== undefined) ? `${target.width_mm} mm` : null],
+                        ['검사 항목', (req.inspection_items || []).length ? req.inspection_items.join(', ') : null],
                         ['측정 범위', fmtRange(req.measurement_range)],
-                        ['측정 방식', req.measurement_method || '미정'],
-                        ['측정 원리', req.measurement_principle || '미정'],
+                        ['측정 방식', req.measurement_method || null],
+                        ['측정 원리', req.measurement_principle || null],
                         ['요구 정확도', fmtReqValue(req.accuracy, true)],
-                        ['요구 검사 속도', req.measurement_speed && req.measurement_speed.value != null
-                            ? `${req.measurement_speed.value} ${req.measurement_speed.unit || ''} 이상`.trim() : '미정'],
+                        ['요구 검사 속도', speed],
                     ];
-                    const rowsHtml = rows.map(([label, value]) => {
-                        const isUnset = value === '미정';
-                        return `<div class="card-row"><span class="label">${escapeHtml(label)}</span><span class="value${isUnset ? ' muted' : ''}">${escapeHtml(value)}</span></div>`;
-                    }).join('');
+                    const rowsHtml = rows
+                        .filter(([, value]) => value !== null && value !== undefined && value !== '')
+                        .map(([label, value]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span></div>`)
+                        .join('');
                     return `
                         <div class="card">
                             <div class="card-header">📋 AI가 이해한 요구사항</div>
-                            <div class="card-body">${rowsHtml}</div>
+                            <div class="card-body">${rowsHtml || '<span class="value muted">아직 확정된 조건이 없습니다.</span>'}</div>
                         </div>
                     `;
                 }
@@ -497,11 +514,37 @@ async def agent_page():
                 }
 
                 // ----- EquipmentCard (요청서 11절) -----
+                // 정책(요청서 문제5/6): "추천 순위(ranking)"와 "요구조건 충족 여부
+                // (hard requirement compliance)"를 분리해서 보여준다. UNKNOWN이 하나라도
+                // 있으면(FAIL이 없어도) "가장 적합한 장비"처럼 단정하지 않고 "확인 필요"로
+                // 낮춰서 표현한다 — 검색된 후보 중 상대적으로 나은 순위일 뿐, 요구조건을
+                // 전부 확인했다는 뜻이 아니기 때문이다.
                 function equipmentBanner(hasFail, hasUnknown, hasRecords) {
                     if (hasFail) return '<div class="banner banner-fail">⚠️ 조건을 모두 충족하는 장비를 찾지 못했습니다 — 가장 유사한 후보입니다.</div>';
-                    if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 일부 조건은 사양서에서 확인하지 못했습니다(UNKNOWN).</div>';
+                    if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 조건 일부 확인 필요 — 확인된 조건은 만족하지만, 사양서에서 확인되지 않은 조건이 있어 모든 요구조건을 충족한다고 단정할 수 없습니다.</div>';
                     if (hasRecords) return '<div class="banner banner-pass">✅ Hard Requirement 조건을 모두 충족합니다.</div>';
                     return '';
+                }
+
+                function equipmentHeaderPrefix(hasFail, hasUnknown, hasRecords) {
+                    if (!hasFail && !hasUnknown && hasRecords) return '🥇 추천 장비';
+                    return '🥈 추천 후보';
+                }
+
+                // Hard Requirement 결과를 "확인된 조건(PASS)/미충족 조건(FAIL)/확인 필요
+                // (UNKNOWN)"으로 묶어 카드 안에 간단히 요약한다 — 아래 별도 comparison_result
+                // 카드(각 항목의 상세 근거/배지)를 대체하지 않고 보완한다.
+                function confirmationSummaryHtml(hardRequirementReport) {
+                    const records = hardRequirementReport || [];
+                    if (records.length === 0) return '';
+                    const confirmed = records.filter(r => r.result === 'PASS').map(r => escapeHtml(r.item));
+                    const failed = records.filter(r => r.result === 'FAIL').map(r => escapeHtml(r.item));
+                    const unresolved = records.filter(r => r.result === 'UNKNOWN').map(r => escapeHtml(r.item));
+                    const blocks = [];
+                    if (confirmed.length) blocks.push(`<div class="confirm-block confirm-pass"><strong>확인된 조건</strong><br>${confirmed.map(x => '✓ ' + x).join('<br>')}</div>`);
+                    if (failed.length) blocks.push(`<div class="confirm-block confirm-fail"><strong>미충족 조건</strong><br>${failed.map(x => '✗ ' + x).join('<br>')}</div>`);
+                    if (unresolved.length) blocks.push(`<div class="confirm-block confirm-unknown"><strong>확인 필요</strong><br>${unresolved.map(x => '? ' + x).join('<br>')}</div>`);
+                    return blocks.join('');
                 }
 
                 function renderDownloadArea(content, msgId) {
@@ -530,6 +573,12 @@ async def agent_page():
                     // 되돌려 보여주면서 마치 확인된 것처럼 보이는" 문제를 피하기 위함이다
                     // (실사용자 보고 버그: Width/Speed hard requirement가 FAIL인데도
                     // 카드에는 요구값이 그대로 표시되어 통과한 것처럼 보였다).
+                    //
+                    // 정책: 실제 장비 사양이 존재하는 항목만 보여준다 — None/빈 문자열/
+                    // "미정" 등은 행 자체를 감춘다(Hard Requirement 비교 영역만 예외로
+                    // 항상 PASS/FAIL/UNKNOWN을 명시한다).
+                    const inspectionItemsText = (spec.inspection_items || []).join(', ');
+                    const sourcesText = primarySources.join(', ');
                     const rows = [
                         ['측정 범위', fmtSourcedRangeCell(mp.measurement_range_full)],
                         ['정확도', fmtSourcedCell(mp.equipment_accuracy_um)],
@@ -537,19 +586,23 @@ async def agent_page():
                         ['최소 검출 결함 크기', fmtSourcedCell(dd.equipment_minimum_defect_size_um || dd.minimum_defect_size_um)],
                         ['대응 가능 폭', fmtSourcedCell(target.equipment_max_width_mm)],
                         ['검사 속도', fmtSourcedCell(ip.line_speed_mm_s)],
-                        ['검사 방식', eq.inline_offline ? `<span class="value">${escapeHtml(eq.inline_offline)}</span>` : '<span class="value muted">미정</span>'],
+                        ['검사 방식', eq.inline_offline ? `<span class="value">${escapeHtml(eq.inline_offline)}</span>` : null],
+                        ['검사 항목', inspectionItemsText ? `<span class="value">${escapeHtml(inspectionItemsText)}</span>` : null],
+                        ['참고 문서', sourcesText ? `<span class="value">${escapeHtml(sourcesText)} (chunk ${escapeHtml(content.retrievedSourcesCount)}개)</span>` : null],
                     ];
-                    const rowsHtml = rows.map(([label, valueHtml]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span>${valueHtml}</div>`).join('');
+                    const rowsHtml = rows
+                        .filter(([, valueHtml]) => valueHtml !== null && valueHtml !== undefined)
+                        .map(([label, valueHtml]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span>${valueHtml}</div>`)
+                        .join('');
 
                     return `
                         <div class="card">
-                            <div class="card-header">🥇 추천 장비 — ${escapeHtml(eq.name || 'N/A')}</div>
+                            <div class="card-header">${equipmentHeaderPrefix(content.hasFail, content.hasUnknown, content.hasRecords)} — ${escapeHtml(eq.name || 'N/A')}</div>
                             <div class="card-body">
                                 ${equipmentBanner(content.hasFail, content.hasUnknown, content.hasRecords)}
                                 ${noResults}
+                                ${confirmationSummaryHtml(content.hardRequirementReport)}
                                 ${rowsHtml}
-                                <div class="card-row"><span class="label">검사 항목</span><span class="value">${escapeHtml((spec.inspection_items || []).join(', ') || 'N/A')}</span></div>
-                                <div class="card-row"><span class="label">참고 문서</span><span class="value">${escapeHtml(primarySources.join(', ') || '없음')} (chunk ${escapeHtml(content.retrievedSourcesCount)}개)</span></div>
                                 ${renderDownloadArea(content, msgId)}
                             </div>
                         </div>
@@ -695,22 +748,60 @@ async def agent_page():
                 // 요청서 14절: 근거 없는 내용을 새로 생성하지 않는다 — LLM을 호출하지
                 // 않고, 이미 검증된 lastSearchResult(hard_requirement_report)만 문구로
                 // 옮긴다.
+                // 정책(요청서 문제6): "ranking"(검색된 후보 중 상대적으로 나음)과 "hard
+                // requirement compliance"(요구조건을 실제로 다 확인했는지)를 표현을
+                // 분리한다 — UNKNOWN이 하나라도 있으면 "추천된 이유"(=전부 만족한다는
+                // 인상을 주는 표현) 대신 "확인된 조건을 가장 많이 만족하는 후보"라고만
+                // 말하고, 확인되지 않은 조건과 추가 확인이 필요하다는 점을 명시한다.
                 function buildExplanationMessage() {
                     const result = state.lastSearchResult;
                     if (!result) return '아직 추천된 장비가 없습니다. 먼저 요구사항을 말씀해 주세요.';
                     const spec = result.specification;
                     const records = result.hardRequirementReport || [];
-                    const passLines = records.filter(r => r.result === 'PASS').map(r => `✓ ${r.item} 조건 만족`);
-                    const failLines = records.filter(r => r.result === 'FAIL').map(r => `✗ ${r.item} 조건 미충족`);
-                    const unknownLines = records.filter(r => r.result === 'UNKNOWN').map(r => `? ${r.item}은(는) 사양서에서 확인되지 않았습니다.`);
+                    const name = (spec.equipment && spec.equipment.name) || '이 장비';
+                    const passItems = records.filter(r => r.result === 'PASS').map(r => r.item);
+                    const failItems = records.filter(r => r.result === 'FAIL').map(r => r.item);
+                    const unknownItems = records.filter(r => r.result === 'UNKNOWN').map(r => r.item);
 
-                    let text = `${(spec.equipment && spec.equipment.name) || '이 장비'}가 추천된 이유는 다음과 같습니다.\\n\\n`;
-                    const blocks = [];
-                    if (passLines.length) blocks.push(passLines.join('\\n'));
-                    if (failLines.length) blocks.push('다만,\\n\\n' + failLines.join('\\n'));
-                    if (unknownLines.length) blocks.push(unknownLines.join('\\n'));
-                    text += blocks.length ? blocks.join('\\n\\n') : '(평가된 Hard Requirement 항목이 없습니다.)';
-                    return text;
+                    if (records.length === 0) {
+                        return `${name}에 대해 평가된 Hard Requirement 항목이 없습니다(요구사항에 확인 가능한 조건이 지정되지 않았습니다).`;
+                    }
+
+                    const hasFail = failItems.length > 0;
+                    const hasUnknown = unknownItems.length > 0;
+
+                    if (!hasFail && !hasUnknown) {
+                        return `${name}가 추천된 이유는 다음과 같습니다.\\n\\n` + passItems.map(x => `✓ ${x} 조건 만족`).join('\\n');
+                    }
+
+                    const parts = [`현재 검색된 후보 중 확인된 요구조건을 가장 많이 만족하는 후보(${name})입니다.`];
+                    if (passItems.length) parts.push('확인된 조건:\\n' + passItems.map(x => `✓ ${x}`).join('\\n'));
+                    if (failItems.length) parts.push('충족하지 못한 조건:\\n' + failItems.map(x => `✗ ${x}`).join('\\n'));
+                    if (unknownItems.length) parts.push('확인되지 않은 조건:\\n' + unknownItems.map(x => `? ${x}`).join('\\n'));
+                    if (hasUnknown) parts.push('따라서 최종 도입 전에는 확인되지 않은 조건을 장비 제조사 또는 추가 사양서로 반드시 확인해야 합니다.');
+                    return parts.join('\\n\\n');
+                }
+
+                // 요청서 문제1: 후속 메시지가 반영된 뒤 보여줄 문구는 절대 내부 필드명
+                // (accuracy, raw_text, required_accuracy_um 등)을 그대로 노출하지 않는다 —
+                // 서버(agent/routes.py._summarize_requirement_changes)가 이미 사람이 읽는
+                // label/action(added·changed·removed)으로 정리해 보내주므로, 여기서는
+                // 그 label만 문구로 옮긴다.
+                function buildRequirementChangeMessage(changedSummary) {
+                    const added = changedSummary.filter(c => c.action === 'added').map(c => c.label);
+                    const changed = changedSummary.filter(c => c.action === 'changed').map(c => c.label);
+                    const removed = changedSummary.filter(c => c.action === 'removed').map(c => c.label);
+
+                    if (added.length === 0 && changed.length === 0 && removed.length === 1) {
+                        return `요구 ${removed[0]} 조건을 삭제했습니다.\\n\\n기존 조건을 기준으로 다시 검색하겠습니다.`;
+                    }
+
+                    const lines = ['요구사항을 수정했습니다.', ''];
+                    if (added.length) lines.push('추가된 조건:', ...added.map(l => `- ${l}`), '');
+                    if (changed.length) lines.push('변경된 조건:', ...changed.map(l => `- ${l}`), '');
+                    if (removed.length) lines.push('삭제된 조건:', ...removed.map(l => `- ${l}`), '');
+                    lines.push('나머지 조건은 그대로 유지됩니다. 새로운 조건을 기준으로 다시 검색하겠습니다.');
+                    return lines.join('\\n');
                 }
 
                 function buildFollowupQuestionText(validation) {
@@ -757,6 +848,7 @@ async def agent_page():
                         content: {
                             specification: data.specification, retrievedSourcesCount: retrievedSourcesCount,
                             hasFail: hasFail, hasUnknown: hasUnknown, hasRecords: hardRecords.length > 0,
+                            hardRequirementReport: hardRecords,
                             // build-markdown 호출 시 이 검색을 만든 시점 그대로 재사용하기 위한 스냅샷.
                             requirement: requirement, validation: data.validation,
                         },
@@ -796,8 +888,9 @@ async def agent_page():
                             // 22절 원칙 6).
                             const data = await postJSON('/api/agent/update-requirement', { current_requirement: state.currentRequirement, message: text });
                             state.currentRequirement = data.requirement;
-                            if (data.changed_fields && data.changed_fields.length > 0) {
-                                addMessage({ role: 'assistant', type: 'text', content: { text: '기존 요구사항에 다음 조건을 반영했습니다: ' + data.changed_fields.join(', ') + '\\n\\n새로운 조건을 기준으로 다시 검색하겠습니다.' } });
+                            const changedSummary = data.changed_summary || [];
+                            if (changedSummary.length > 0) {
+                                addMessage({ role: 'assistant', type: 'text', content: { text: buildRequirementChangeMessage(changedSummary) } });
                                 addMessage({ role: 'assistant', type: 'requirement_summary', content: { requirement: data.requirement, validation: data.validation } });
                             } else {
                                 addMessage({ role: 'assistant', type: 'text', content: { text: '이 메시지에서 반영할 새 조건을 찾지 못해 기존 요구사항으로 계속 검색하겠습니다.' } });

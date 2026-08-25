@@ -45,6 +45,11 @@ _DEFECT_TYPES_RE = re.compile(r"(?:^|\n)[-*]?\s*Defect Types\s*[:：]\s*(.+)", r
 _DEFECT_INSPECTION_NOT_SUPPORTED_RE = re.compile(
     r"#{1,3}\s*Defect Inspection\s*\n+\s*[-*]?\s*Not Supported\b", re.IGNORECASE
 )
+# SPEC-006처럼 "## Thickness Measurement\n\n- Not Supported"로 두께 측정 자체를
+# 지원하지 않는다고 명시하는 경우 — Defect Inspection과 동일한 패턴.
+_THICKNESS_NOT_SUPPORTED_RE = re.compile(
+    r"#{1,3}\s*Thickness Measurement\s*\n+\s*[-*]?\s*Not Supported\b", re.IGNORECASE
+)
 # "## General" 절의 불릿 리스트 형태(Manufacturer/Model/Inspection Mode 등과 동일).
 _EQUIPMENT_TYPE_RE = re.compile(r"(?:^|\n)[-*]?\s*Equipment Type\s*[:：]\s*(.+)", re.IGNORECASE)
 # "## Inspection Target" 절의 불릿 리스트 형태(sample_specs: "Maximum Electrode Width"/
@@ -74,6 +79,7 @@ _INSPECTION_ITEM_LABELS = {
     "surface_defect": "Surface Defect Detection",
     "edge_defect": "Edge Defect Detection",
     "profile_3d": "3D Profile Detection",
+    "thickness": "Thickness Measurement",
 }
 
 
@@ -161,6 +167,8 @@ class _CandidateFact:
         self.defect_types_doc: Optional[Document] = None
         self.defect_inspection_not_supported: bool = False
         self.defect_inspection_not_supported_doc: Optional[Document] = None
+        self.thickness_not_supported: bool = False
+        self.thickness_not_supported_doc: Optional[Document] = None
         self.equipment_type_text: Optional[str] = None
         self.equipment_type_doc: Optional[Document] = None
         self.width_mm: Optional[float] = None
@@ -221,6 +229,10 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
             if m:
                 fact.equipment_type_text = m.group(1).strip()
                 fact.equipment_type_doc = doc
+
+        if not fact.thickness_not_supported and _THICKNESS_NOT_SUPPORTED_RE.search(text):
+            fact.thickness_not_supported = True
+            fact.thickness_not_supported_doc = doc
 
         if fact.width_mm is None:
             m = _MAXIMUM_WIDTH_RE.search(text)
@@ -581,6 +593,38 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
         # PASS로 잘못 보여주지 않기 위함(실사용자 보고: Edge Defect + Surface Defect를
         # 동시에 요구했을 때 Edge Defect를 지원하지 않는 장비도 구분 없이 PASS 취급됨).
         for item in requirement.inspection_items:
+            if item == "thickness":
+                # "Thickness Measurement: Not Supported" 같은 명시적 반증이 없는 한,
+                # 이미 Measurement Range hard requirement가 추출해 둔 fact.range를
+                # 그대로 "이 장비가 두께(범위)를 측정한다"는 근거로 재사용한다 — 별도
+                # 추출 로직을 중복 구현하지 않는다. required_range 유무와 무관하게
+                # fact.range는 항상 시도되므로(측정 범위 조건을 요구하지 않았어도)
+                # thickness 항목만 요구한 경우에도 판정할 수 있다.
+                if fact.thickness_not_supported:
+                    item_result = "FAIL"
+                    found_text = "Not Supported"
+                    evidence = "Thickness Measurement: Not Supported"
+                    source_doc = fact.thickness_not_supported_doc
+                elif fact.range is not None:
+                    item_result = "PASS"
+                    found_text = fact.range_text
+                    evidence = fact.range_text
+                    source_doc = fact.range_doc
+                else:
+                    item_result, found_text, evidence, source_doc = "UNKNOWN", None, None, None
+                matches.append(
+                    CandidateFieldMatch(
+                        item=_INSPECTION_ITEM_LABELS.get(item, item),
+                        field_key=f"inspection_item_{item}",
+                        hard=True,
+                        requirement_text=item,
+                        found_text=found_text,
+                        result=item_result,
+                        evidence_text=evidence,
+                        source=_source_ref(source_doc) if source_doc else None,
+                    )
+                )
+                continue
             if item in categorical_match.INSPECTION_ITEM_CAPABILITY_KEYWORDS:
                 # profile_3d 등 — Defect Types 목록이 아니라 Equipment Type/
                 # Measurement Principle 서술 텍스트에서 positive/negative 키워드로
@@ -613,6 +657,20 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                 continue
             keywords = _INSPECTION_ITEM_DEFECT_KEYWORDS.get(item)
             if keywords is None:
+                # coating 등 아직 전용 판정 로직이 없는 검사 항목도 조용히 빠뜨리지
+                # 않는다 — "사용자가 요구한 항목인데 검증 결과 목록에서 아예 사라짐"은
+                # (실제 판정 없이 UNKNOWN조차 안 남는 것은) 허용하지 않는다(실사용자
+                # 보고: 지원되는 요구조건이 검증 결과에서 누락되면 안 됨). 판정 근거가
+                # 없다는 사실 자체를 정직하게 UNKNOWN으로 남긴다.
+                matches.append(
+                    CandidateFieldMatch(
+                        item=_INSPECTION_ITEM_LABELS.get(item, item.replace("_", " ").title()),
+                        field_key=f"inspection_item_{item}",
+                        hard=True,
+                        requirement_text=item,
+                        result="UNKNOWN",
+                    )
+                )
                 continue
             if fact.defect_inspection_not_supported:
                 item_result = "FAIL"

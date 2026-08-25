@@ -67,8 +67,10 @@ async def analyze_requirement_api(req: AnalyzeRequest):
 
 def _diff_field_paths(before: Dict[str, Any], after: Dict[str, Any], prefix: str = "") -> List[str]:
     """before/after(model_dump() 결과) 사이에서 값이 달라진 필드의 dotted path 목록을
-    만든다. 채팅 UI가 "다음 조건을 추가/변경했습니다: ..."를 보여줄 때만 쓰는
-    표시용 정보라, RequirementSchema에 종속되지 않는 범용 dict 비교로 충분하다."""
+    만든다. RequirementSchema에 종속되지 않는 범용 dict 비교라, 프로그램적으로 어떤
+    필드가 바뀌었는지 확인해야 하는 다른 용도에도 재사용할 수 있다(디버깅 등) — 단,
+    사용자에게 보여줄 문구는 이 경로를 그대로 노출하지 않고 아래
+    _summarize_requirement_changes()가 다시 사람이 읽을 문구로 변환한다."""
     changed: List[str] = []
     keys = set(before.keys()) | set(after.keys())
     for key in sorted(keys):
@@ -79,6 +81,71 @@ def _diff_field_paths(before: Dict[str, Any], after: Dict[str, Any], prefix: str
         elif before_value != after_value:
             changed.append(path)
     return changed
+
+
+def _get_by_path(d: Dict[str, Any], path: str) -> Any:
+    cur: Any = d
+    for key in path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(key)
+    return cur
+
+
+# 내부 필드 경로 -> (표시용 개념 키, 사람이 읽는 라벨). 구조화 필드(예: accuracy)와
+# 그 값을 그대로 미러링하는 레거시 float 필드(예: required_accuracy_um)가 항상 함께
+# 바뀌므로(RequirementSchema.sync_legacy_fields), 같은 개념 키로 묶어 한 번만
+# 보여준다 — 그렇지 않으면 "accuracy, required_accuracy_um"처럼 내부 필드명이 그대로
+# 사용자에게 노출된다(실사용자 보고 버그).
+_CHANGE_CONCEPT_MAP: Dict[str, tuple] = {
+    "target.material": ("material", "검사 대상"),
+    "target.width_mm": ("width", "폭"),
+    "measurement_range": ("measurement_range", "측정 범위"),
+    "accuracy": ("accuracy", "정확도"),
+    "required_accuracy_um": ("accuracy", "정확도"),
+    "resolution": ("resolution", "분해능"),
+    "required_resolution_um": ("resolution", "분해능"),
+    "minimum_defect_size": ("minimum_defect_size", "최소 검출 결함 크기"),
+    "minimum_defect_size_um": ("minimum_defect_size", "최소 검출 결함 크기"),
+    "measurement_speed": ("speed", "검사 속도"),
+    "scan_speed_requirement": ("speed", "검사 속도"),
+    "inline_offline": ("inline_offline", "검사 모드"),
+    "measurement_method": ("measurement_method", "측정 방식"),
+    "measurement_principle": ("measurement_principle", "측정 원리"),
+    "inspection_items": ("inspection_items", "검사 항목"),
+}
+
+
+def _summarize_requirement_changes(before: Dict[str, Any], after: Dict[str, Any]) -> List[Dict[str, str]]:
+    """
+    _diff_field_paths()의 원시 결과(raw_text 등 내부 필드명이 그대로 담긴 dotted
+    path)를 사용자에게 보여줄 수 있는 요약으로 바꾼다 — "다음 조건을 반영했습니다:
+    accuracy, raw_text, required_accuracy_um" 같은 내부 데이터 구조 노출을 막기
+    위함이다(실사용자 보고 버그). _CHANGE_CONCEPT_MAP에 없는 경로(raw_text 등)는
+    조용히 무시하고, 매핑된 개념은 (기존 값, 새 값)을 비교해 added/changed/removed
+    중 하나로 분류한다.
+    """
+    raw_changed = _diff_field_paths(before, after)
+    seen_concepts: Dict[str, Dict[str, str]] = {}
+    for path in raw_changed:
+        mapping = _CHANGE_CONCEPT_MAP.get(path)
+        if mapping is None:
+            continue
+        concept_key, label = mapping
+        if concept_key in seen_concepts:
+            continue
+        before_value = _get_by_path(before, path)
+        after_value = _get_by_path(after, path)
+        before_empty = before_value is None or before_value == [] or before_value == ""
+        after_empty = after_value is None or after_value == [] or after_value == ""
+        if after_empty and not before_empty:
+            action = "removed"
+        elif before_empty and not after_empty:
+            action = "added"
+        else:
+            action = "changed"
+        seen_concepts[concept_key] = {"label": label, "action": action}
+    return list(seen_concepts.values())
 
 
 class UpdateRequirementRequest(BaseModel):
@@ -105,6 +172,7 @@ async def update_requirement_api(req: UpdateRequirementRequest):
             "requirement": requirement.model_dump(),
             "validation": validation.model_dump(),
             "changed_fields": _diff_field_paths(before, after),
+            "changed_summary": _summarize_requirement_changes(before, after),
         }
     except Exception as e:
         logger.exception("요구사항 업데이트 실패")
