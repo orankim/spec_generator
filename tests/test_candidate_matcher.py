@@ -35,7 +35,7 @@ from agent.schemas import (
     SpecificationSchema,
 )
 from agent.spec_generator import generate_specification
-from agent.spec_validator import build_hard_requirement_report
+from agent.spec_validator import build_hard_requirement_report, build_inspection_item_hard_requirement_records
 from agent.units import evaluate_hard_requirements
 from build_rag_ollama import build_vector_db
 
@@ -549,3 +549,122 @@ def test_reconciliation_4_full_reported_query_end_to_end(db):
     assert "measurement_performance.measurement_range" not in specification.needs_confirmation
     assert "measurement_performance.equipment_accuracy_um" not in specification.needs_confirmation
     assert validation.is_valid is True
+
+
+# ---------------------------------------------------------------
+# 검사 항목(surface_defect/edge_defect) 지원 여부 hard requirement — 실사용자
+# 보고 버그 재현(Test17): "Edge Defect와 표면 결함을 동시에 검사할 수 있는 Inline
+# 검사기"를 요구했는데, 후보 장비가 둘 중 하나만 실제로 지원해도 구분 없이 PASS로
+# 표시되었다(candidate_matcher가 inspection_items를 애초에 검증하지 않았음).
+# ---------------------------------------------------------------
+def test_defect_item_pass_when_keyword_present_in_defect_types():
+    """SPEC-006.md: Defect Types에 'Edge Defect'가 명시되어 있으므로 edge_defect도 PASS."""
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Contamination, Edge Defect |\n",
+        filename="SPEC-006.md",
+    )
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "PASS"
+    assert results["Edge Defect Detection"] == "PASS"
+
+
+def test_defect_item_fails_when_not_in_defect_types_list():
+    """SPEC-001.md: Defect Types에 'Edge'가 없으므로 edge_defect는 FAIL(surface_defect는 PASS)."""
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole, Coating Defect |\n",
+        filename="SPEC-001.md",
+    )
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "PASS"
+    assert results["Edge Defect Detection"] == "FAIL"
+    assert candidates[0].hard_requirements_pass is False
+
+
+def test_defect_item_fails_when_defect_inspection_not_supported():
+    """SPEC-003/004.md 형식: '## Defect Inspection\\n\\n- Not Supported' → 모든 결함 항목 FAIL."""
+    requirement = RequirementSchema(inspection_items=["surface_defect"])
+    doc = _mk_doc("## Defect Inspection\n\n- Not Supported\n", filename="SPEC-003.md")
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "FAIL"
+
+
+def test_defect_item_unknown_when_no_defect_info_retrieved():
+    requirement = RequirementSchema(inspection_items=["surface_defect"])
+    doc = _mk_doc("## General\n\n- Manufacturer: X\n- Model: Y\n", filename="SPEC-999.md")
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "UNKNOWN"
+
+
+def test_defect_item_skipped_when_not_requested():
+    """thickness만 요구했으면 결함 종류 검증 자체를 하지 않는다(Range/Accuracy와 동일 원칙)."""
+    requirement = RequirementSchema(inspection_items=["thickness"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole |\n", filename="SPEC-001.md"
+    )
+    candidates = build_candidates(requirement, [doc])
+    assert not any(m.field_key.startswith("inspection_item_") for m in candidates[0].matches)
+
+
+def test_select_best_candidate_prefers_candidate_supporting_both_requested_defect_items():
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    only_surface = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole, Coating Defect |\n",
+        filename="ONLY-SURFACE.md",
+    )
+    both = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Contamination, Edge Defect |\n",
+        filename="BOTH.md",
+    )
+    candidates = build_candidates(requirement, [only_surface, both])
+    best = select_best_candidate(candidates)
+    assert best.source_document == "BOTH.md"
+    assert best.hard_requirements_pass is True
+
+
+def test_reported_bug_test17_edge_and_surface_defect_both_required(db):
+    """
+    Test17(실사용자 보고): "전극의 Edge Defect와 표면 결함을 동시에 검사할 수 있는
+    Inline 검사기를 찾아줘." → 시스템이 OptiScan ES-200(SPEC-001.md, Defect Types:
+    Scratch, Pin Hole, Coating Defect — Edge Defect는 없음)을 "Hard Requirement
+    조건을 모두 충족합니다"로 잘못 안내했다. Edge Defect Detection이 FAIL로
+    판정되어야 한다.
+    """
+    requirement = RequirementSchema(
+        target=RequirementTarget(material="전극", width_mm=5),
+        inspection_items=["edge_defect", "surface_defect"],
+        inline_offline="inline",
+    )
+    retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=100)
+    candidates = build_candidates(requirement, retrieved_docs)
+    spec001 = next((c for c in candidates if c.source_document == "SPEC-001.md"), None)
+    assert spec001 is not None, "SPEC-001.md 후보가 만들어지지 않았습니다"
+
+    by_item = {m.item: m for m in spec001.matches}
+    assert by_item["Surface Defect Detection"].result == "PASS"
+    assert by_item["Edge Defect Detection"].result == "FAIL"
+    assert spec001.hard_requirements_pass is False
+
+
+def test_build_inspection_item_hard_requirement_records_surfaces_candidate_matches():
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole, Coating Defect |\n",
+        filename="SPEC-001.md",
+    )
+    candidates = build_candidates(requirement, [doc])
+    chosen = select_best_candidate(candidates)
+    records = build_inspection_item_hard_requirement_records(chosen)
+    by_item = {r.item: r for r in records}
+    assert by_item["Surface Defect Detection"].result == "PASS"
+    assert by_item["Edge Defect Detection"].result == "FAIL"
+    assert "SPEC-001.md" in by_item["Edge Defect Detection"].reason or by_item["Edge Defect Detection"].source.document == "SPEC-001.md"
+
+
+def test_build_inspection_item_hard_requirement_records_empty_for_none_candidate():
+    assert build_inspection_item_hard_requirement_records(None) == []

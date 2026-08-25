@@ -12,6 +12,7 @@ from typing import List, Optional
 
 from . import categorical_match, units
 from .schemas import (
+    CandidateEquipment,
     ComplianceRecord,
     Operator,
     RequirementSchema,
@@ -422,6 +423,40 @@ def build_hard_requirement_report(
         )
         if principle_record is not None:
             records.append(principle_record)
+    return records
+
+
+def build_inspection_item_hard_requirement_records(
+    chosen_candidate: Optional[CandidateEquipment],
+) -> List[ComplianceRecord]:
+    """
+    agent.candidate_matcher.build_candidates()가 이미 판정한 "검사 항목(예:
+    surface_defect/edge_defect)을 이 후보가 실제로 지원하는가" hard requirement
+    판정을 그대로 ComplianceRecord로 옮긴다.
+
+    다른 hard requirement(Range/Accuracy/...)는 SpecificationSchema에 값을
+    저장해뒀다가 그 필드로부터 다시 계산하는 방식(build_hard_requirement_report)을
+    쓰지만, 검사 항목 지원 여부는 숫자/범주형 단일 값이 아니라 "요구 항목별로
+    여러 개"이므로 SpecificationSchema에 새 필드를 추가하지 않고 candidate_matcher가
+    만든 CandidateFieldMatch를 그대로 재사용한다(같은 판정 로직을 중복 구현하지
+    않기 위함 — hard 원칙은 동일하게 유지).
+    """
+    if chosen_candidate is None:
+        return []
+    records: List[ComplianceRecord] = []
+    for match in chosen_candidate.matches:
+        if not match.field_key.startswith("inspection_item_"):
+            continue
+        reason = match.evidence_text or f"장비의 {match.item} 지원 여부를 확인하지 못했습니다."
+        records.append(
+            ComplianceRecord(
+                item=match.item,
+                result=match.result,
+                reason=f"요구 검사 항목 {match.requirement_text} / {reason} → {match.result}",
+                source=match.source,
+                hard=True,
+            )
+        )
     return records
 
 
