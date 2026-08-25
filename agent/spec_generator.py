@@ -206,12 +206,14 @@ def _fallback_equipment_identity(spec: SpecificationSchema, retrieved_docs: List
 def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[CandidateEquipment]) -> None:
     """
     candidate_matcher.select_best_candidate()가 고른 "가장 나은 후보"의 값을 최종
-    사양서에 반영한다. LLM이 measurement_range_full/equipment_accuracy_um을 스스로
-    채웠더라도, 실제 후보 문서 원문에서 결정론적으로 추출/판정한 이 값이 항상
-    우선한다 — hard requirement(측정 범위 포함 여부/정확도 충족 여부) PASS/FAIL을
-    LLM 판단에 맡기지 않기 위함이다.
+    사양서에 반영한다. LLM이 measurement_range_full/equipment_accuracy_um/
+    equipment_minimum_defect_size_um을 스스로 채웠더라도, 실제 후보 문서 원문에서
+    결정론적으로 추출/판정한 이 값이 항상 우선한다 — hard requirement(측정 범위
+    포함 여부/정확도/최소 검출 결함 크기 충족 여부) PASS/FAIL을 LLM 판단에 맡기지
+    않기 위함이다.
 
-    measurement_range_full/equipment_accuracy_um은 match.found_value가 있으면
+    measurement_range_full/equipment_accuracy_um/equipment_minimum_defect_size_um은
+    match.found_value가 있으면
     PASS/FAIL과 무관하게 항상 채운다 — status="VERIFIED"는 "이 값이 실제 문서에서
     확인됐다"는 뜻이지 "요구사항을 충족한다"는 뜻이 아니며(그 판정은 별도로
     build_hard_requirement_report가 담당), 이렇게 해야 FAIL인 경우에도 Hard
@@ -236,11 +238,19 @@ def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[Candidat
         if match.source is None or (match.found_value is None and match.found_text is None):
             continue
         if match.field_key == "inline_offline" and match.found_text:
-            spec.equipment.inline_offline = spec.equipment.inline_offline or match.found_text
+            # `or spec.equipment.inline_offline`로 기존 값을 우선하면 안 된다 — LLM이
+            # narrowed context를 보고 이 필드를 먼저 자유 문자열로 채워 넣을 수 있고
+            # (예: 원문 그대로 "Machine Vision"), 그 비canonical 값이 여기서 덮어써지지
+            # 않고 남아 있으면 build_hard_requirement_report가 요구값의 canonical
+            # 라벨(예: "Vision")과 문자열이 달라 실제로는 만족하는 조건을 FAIL로
+            # 잘못 판정한다(실사용자 보고 버그: SPEC-006.md "Machine Vision" vs 요구
+            # "Vision" → 의미상 동일한데 FAIL). measurement_range_full/equipment_accuracy_um과
+            # 동일하게, 후보 문서에서 결정론적으로 추출한 canonical 값이 항상 우선해야 한다.
+            spec.equipment.inline_offline = match.found_text
         elif match.field_key == "measurement_method" and match.found_text:
-            spec.equipment.measurement_method = spec.equipment.measurement_method or match.found_text
+            spec.equipment.measurement_method = match.found_text
         elif match.field_key == "measurement_principle" and match.found_text:
-            spec.equipment.measurement_principle = spec.equipment.measurement_principle or match.found_text
+            spec.equipment.measurement_principle = match.found_text
         elif match.field_key == "measurement_range" and match.found_min is not None:
             spec.measurement_performance.measurement_range_full = SourcedRange(
                 min=match.found_min,
@@ -264,6 +274,13 @@ def _apply_chosen_candidate(spec: SpecificationSchema, chosen: Optional[Candidat
                 )
         elif match.field_key == "accuracy":
             spec.measurement_performance.equipment_accuracy_um = SourcedNumber(
+                value=match.found_value,
+                unit=match.found_unit,
+                status="VERIFIED",
+                source=match.source.model_copy(),
+            )
+        elif match.field_key == "minimum_defect_size":
+            spec.defect_detection.equipment_minimum_defect_size_um = SourcedNumber(
                 value=match.found_value,
                 unit=match.found_unit,
                 status="VERIFIED",

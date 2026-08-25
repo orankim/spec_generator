@@ -1,7 +1,8 @@
 """
 CandidateMatcher — RAG 검색 결과(retrieved_docs)를 문서(장비) 단위로 그룹화하고,
-측정 범위/정확도 같은 hard requirement를 실제 원문에서 추출해 agent.units의 순수
-비교 함수(evaluate_hard_requirements/range_covers)로 PASS/FAIL을 판정한다.
+측정 범위/정확도/최소 검출 결함 크기 같은 hard requirement를 실제 원문에서 추출해
+agent.units의 순수 비교 함수(evaluate_hard_requirements/range_covers)로 PASS/FAIL을
+판정한다.
 
 핵심 원칙: LLM은 이 판정에 전혀 관여하지 않는다. 이미 agent.spec_retriever가
 retrieved_docs를 만드는 과정에서 range_boost/identity_chunk 로직으로 각 후보 문서의
@@ -30,9 +31,39 @@ _MODEL_RE = re.compile(r"(?:^|\n)[-*]?\s*Model\s*[:：]\s*(.+)", re.IGNORECASE)
 _INSPECTION_MODE_RE = re.compile(r"(?:^|\n)[-*]?\s*Inspection Mode\s*[:：]\s*(.+)", re.IGNORECASE)
 _MEASUREMENT_TYPE_RE = re.compile(r"(?:^|\n)[-*]?\s*Measurement Type\s*[:：]\s*(.+)", re.IGNORECASE)
 _MEASUREMENT_PRINCIPLE_RE = re.compile(r"(?:^|\n)[-*]?\s*Measurement Principle\s*[:：]\s*(.+)", re.IGNORECASE)
+# "Minimum Detectable Defect"는 sample_specs에서 표(SPEC-001/005/006/007/008/009/010)와
+# 불릿(SPEC-002: "- Minimum Detectable Defect: 5 μm") 두 형태가 섞여 있으므로, 표는
+# 기존 라벨 힌트 매칭으로, 불릿은 Inspection Mode/Measurement Principle과 동일한 방식으로
+# 별도 정규식을 둔다.
+_MINIMUM_DEFECT_RE = re.compile(r"(?:^|\n)[-*]?\s*Minimum Detectable Defect\s*[:：]\s*(.+)", re.IGNORECASE)
+# "Defect Types"도 Minimum Detectable Defect와 동일하게 표/불릿 두 형태가 섞여 있다.
+_DEFECT_TYPES_RE = re.compile(r"(?:^|\n)[-*]?\s*Defect Types\s*[:：]\s*(.+)", re.IGNORECASE)
+# sample_specs SPEC-003/004처럼 "## Defect Inspection" 절 바로 아래 "- Not Supported"만
+# 있는 경우 — 결함 검사 자체를 지원하지 않는다는 명시적 부정 신호. heading 기반
+# chunking(build_rag_ollama.py)이 이 heading을 chunk 시작에 그대로 남겨두므로, heading과
+# "Not Supported"가 같은 chunk 안에서 가깝게 나타나는지로 판정한다.
+_DEFECT_INSPECTION_NOT_SUPPORTED_RE = re.compile(
+    r"#{1,3}\s*Defect Inspection\s*\n+\s*[-*]?\s*Not Supported\b", re.IGNORECASE
+)
 
 _RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
 _ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
+_DEFECT_SIZE_LABEL_HINTS = ("minimum detectable defect", "minimum defect size", "최소 검출", "최소 결함")
+_DEFECT_TYPES_LABEL_HINTS = ("defect types",)
+
+# requirement.inspection_items 중 "이 결함 종류를 실제로 검출하는가"로 검증 가능한
+# 항목만 다룬다(thickness/coating/profile_3d는 사양서에 이런 형태의 명시적 목록이
+# 없어 안전하게 판정할 근거가 부족하다 — 근거 없이 FAIL을 만들어내는 것을 피한다).
+# "defect"는 Scratch/Contamination/Pit/Void 등 특정 이름이 없는 일반 결함 목록도
+# surface_defect로 인정하기 위한 포괄 키워드다.
+_INSPECTION_ITEM_DEFECT_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "surface_defect": ("scratch", "crack", "pinhole", "pin hole", "particle", "contamination", "pit", "void", "defect"),
+    "edge_defect": ("edge",),
+}
+_INSPECTION_ITEM_LABELS = {
+    "surface_defect": "Surface Defect Detection",
+    "edge_defect": "Edge Defect Detection",
+}
 
 
 def _is_range_label(label_lower: str) -> bool:
@@ -112,6 +143,13 @@ class _CandidateFact:
         self.measurement_principle: Optional[str] = None
         self.measurement_principle_doc: Optional[Document] = None
         self.measurement_principle_text: Optional[str] = None
+        self.defect_size: Optional[Tuple[float, str]] = None
+        self.defect_size_doc: Optional[Document] = None
+        self.defect_size_text: Optional[str] = None
+        self.defect_types_text: Optional[str] = None
+        self.defect_types_doc: Optional[Document] = None
+        self.defect_inspection_not_supported: bool = False
+        self.defect_inspection_not_supported_doc: Optional[Document] = None
 
 
 def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
@@ -150,6 +188,25 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                     fact.measurement_principle_doc = doc
                     fact.measurement_principle_text = f"Measurement Principle: {m.group(1).strip()}"
 
+        if fact.defect_size is None:
+            m = _MINIMUM_DEFECT_RE.search(text)
+            if m:
+                value_unit = units.parse_value_unit(m.group(1))
+                if value_unit is not None:
+                    fact.defect_size = value_unit
+                    fact.defect_size_doc = doc
+                    fact.defect_size_text = f"Minimum Detectable Defect: {m.group(1).strip()}"
+
+        if not fact.defect_inspection_not_supported and fact.defect_types_text is None:
+            if _DEFECT_INSPECTION_NOT_SUPPORTED_RE.search(text):
+                fact.defect_inspection_not_supported = True
+                fact.defect_inspection_not_supported_doc = doc
+            else:
+                m = _DEFECT_TYPES_RE.search(text)
+                if m:
+                    fact.defect_types_text = m.group(1).strip()
+                    fact.defect_types_doc = doc
+
         for label, value in _extract_table_rows(text):
             label_lower = label.lower()
             if fact.range is None and _is_range_label(label_lower):
@@ -164,6 +221,19 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                     fact.accuracy = value_unit
                     fact.accuracy_doc = doc
                     fact.accuracy_text = f"{label}: {value}"
+            if fact.defect_size is None and any(h in label_lower for h in _DEFECT_SIZE_LABEL_HINTS):
+                value_unit = units.parse_value_unit(value)
+                if value_unit is not None:
+                    fact.defect_size = value_unit
+                    fact.defect_size_doc = doc
+                    fact.defect_size_text = f"{label}: {value}"
+            if (
+                fact.defect_types_text is None
+                and not fact.defect_inspection_not_supported
+                and any(h in label_lower for h in _DEFECT_TYPES_LABEL_HINTS)
+            ):
+                fact.defect_types_text = value.strip()
+                fact.defect_types_doc = doc
     return fact
 
 
@@ -191,6 +261,21 @@ def _required_accuracy(requirement: RequirementSchema) -> Optional[Tuple[float, 
     return None
 
 
+def _required_defect_size(requirement: RequirementSchema) -> Optional[Tuple[float, str, str]]:
+    """사용자가 요구한 최소 검출 결함 크기 — 장비가 "이 크기 이하의 결함까지" 검출할 수
+    있어야 한다는 뜻이므로 accuracy와 동일하게 operator는 항상 "<="다(작을수록 더
+    미세한 결함까지 잡아낸다는 의미이므로 후보의 실측값이 요구값보다 작거나 같아야 PASS)."""
+    if requirement.minimum_defect_size is not None and requirement.minimum_defect_size.value is not None:
+        return (
+            requirement.minimum_defect_size.value,
+            requirement.minimum_defect_size.unit or "um",
+            requirement.minimum_defect_size.operator or "<=",
+        )
+    if requirement.minimum_defect_size_um is not None:
+        return requirement.minimum_defect_size_um, "um", "<="
+    return None
+
+
 def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Document]) -> List[CandidateEquipment]:
     """
     retrieved_docs를 문서(장비) 단위로 그룹화하고, 각 후보의 측정 범위/정확도를
@@ -203,6 +288,7 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
 
     required_range = _required_range(requirement)
     required_accuracy = _required_accuracy(requirement)
+    required_defect_size = _required_defect_size(requirement)
 
     candidates: List[CandidateEquipment] = []
     for idx, (source, docs) in enumerate(sorted(by_source.items()), start=1):
@@ -261,6 +347,36 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.accuracy_text,
                     source=_source_ref(fact.accuracy_doc) if fact.accuracy_doc else None,
+                )
+            )
+
+        if required_defect_size is not None:
+            candidate_defect_size = fact.defect_size
+            req_value, req_unit, operator = required_defect_size
+            try:
+                # evaluate_hard_requirements의 required_accuracy/candidate_accuracy 파라미터는
+                # "(value, unit, operator) vs (value, unit)를 operator 방향으로 비교"하는 범용
+                # 로직이라 accuracy 전용이 아니다 — 결함 크기도 동일한 형태(값이 작을수록
+                # 우수, operator="<=")이므로 그대로 재사용해 비교 로직을 중복 구현하지 않는다.
+                ok, _reasons = units.evaluate_hard_requirements(
+                    required_accuracy=required_defect_size, candidate_accuracy=candidate_defect_size
+                )
+            except units.UnitError:
+                ok, candidate_defect_size = False, None
+            result = "PASS" if ok else ("UNKNOWN" if candidate_defect_size is None else "FAIL")
+            matches.append(
+                CandidateFieldMatch(
+                    item="Minimum Defect Size",
+                    field_key="minimum_defect_size",
+                    hard=True,
+                    requirement_value=req_value,
+                    requirement_unit=req_unit,
+                    operator=operator,
+                    found_value=candidate_defect_size[0] if candidate_defect_size else None,
+                    found_unit=candidate_defect_size[1] if candidate_defect_size else None,
+                    result=result,
+                    evidence_text=fact.defect_size_text,
+                    source=_source_ref(fact.defect_size_doc) if fact.defect_size_doc else None,
                 )
             )
 
@@ -335,6 +451,44 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=principle_result,
                     evidence_text=fact.measurement_principle_text,
                     source=_source_ref(fact.measurement_principle_doc) if fact.measurement_principle_doc else None,
+                )
+            )
+
+        # 검사 항목(inspection_items) 중 결함 종류로 검증 가능한 항목(surface_defect/
+        # edge_defect)이 실제로 이 후보 문서에서 검출 가능하다고 확인되는지 판정한다.
+        # "여러 검사 항목을 동시에 요구했는데 후보 장비가 그중 하나만 지원하는 경우"를
+        # PASS로 잘못 보여주지 않기 위함(실사용자 보고: Edge Defect + Surface Defect를
+        # 동시에 요구했을 때 Edge Defect를 지원하지 않는 장비도 구분 없이 PASS 취급됨).
+        for item in requirement.inspection_items:
+            keywords = _INSPECTION_ITEM_DEFECT_KEYWORDS.get(item)
+            if keywords is None:
+                continue
+            if fact.defect_inspection_not_supported:
+                item_result = "FAIL"
+                found_text = "Not Supported"
+                evidence = "Defect Inspection: Not Supported"
+                source_doc = fact.defect_inspection_not_supported_doc
+            elif fact.defect_types_text is not None:
+                defect_types_lower = fact.defect_types_text.lower()
+                item_result = "PASS" if any(kw in defect_types_lower for kw in keywords) else "FAIL"
+                found_text = fact.defect_types_text
+                evidence = f"Defect Types: {fact.defect_types_text}"
+                source_doc = fact.defect_types_doc
+            else:
+                item_result = "UNKNOWN"
+                found_text = None
+                evidence = None
+                source_doc = None
+            matches.append(
+                CandidateFieldMatch(
+                    item=_INSPECTION_ITEM_LABELS.get(item, item),
+                    field_key=f"inspection_item_{item}",
+                    hard=True,
+                    requirement_text=item,
+                    found_text=found_text,
+                    result=item_result,
+                    evidence_text=evidence,
+                    source=_source_ref(source_doc) if source_doc else None,
                 )
             )
 

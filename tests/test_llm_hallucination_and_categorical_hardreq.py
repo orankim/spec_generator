@@ -37,12 +37,14 @@ from agent.candidate_matcher import build_candidates, select_best_candidate
 from agent.pipeline import analyze_requirement, retrieve_and_generate
 from agent.requirement_parser import apply_deterministic_extraction, parse_requirement_text
 from agent.schemas import (
+    Equipment,
     RequirementRange,
     RequirementSchema,
     RequirementTarget,
     RequirementValue,
     SpecificationSchema,
 )
+from agent.spec_generator import generate_specification
 from agent.spec_validator import build_hard_requirement_report
 from agent.units import evaluate_hard_requirements
 from build_rag_ollama import build_vector_db
@@ -264,6 +266,43 @@ def test_test1_inline_mismatch_is_fail_not_ignored():
     by_item = {m.item: m for m in candidates[0].matches}
     assert by_item["Inspection Mode"].result == "FAIL"
     assert candidates[0].hard_requirements_pass is False
+
+
+# =================================================================
+# 실사용자 보고 버그(Test16): LLM이 narrowed context를 보고 spec.equipment.
+# measurement_principle을 원문 그대로("Machine Vision") 자유 문자열로 먼저 채워
+# 넣으면, candidate_matcher가 같은 문서에서 결정론적으로 뽑아낸 canonical 값
+# ("Vision")이 `or` 연산자 때문에 덮어써지지 못하고 LLM의 non-canonical 값이
+# 그대로 남았다. 그 결과 build_hard_requirement_report가 요구값의 canonical
+# 라벨("Vision")과 비교할 때 문자열이 달라 실제로는 만족하는 조건을 FAIL로
+# 잘못 판정했다("요구 Measurement Principle Vision / 장비 Measurement Principle
+# Machine Vision → FAIL" — 사용자가 실제로 관찰한 정확한 증상).
+# =================================================================
+def test_reported_bug_llm_prefilled_raw_principle_does_not_block_canonical_override():
+    requirement = RequirementSchema(inline_offline="inline", measurement_principle="Vision")
+    doc = Document(
+        page_content=(
+            "## General\n\n- Manufacturer: VisionMeasure\n- Model: VM-200\n"
+            "- Inspection Mode: Inline\n- Measurement Principle: Machine Vision\n"
+        ),
+        metadata={"filename": "SPEC-006.md", "source": "SPEC-006.md", "source_type": "markdown", "chunk_id": 0},
+    )
+
+    # LLM이 자유 문자열 필드(measurement_principle)를 문서 원문 그대로("Machine Vision",
+    # canonical화되지 않은 형태) 먼저 채워 넣은 상황을 그대로 재현한다.
+    fake_llm_response = SpecificationSchema()
+    fake_llm_response.equipment = Equipment(measurement_principle="Machine Vision")
+
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        spec = generate_specification(requirement, [doc], "", model="test-model")
+
+    # candidate_matcher가 뽑은 canonical 값("Vision")이 LLM의 non-canonical 값을
+    # 덮어써야 한다 — 그래야 요구값과 문자열이 정확히 일치해 PASS로 판정된다.
+    assert spec.equipment.measurement_principle == "Vision"
+
+    hard_report = build_hard_requirement_report(spec, requirement)
+    by_item = {r.item: r for r in hard_report}
+    assert by_item["Measurement Principle"].result == "PASS"
 
 
 # =================================================================

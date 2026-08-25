@@ -12,6 +12,7 @@ from typing import List, Optional
 
 from . import categorical_match, units
 from .schemas import (
+    CandidateEquipment,
     ComplianceRecord,
     Operator,
     RequirementSchema,
@@ -315,6 +316,34 @@ def _accuracy_hard_requirement_record(spec: SpecificationSchema, requirement: Re
     )
 
 
+def _defect_size_hard_requirement_record(spec: SpecificationSchema, requirement: RequirementSchema) -> Optional[ComplianceRecord]:
+    if requirement.minimum_defect_size is not None and requirement.minimum_defect_size.value is not None:
+        req_value = requirement.minimum_defect_size.value
+        req_unit = requirement.minimum_defect_size.unit or "um"
+        operator: Operator = requirement.minimum_defect_size.operator or "<="
+    elif requirement.minimum_defect_size_um is not None:
+        req_value, req_unit, operator = requirement.minimum_defect_size_um, "um", "<="
+    else:
+        return None
+
+    equipment_defect_size = spec.defect_detection.equipment_minimum_defect_size_um
+    if equipment_defect_size is None or equipment_defect_size.value is None:
+        return ComplianceRecord(
+            item="Minimum Defect Size", unit=req_unit, requirement=req_value, specification=None,
+            operator=operator, result="UNKNOWN", reason="장비의 실제 최소 검출 결함 크기를 확인하지 못했습니다.", hard=True,
+        )
+
+    spec_value = equipment_defect_size.value
+    spec_unit = equipment_defect_size.unit or req_unit
+    ok = units.compare_values(spec_value, spec_unit, req_value, req_unit, operator)
+    result = "PASS" if ok else "FAIL"
+    reason = f"요구 최소 검출 결함 크기 {operator} {req_value:g}{req_unit} / 장비 최소 검출 결함 크기 {spec_value:g}{spec_unit} → {result}"
+    return ComplianceRecord(
+        item="Minimum Defect Size", unit=req_unit, requirement=req_value, specification=spec_value,
+        operator=operator, result=result, reason=reason, source=equipment_defect_size.source, hard=True,
+    )
+
+
 _CATEGORICAL_LABELS = {
     "inline": "Inline",
     "offline": "Offline",
@@ -354,10 +383,11 @@ def build_hard_requirement_report(
     requirement: Optional[RequirementSchema],
 ) -> List[ComplianceRecord]:
     """
-    측정 범위/정확도/검사 모드/측정 방식/측정 원리 hard requirement를 요구값 대
-    "장비 실측값"으로 PASS/FAIL 판정한다(LLM이 아니라 agent.units/agent.
+    측정 범위/정확도/최소 검출 결함 크기/검사 모드/측정 방식/측정 원리 hard requirement를
+    요구값 대 "장비 실측값"으로 PASS/FAIL 판정한다(LLM이 아니라 agent.units/agent.
     categorical_match의 순수 함수로 판정 — candidate_matcher.build_candidates()가
-    이미 채운 measurement_range_full/equipment_accuracy_um/equipment.inline_offline/
+    이미 채운 measurement_range_full/equipment_accuracy_um/
+    equipment_minimum_defect_size_um/equipment.inline_offline/
     measurement_method/measurement_principle을 그대로 재사용하므로 비교 로직을
     중복 구현하지 않는다).
     """
@@ -370,6 +400,9 @@ def build_hard_requirement_report(
     accuracy_record = _accuracy_hard_requirement_record(spec, requirement)
     if accuracy_record is not None:
         records.append(accuracy_record)
+    defect_size_record = _defect_size_hard_requirement_record(spec, requirement)
+    if defect_size_record is not None:
+        records.append(defect_size_record)
     mode_record = _categorical_hard_requirement_record(
         "Inspection Mode", requirement.inline_offline, spec.equipment.inline_offline
     )
@@ -390,6 +423,40 @@ def build_hard_requirement_report(
         )
         if principle_record is not None:
             records.append(principle_record)
+    return records
+
+
+def build_inspection_item_hard_requirement_records(
+    chosen_candidate: Optional[CandidateEquipment],
+) -> List[ComplianceRecord]:
+    """
+    agent.candidate_matcher.build_candidates()가 이미 판정한 "검사 항목(예:
+    surface_defect/edge_defect)을 이 후보가 실제로 지원하는가" hard requirement
+    판정을 그대로 ComplianceRecord로 옮긴다.
+
+    다른 hard requirement(Range/Accuracy/...)는 SpecificationSchema에 값을
+    저장해뒀다가 그 필드로부터 다시 계산하는 방식(build_hard_requirement_report)을
+    쓰지만, 검사 항목 지원 여부는 숫자/범주형 단일 값이 아니라 "요구 항목별로
+    여러 개"이므로 SpecificationSchema에 새 필드를 추가하지 않고 candidate_matcher가
+    만든 CandidateFieldMatch를 그대로 재사용한다(같은 판정 로직을 중복 구현하지
+    않기 위함 — hard 원칙은 동일하게 유지).
+    """
+    if chosen_candidate is None:
+        return []
+    records: List[ComplianceRecord] = []
+    for match in chosen_candidate.matches:
+        if not match.field_key.startswith("inspection_item_"):
+            continue
+        reason = match.evidence_text or f"장비의 {match.item} 지원 여부를 확인하지 못했습니다."
+        records.append(
+            ComplianceRecord(
+                item=match.item,
+                result=match.result,
+                reason=f"요구 검사 항목 {match.requirement_text} / {reason} → {match.result}",
+                source=match.source,
+                hard=True,
+            )
+        )
     return records
 
 

@@ -475,15 +475,26 @@ async def agent_page():
                     // Hard Requirement 중 하나라도 FAIL이면, 아래 표시되는 설비가 "조건을
                     // 충족하는 장비"가 아니라 "가장 유사하지만 조건을 다 채우지 못한 후보"임을
                     // 먼저 알린다 — FAIL 후보를 적합 장비처럼 오인시키지 않기 위함(요청서).
+                    // FAIL이 없어도 UNKNOWN(문서에서 확인하지 못함)이 하나라도 있으면 "모두
+                    // 충족"이라고 말하면 안 된다 — agent.candidate_matcher.build_candidates()의
+                    // hard_requirements_pass 계산(fail_count == 0 and unknown_count == 0)과
+                    // 동일한 기준을 여기서도 지켜야 한다(실사용자 보고 버그: Accuracy가
+                    // UNKNOWN인데도 Inspection Mode 하나만 PASS라서 "✅ 모두 충족합니다"로
+                    // 잘못 표시되었다).
                     const hardRecords = hardRequirementReport || [];
                     const hasFail = hardRecords.some(r => r.result === 'FAIL');
-                    const hasPass = hardRecords.some(r => r.result === 'PASS');
+                    const hasUnknown = hardRecords.some(r => r.result === 'UNKNOWN');
+                    const allConfirmedPass = hardRecords.length > 0 && !hasFail && !hasUnknown;
                     let matchBanner = '';
                     if (hasFail) {
                         matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#fff5f5; border:1px solid #feb2b2; border-radius:4px; color:#822727; font-weight:bold;">
                             ⚠️ 조건을 모두 충족하는 장비를 찾지 못했습니다. 아래는 가장 유사한 후보이며, 충족하지 못한 조건은 "사용자 요구조건 검증" 목록에서 FAIL로 표시됩니다.
                         </div>`;
-                    } else if (hardRecords.length > 0 && hasPass) {
+                    } else if (hasUnknown) {
+                        matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#fffaf0; border:1px solid #fbd38d; border-radius:4px; color:#7b341e; font-weight:bold;">
+                            ⚠️ 일부 조건은 문서에서 확인하지 못했습니다(UNKNOWN). 아래 설비가 모든 조건을 충족한다고 단정할 수 없으니 "사용자 요구조건 검증" 목록을 확인하세요.
+                        </div>`;
+                    } else if (allConfirmedPass) {
                         matchBanner = `<div style="margin-bottom:10px; padding:8px 10px; background:#f0fff4; border:1px solid #9ae6b4; border-radius:4px; color:#276749; font-weight:bold;">
                             ✅ 아래 장비는 지정하신 Hard Requirement 조건을 모두 충족합니다.
                         </div>`;

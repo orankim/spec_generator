@@ -35,7 +35,7 @@ from agent.schemas import (
     SpecificationSchema,
 )
 from agent.spec_generator import generate_specification
-from agent.spec_validator import build_hard_requirement_report
+from agent.spec_validator import build_hard_requirement_report, build_inspection_item_hard_requirement_records
 from agent.units import evaluate_hard_requirements
 from build_rag_ollama import build_vector_db
 
@@ -153,6 +153,139 @@ def test_select_best_candidate_prefers_passing_over_failing():
 
 def test_select_best_candidate_returns_none_for_empty_list():
     assert select_best_candidate([]) is None
+
+
+# ---------------------------------------------------------------
+# Minimum Defect Size hard requirement — 실제 사용자 보고 버그 재현:
+# "최소 검출 결함 크기"를 확인 질문으로 물어놓고도 candidate_matcher가 이를 전혀
+# hard requirement로 평가하지 않아, 요구값(예: 2 μm)보다 훨씬 나쁜 실제 검출 성능
+# (예: SPEC-005.md의 50 μm)을 가진 장비도 "조건을 모두 충족합니다"로 잘못 안내되었다.
+# ---------------------------------------------------------------
+def test_build_candidates_extracts_minimum_defect_size_from_table_row():
+    requirement = RequirementSchema(minimum_defect_size=RequirementValue(value=30.0, unit="um", operator="<="))
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Minimum Detectable Defect | 30 μm |\n", filename="SPEC-001.md"
+    )
+    candidates = build_candidates(requirement, [doc])
+    c = candidates[0]
+    results = {m.item: m for m in c.matches}
+    assert results["Minimum Defect Size"].result == "PASS"
+    assert results["Minimum Defect Size"].found_value == 30.0
+
+
+def test_build_candidates_extracts_minimum_defect_size_from_bullet_list():
+    """SPEC-002.md는 표가 아니라 불릿("- Minimum Detectable Defect: 5 μm")로 이 값을 적는다."""
+    requirement = RequirementSchema(minimum_defect_size=RequirementValue(value=10.0, unit="um", operator="<="))
+    doc = _mk_doc(
+        "## Defect Inspection\n\n- Minimum Detectable Defect: 5 μm\n- Defect Types: Scratch, Pit, Particle\n",
+        filename="SPEC-002.md",
+    )
+    candidates = build_candidates(requirement, [doc])
+    c = candidates[0]
+    results = {m.item: m for m in c.matches}
+    assert results["Minimum Defect Size"].result == "PASS"
+    assert results["Minimum Defect Size"].found_value == 5.0
+
+
+def test_build_candidates_marks_fail_when_defect_size_worse_than_required():
+    """요구: 2μm까지 검출 가능해야 함. 장비: 50μm까지만 검출 가능(더 미세한 결함은 못 잡음) → FAIL."""
+    requirement = RequirementSchema(minimum_defect_size=RequirementValue(value=2.0, unit="um", operator="<="))
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Minimum Detectable Defect | 50 μm |\n", filename="SPEC-005.md"
+    )
+    candidates = build_candidates(requirement, [doc])
+    c = candidates[0]
+    results = {m.item: m for m in c.matches}
+    assert results["Minimum Defect Size"].result == "FAIL"
+    assert c.hard_requirements_pass is False
+
+
+def test_build_candidates_defect_size_unknown_when_not_reported():
+    requirement = RequirementSchema(minimum_defect_size=RequirementValue(value=2.0, unit="um", operator="<="))
+    doc = _mk_doc("## Defect Inspection\n\n- Not Supported\n", filename="SPEC-003.md")
+    candidates = build_candidates(requirement, [doc])
+    c = candidates[0]
+    results = {m.item: m for m in c.matches}
+    assert results["Minimum Defect Size"].result == "UNKNOWN"
+
+
+def test_build_candidates_skips_defect_size_when_not_required():
+    """사용자가 최소 검출 결함 크기를 요구하지 않았으면 애초에 평가 목록에 넣지 않는다(Range/Accuracy와 동일 원칙)."""
+    requirement = RequirementSchema()
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Minimum Detectable Defect | 50 μm |\n", filename="SPEC-005.md"
+    )
+    candidates = build_candidates(requirement, [doc])
+    c = candidates[0]
+    assert "Minimum Defect Size" not in {m.item for m in c.matches}
+
+
+def test_reported_bug_spec_005_min_defect_size_2um_fails_hard_requirement(db):
+    """
+    Sample b (실사용자 보고): "음극 폭 300 mm의 두께와 3D 프로파일을 0~500 μm 범위에서
+    ±2 μm 이하 정확도로 측정" + 최소 검출 결함 크기 2μm 요구 → 시스템이 LaserMetrix
+    LP-500(SPEC-005.md, 실제 최소 검출 결함 크기 50μm)을 "Hard Requirement 조건을 모두
+    충족합니다"로 안내했다. 이 테스트는 그 후보가 실제로는 Minimum Defect Size에서
+    FAIL로 판정되어야 함을 검증한다.
+    """
+    requirement = RequirementSchema(
+        target=RequirementTarget(material="음극", width_mm=300),
+        inspection_items=["thickness", "profile_3d"],
+        measurement_range=RequirementRange(min=0.0, max=500.0, unit="um"),
+        accuracy=RequirementValue(value=2.0, unit="um", operator="<="),
+        required_accuracy_um=2.0,
+        minimum_defect_size=RequirementValue(value=2.0, unit="um", operator="<="),
+        minimum_defect_size_um=2.0,
+    )
+    # fake-hash 임베딩은 의미 유사도를 반영하지 않으므로, k_per_query를 작게 두면
+    # SPEC-005.md의 "Defect Inspection" chunk가 우연히 top-k 밖으로 밀려날 수 있다 —
+    # corpus 전체 chunk 수(84개)보다 크게 잡아 모든 chunk가 확실히 포함되게 한다
+    # (실제 서비스에서는 bge-m3 실제 임베딩을 쓰므로 k_per_query=5로도 충분하다).
+    retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=100)
+    candidates = build_candidates(requirement, retrieved_docs)
+    spec005 = next((c for c in candidates if c.source_document == "SPEC-005.md"), None)
+    assert spec005 is not None, "SPEC-005.md 후보가 만들어지지 않았습니다"
+
+    defect_match = next(m for m in spec005.matches if m.item == "Minimum Defect Size")
+    assert defect_match.result == "FAIL", "50um 최소 검출 결함 크기는 2um 요구조건을 충족하지 못해야 한다"
+    assert spec005.hard_requirements_pass is False
+
+
+def test_spec_generator_applies_equipment_minimum_defect_size_from_chosen_candidate(db):
+    """generate_specification()이 선택된 후보(SPEC-005.md)의 실제 최소 검출 결함 크기를
+    spec.defect_detection.equipment_minimum_defect_size_um에 VERIFIED+source로 채우고,
+    build_hard_requirement_report가 이를 근거로 FAIL을 보고하는지 검증한다."""
+    requirement = RequirementSchema(
+        target=RequirementTarget(material="음극", width_mm=300),
+        inspection_items=["thickness", "profile_3d"],
+        measurement_range=RequirementRange(min=0.0, max=500.0, unit="um"),
+        accuracy=RequirementValue(value=2.0, unit="um", operator="<="),
+        required_accuracy_um=2.0,
+        minimum_defect_size=RequirementValue(value=2.0, unit="um", operator="<="),
+        minimum_defect_size_um=2.0,
+    )
+    fake_llm_response = SpecificationSchema()
+
+    with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
+        specification, validation, retrieved_docs = retrieve_and_generate(requirement, db_path=db, k_per_query=100)
+
+    assert specification.equipment.name == "LaserMetrix LP-500"
+
+    eq_defect = specification.defect_detection.equipment_minimum_defect_size_um
+    assert eq_defect is not None
+    assert eq_defect.value == 50.0
+    assert eq_defect.status == "VERIFIED"
+    assert eq_defect.source.document == "SPEC-005.md"
+
+    # 사용자가 요구한 값(보호된 필드)은 여전히 별도로 남아 있어야 한다 — 요구값/실측값 혼동 방지.
+    assert specification.defect_detection.minimum_defect_size_um.value == 2.0
+    assert specification.defect_detection.minimum_defect_size_um.status == "USER_DEFINED"
+
+    hard_report = build_hard_requirement_report(specification, requirement)
+    by_item = {r.item: r for r in hard_report}
+    assert by_item["Minimum Defect Size"].result == "FAIL"
+    assert by_item["Minimum Defect Size"].specification == 50.0
+    assert by_item["Minimum Defect Size"].requirement == 2.0
 
 
 # ---------------------------------------------------------------
@@ -416,3 +549,122 @@ def test_reconciliation_4_full_reported_query_end_to_end(db):
     assert "measurement_performance.measurement_range" not in specification.needs_confirmation
     assert "measurement_performance.equipment_accuracy_um" not in specification.needs_confirmation
     assert validation.is_valid is True
+
+
+# ---------------------------------------------------------------
+# 검사 항목(surface_defect/edge_defect) 지원 여부 hard requirement — 실사용자
+# 보고 버그 재현(Test17): "Edge Defect와 표면 결함을 동시에 검사할 수 있는 Inline
+# 검사기"를 요구했는데, 후보 장비가 둘 중 하나만 실제로 지원해도 구분 없이 PASS로
+# 표시되었다(candidate_matcher가 inspection_items를 애초에 검증하지 않았음).
+# ---------------------------------------------------------------
+def test_defect_item_pass_when_keyword_present_in_defect_types():
+    """SPEC-006.md: Defect Types에 'Edge Defect'가 명시되어 있으므로 edge_defect도 PASS."""
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Contamination, Edge Defect |\n",
+        filename="SPEC-006.md",
+    )
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "PASS"
+    assert results["Edge Defect Detection"] == "PASS"
+
+
+def test_defect_item_fails_when_not_in_defect_types_list():
+    """SPEC-001.md: Defect Types에 'Edge'가 없으므로 edge_defect는 FAIL(surface_defect는 PASS)."""
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole, Coating Defect |\n",
+        filename="SPEC-001.md",
+    )
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "PASS"
+    assert results["Edge Defect Detection"] == "FAIL"
+    assert candidates[0].hard_requirements_pass is False
+
+
+def test_defect_item_fails_when_defect_inspection_not_supported():
+    """SPEC-003/004.md 형식: '## Defect Inspection\\n\\n- Not Supported' → 모든 결함 항목 FAIL."""
+    requirement = RequirementSchema(inspection_items=["surface_defect"])
+    doc = _mk_doc("## Defect Inspection\n\n- Not Supported\n", filename="SPEC-003.md")
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "FAIL"
+
+
+def test_defect_item_unknown_when_no_defect_info_retrieved():
+    requirement = RequirementSchema(inspection_items=["surface_defect"])
+    doc = _mk_doc("## General\n\n- Manufacturer: X\n- Model: Y\n", filename="SPEC-999.md")
+    candidates = build_candidates(requirement, [doc])
+    results = {m.item: m.result for m in candidates[0].matches}
+    assert results["Surface Defect Detection"] == "UNKNOWN"
+
+
+def test_defect_item_skipped_when_not_requested():
+    """thickness만 요구했으면 결함 종류 검증 자체를 하지 않는다(Range/Accuracy와 동일 원칙)."""
+    requirement = RequirementSchema(inspection_items=["thickness"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole |\n", filename="SPEC-001.md"
+    )
+    candidates = build_candidates(requirement, [doc])
+    assert not any(m.field_key.startswith("inspection_item_") for m in candidates[0].matches)
+
+
+def test_select_best_candidate_prefers_candidate_supporting_both_requested_defect_items():
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    only_surface = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole, Coating Defect |\n",
+        filename="ONLY-SURFACE.md",
+    )
+    both = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Contamination, Edge Defect |\n",
+        filename="BOTH.md",
+    )
+    candidates = build_candidates(requirement, [only_surface, both])
+    best = select_best_candidate(candidates)
+    assert best.source_document == "BOTH.md"
+    assert best.hard_requirements_pass is True
+
+
+def test_reported_bug_test17_edge_and_surface_defect_both_required(db):
+    """
+    Test17(실사용자 보고): "전극의 Edge Defect와 표면 결함을 동시에 검사할 수 있는
+    Inline 검사기를 찾아줘." → 시스템이 OptiScan ES-200(SPEC-001.md, Defect Types:
+    Scratch, Pin Hole, Coating Defect — Edge Defect는 없음)을 "Hard Requirement
+    조건을 모두 충족합니다"로 잘못 안내했다. Edge Defect Detection이 FAIL로
+    판정되어야 한다.
+    """
+    requirement = RequirementSchema(
+        target=RequirementTarget(material="전극", width_mm=5),
+        inspection_items=["edge_defect", "surface_defect"],
+        inline_offline="inline",
+    )
+    retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=100)
+    candidates = build_candidates(requirement, retrieved_docs)
+    spec001 = next((c for c in candidates if c.source_document == "SPEC-001.md"), None)
+    assert spec001 is not None, "SPEC-001.md 후보가 만들어지지 않았습니다"
+
+    by_item = {m.item: m for m in spec001.matches}
+    assert by_item["Surface Defect Detection"].result == "PASS"
+    assert by_item["Edge Defect Detection"].result == "FAIL"
+    assert spec001.hard_requirements_pass is False
+
+
+def test_build_inspection_item_hard_requirement_records_surfaces_candidate_matches():
+    requirement = RequirementSchema(inspection_items=["surface_defect", "edge_defect"])
+    doc = _mk_doc(
+        "| Item | Specification |\n|---|---|\n| Defect Types | Scratch, Pin Hole, Coating Defect |\n",
+        filename="SPEC-001.md",
+    )
+    candidates = build_candidates(requirement, [doc])
+    chosen = select_best_candidate(candidates)
+    records = build_inspection_item_hard_requirement_records(chosen)
+    by_item = {r.item: r for r in records}
+    assert by_item["Surface Defect Detection"].result == "PASS"
+    assert by_item["Edge Defect Detection"].result == "FAIL"
+    assert "SPEC-001.md" in by_item["Edge Defect Detection"].reason or by_item["Edge Defect Detection"].source.document == "SPEC-001.md"
+
+
+def test_build_inspection_item_hard_requirement_records_empty_for_none_candidate():
+    assert build_inspection_item_hard_requirement_records(None) == []

@@ -16,13 +16,13 @@ from pydantic import BaseModel
 
 from renderers.markdown_renderer import render_markdown
 
-from . import ollama_client, spec_retriever
+from . import candidate_matcher, ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, retrieve_and_generate
 from .requirement_parser import apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import RequirementSchema, SpecificationSchema
-from .spec_validator import build_hard_requirement_report
+from .spec_validator import build_hard_requirement_report, build_inspection_item_hard_requirement_records
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,16 @@ async def generate_spec_api(req: GenerateSpecRequest):
         requirement = RequirementSchema(**req.requirement)
         specification, validation, retrieved_docs = retrieve_and_generate(requirement, db_path=DB_PATH)
         hard_requirement_report = build_hard_requirement_report(specification, requirement)
+
+        # candidate_matcher.build_candidates()가 검사 항목(예: surface_defect/edge_defect)
+        # 지원 여부까지 판정하지만, 그 판정은 SpecificationSchema에 저장되는 값이 아니라
+        # (build_hard_requirement_report가 다시 계산할 수 없다) generate_specification() 내부
+        # 에서만 쓰이고 버려진다. retrieved_docs는 이미 계산됐으므로 여기서 동일한 결정론적
+        # 함수(재추론/LLM 호출 없음)를 다시 호출해 그 후보의 판정 결과를 화면에도 노출한다.
+        candidates = candidate_matcher.build_candidates(requirement, retrieved_docs)
+        chosen_candidate = candidate_matcher.select_best_candidate(candidates)
+        hard_requirement_report += build_inspection_item_hard_requirement_records(chosen_candidate)
+
         return {
             "specification": specification.model_dump(),
             "validation": validation.model_dump(),
