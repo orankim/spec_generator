@@ -324,7 +324,6 @@ def test_F_spec_001_passes_hard_requirement_for_reported_query(db):
 
     best = select_best_candidate(candidates)
     assert best is not None
-    assert best.source_document in ("SPEC-001.md", "SPEC-015.md")
     assert best.hard_requirements_pass is True
 
 

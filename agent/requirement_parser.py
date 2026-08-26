@@ -515,7 +515,13 @@ def apply_deterministic_extraction(requirement: RequirementSchema, *, trust_llm_
 # 모든 내용을 LLM에게 다시 판단시키지 않는다") — parse_requirement_text()가 이미
 # 검증한 동일한 정규식/단위 파싱 함수만 재사용한다.
 # ==========================================
-_REMOVE_INTENT_KEYWORDS: Tuple[str, ...] = ("빼줘", "빼주세요", "제거", "삭제", "없애", "제외해", "제외할")
+_REMOVE_INTENT_KEYWORDS: Tuple[str, ...] = (
+    "빼줘", "빼주세요", "제거", "삭제", "없애", "제외해", "제외할", "제외",
+    "필요 없어", "필요없어", "필요 없음", "필요없음", "필요 없", "필요없",
+    "상관없어", "상관 없어", "상관없음", "상관 없음", "상관 없", "상관없",
+    "고려하지 마", "고려하지마", "고려하지 마라", "고려 안 해", "고려 안해", "고려 하지 마", "고려 안 함", "고려 안함",
+    "미적용", "적용 안 함", "적용 안함"
+)
 _THICKNESS_KEYWORDS: Tuple[str, ...] = ("두께", "thickness")
 
 # 삭제 의도 키워드와 함께 등장하면 해당 필드를 지운다고 판단할, 필드별 키워드.
@@ -524,11 +530,27 @@ _FIELD_REMOVE_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "measurement_range": ("측정 범위", "측정범위", "범위"),
     "accuracy": ("정확도", "accuracy"),
     "resolution": ("분해능", "resolution"),
-    "minimum_defect_size": ("결함 크기", "결함크기", "최소 검출"),
+    "minimum_defect_size": ("결함 크기", "결함크기", "최소 검출", "검출 크기"),
     "measurement_speed": ("속도", "speed"),
-    "inline_offline": ("검사 모드", "inline", "offline", "인라인", "오프라인"),
+    "inline_offline": ("검사 모드", "inline", "offline", "인라인", "오프라인", "모드"),
     "measurement_method": ("측정 방식", "접촉", "contact"),
     "measurement_principle": ("측정 원리", "원리"),
+}
+
+_INSPECTION_ITEM_REMOVE_MAP: Dict[str, Tuple[str, ...]] = {
+    "surface_defect": ("표면 결함", "표면결함", "surface defect", "surface_defect"),
+    "coating_defect": ("코팅 결함", "코팅결함", "coating defect", "coating_defect"),
+    "coating_non_uniformity": ("코팅 두께 불균일", "코팅 불균일", "coating non-uniformity", "coating_non_uniformity"),
+    "edge_defect": ("엣지 결함", "엣지결함", "edge defect", "edge_defect"),
+    "edge_crack": ("엣지 크랙", "엣지크랙", "edge crack", "edge_crack"),
+    "void": ("기포", "void"),
+    "scratch": ("스크래치", "scratch"),
+    "contamination": ("오염", "contamination", "이물"),
+    "particle": ("파티클", "particle"),
+    "pinhole": ("핀홀", "pinhole"),
+    "profile_3d": ("3d profile", "3d 프로파일", "profile_3d", "3d 형상", "3d 단면"),
+    "thickness": ("두께", "thickness"),
+    "coating": ("코팅", "coating"),
 }
 
 
@@ -546,6 +568,18 @@ def _detect_removed_fields(text: str) -> set:
     return removed
 
 
+def _detect_removed_inspection_items(text: str) -> List[str]:
+    """검사 항목(표면 결함, 두께, 스크래치 등)의 명시적 제거 의도를 감지한다."""
+    if not any(kw in text for kw in _REMOVE_INTENT_KEYWORDS):
+        return []
+    removed = []
+    text_lower = text.lower()
+    for item_key, keywords in _INSPECTION_ITEM_REMOVE_MAP.items():
+        if any(kw in text_lower for kw in keywords):
+            removed.append(item_key)
+    return removed
+
+
 def apply_conversational_patch(requirement: RequirementSchema, message_text: str) -> RequirementSchema:
     """
     대화 중 새로 들어온 메시지(message_text)만 근거로 기존 requirement를 "패치"한다
@@ -555,7 +589,14 @@ def apply_conversational_patch(requirement: RequirementSchema, message_text: str
     """
     text = unicodedata.normalize("NFC", message_text)
     removed_fields = _detect_removed_fields(text)
+    removed_items = _detect_removed_inspection_items(text)
     working_text = text
+
+    for item in removed_items:
+        if item in requirement.inspection_items:
+            requirement.inspection_items.remove(item)
+        if item in requirement.inspection_categories:
+            requirement.inspection_categories.remove(item)
 
     material = _extract_material(text)
     if material is not None:
