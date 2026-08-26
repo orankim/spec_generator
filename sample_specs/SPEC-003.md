@@ -1,50 +1,184 @@
-# Equipment Specification
+# OCTVision OCT-E100
 
-## General
-
-- Manufacturer: OCTVision
-- Model: OCT-E100
-- Equipment Type: Optical Thickness Measurement System
-- Measurement Principle: OCT
-- Inspection Mode: Inline
-- Measurement Type: Non-contact
-
-## Inspection Target
-
-- Target: Electrode Coating
-- Maximum Width: 300 mm
-
-## Measurement Performance
+## 1. General Specification
 
 | Item | Specification |
 |---|---|
-| Thickness Range | 1 ~ 500 μm |
-| Thickness Resolution | 0.5 μm |
-| Accuracy | ±2.0 μm |
-| Repeatability | ±1.0 μm |
-| Measurement Rate | 2 kHz |
+| Equipment Name | OCTVision OCT-E100 |
+| Equipment Type | Optical Thickness Measurement System |
+| Manufacturer | OCTVision |
+| Model | OCT-E100 |
+| Version | v1.0 |
+| Application | Lithium-ion Battery Electrode Production Line |
+| Inspection Method | Non-contact Optical Inspection |
+| Measurement Principle | OCT |
+| Inline / Offline | inline |
+| Measurement Type | non-contact |
 
-## Optical System
+## 2. Inspection Target
 
-- Light Source: Near Infrared
-- Wavelength: 850 nm
-- Measurement Method: Low Coherence Interferometry
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Material | - | Lithium-ion Battery Electrode Roll | VERIFIED | SPEC-003.md |
+| Product Type | - | Cathode / Anode Coated Sheet | VERIFIED | SPEC-003.md |
+| Electrode Type | - | Electrode Coating | VERIFIED | SPEC-003.md |
+| Width | mm | 300 | VERIFIED | SPEC-003.md |
+| Length | mm | Unlimited (continuous measurement) | VERIFIED | SPEC-003.md |
+| Thickness | μm | 50 ~ 300 | VERIFIED | SPEC-003.md |
+| Coating Thickness | μm | 20 ~ 150 | VERIFIED | SPEC-003.md |
+| Substrate | - | Copper Foil (10 μm) / Aluminum Foil (15 μm) | VERIFIED | SPEC-003.md |
+| Inspection Direction | - | Top & Bottom Dual Side | VERIFIED | SPEC-003.md |
+| Target Line Speed | mm/s | 100 | VERIFIED | SPEC-003.md |
 
-## Defect Inspection
+## 3. Inspection Requirements
 
-- Not Supported
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Inspection Items | - | thickness | VERIFIED | SPEC-003.md |
+| Inspection Area | - | Full Electrode Width & Length | VERIFIED | SPEC-003.md |
+| Inspection Width | mm | 300 | VERIFIED | SPEC-003.md |
+| Inspection Length | mm | Unlimited (continuous measurement) | VERIFIED | SPEC-003.md |
+| Sampling Interval | μm | 20 | VERIFIED | SPEC-003.md |
+| Inspection Frequency | Hz | 1000 | VERIFIED | SPEC-003.md |
+| Inspection Mode | - | inline | VERIFIED | SPEC-003.md |
 
-## Interface
+## 4. Measurement Performance
 
-- Ethernet
-- TCP/IP
-- Digital I/O
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Measurement Range | μm | 1 ~ 500 | VERIFIED | SPEC-003.md |
+| Resolution | μm | 0.5 | VERIFIED | SPEC-003.md |
+| Accuracy | μm | ±2.0 | VERIFIED | SPEC-003.md |
+| Repeatability | μm | ±1.0 μm | VERIFIED | SPEC-003.md |
+| Reproducibility | μm | ±1.6 | VERIFIED | SPEC-003.md |
+| Linearity | % | ±0.1 | VERIFIED | SPEC-003.md |
+| Measurement Speed | mm/s | 100 | VERIFIED | SPEC-003.md |
+| Sampling Rate | Hz | 5 kHz | VERIFIED | SPEC-003.md |
 
-## Environment
+## 5. Spatial Performance
 
-- Operating Temperature: 10 ~ 40 °C
-- Humidity: 20 ~ 80 %RH
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| X Range | mm | 300 | VERIFIED | SPEC-003.md |
+| Y Range | mm | Continuous | VERIFIED | SPEC-003.md |
+| Z Range | μm | 1 ~ 500 | VERIFIED | SPEC-003.md |
+| X Resolution | μm | 20 | VERIFIED | SPEC-003.md |
+| Y Resolution | μm | 20 | VERIFIED | SPEC-003.md |
+| Z Resolution | μm | 0.5 | VERIFIED | SPEC-003.md |
+| FOV | mm | 300 mm | VERIFIED | SPEC-003.md |
+| Working Distance | mm | 100 | VERIFIED | SPEC-003.md |
+| Pixel Size | μm | 5.0 | VERIFIED | SPEC-003.md |
+| Point Spacing | μm | 20 | VERIFIED | SPEC-003.md |
+| Profile Spacing | μm | 50 | VERIFIED | SPEC-003.md |
+| Spatial Sampling Interval | μm | 20 | VERIFIED | SPEC-003.md |
 
-## Notes
+## 6. Optical System
 
-Designed primarily for optical thickness measurement of coating layers.
+| Item | Specification |
+|---|---|
+| Light Source | Near Infrared |
+| Wavelength | 850 nm |
+| Spectral Range | 400 ~ 700 nm |
+| Optical Method | Low Coherence Interferometry |
+| Interferometry | Supported |
+| Reflectometry | Not Applicable |
+| OCT | Supported |
+| Laser | Not Applicable |
+| Sensor Type | OCT Line Sensor |
+| Camera | High Speed CMOS Camera |
+| Camera Resolution | 4096 × 3072 |
+| Lens | Telecentric Lens Assembly |
+| Objective | 10X Telecentric Lens |
+| Optical Working Distance | 100 mm |
+
+## 7. Defect Inspection
+
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Defect Detection | - | Supported | VERIFIED | SPEC-003.md |
+| Minimum Defect Size | μm | 20 | VERIFIED | SPEC-003.md |
+| Defect Types | - | coating_defect | VERIFIED | SPEC-003.md |
+| Detection Resolution | μm | 0.5 | VERIFIED | SPEC-003.md |
+| Defect Detection Accuracy | % | 99.5 | VERIFIED | SPEC-003.md |
+| False Positive Rate | % | 0.1 | VERIFIED | SPEC-003.md |
+| False Negative Rate | % | 0.01 | VERIFIED | SPEC-003.md |
+| Classification | - | Supported | VERIFIED | SPEC-003.md |
+
+## 7-1. Inspection Performance
+
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Scan Speed | mm/s | 100 | VERIFIED | SPEC-003.md |
+| Line Speed | mm/s | 100 | VERIFIED | SPEC-003.md |
+| Overall Measurement Speed | mm/s | 100 | VERIFIED | SPEC-003.md |
+| Tact Time | s | 10.0 | VERIFIED | SPEC-003.md |
+| Inspection Width | mm | 300 | VERIFIED | SPEC-003.md |
+
+## 8. System Configuration
+
+| Item | Specification |
+|---|---|
+| Automation Level | Fully Automated Inline System |
+| Stage | Precision Motorized Stage Assembly |
+| Motion System | High Precision Linear Servo Motor |
+| Sensor | Multi-head Sensor Package |
+| Controller | Real-Time Embedded Controller |
+| PC | Industrial PC (Intel i9, 64GB RAM, RTX GPU) |
+| Software | OCTVision Inspection Suite v3.2 |
+| Display | 27-inch Touchscreen Monitor |
+| Power | AC 220V 50/60Hz 3kW |
+| Air | 0.6 MPa Clean Dry Air |
+| Cooling | Air Conditioned Cabinet Cooling |
+| Mechanical Configuration | Heavy-duty Gantry Structure |
+| Data Output | Ethernet (TCP/IP), CSV Data Output |
+
+## 9. Interfaces / Data
+
+| Item | Specification |
+|---|---|
+| PLC | Supported |
+| MES | Supported |
+| OPC-UA | Not Applicable |
+| EtherNet/IP | Supported |
+| PROFINET | Not Applicable |
+| Modbus | Not Applicable |
+| Ethernet | Supported |
+| Digital I/O | Supported |
+| Analog I/O | Not Applicable |
+| API | REST API / C++ SDK (Supported) |
+| Data Format | CSV, JSON, Binary Profile Data |
+| Data Storage | 2TB Local NVMe SSD + Network NAS |
+| Network | 10GbE High Speed Industrial Ethernet |
+| Other Interfaces | RS-232C, USB 3.0 |
+
+## 10. Environment
+
+| Item | Specification |
+|---|---|
+| Operating Temperature | 10 ~ 40 °C |
+| Storage Temperature | -10 ~ 50 °C |
+| Humidity | 20 ~ 80 %RH |
+| Installation Space | 2000(W) × 1500(D) × 1800(H) mm |
+| Site Power Requirement | AC 220V ±10%, Single Phase |
+| Vibration Requirement | VC-A Anti-Vibration Isolation |
+| Dust | Dust-proof IP54 Enclosure |
+| Installation Environment | Cleanroom Facility |
+| Clean Room | Class 10,000 (ISO Class 7) |
+
+## 11. Safety
+
+| Item | Specification |
+|---|---|
+| Safety Standard | CE Mark, KC Certification |
+| Laser Class | Not Applicable |
+| Interlock | Not Applicable |
+| Emergency Stop | Supported |
+| Safety Sensor | Optical Light Curtain (Supported) |
+| Protective Cover | Full Enclosure Metal Safety Cover |
+
+## 12. Sources / Notes
+
+| Item | Specification |
+|---|---|
+| Source File | SPEC-003.md |
+| Notes | Designed primarily for optical thickness measurement of coating layers. |

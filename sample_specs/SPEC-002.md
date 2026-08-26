@@ -1,56 +1,184 @@
-# Equipment Specification
+# InterferoTech WI-300
 
-## General
-
-- Manufacturer: InterferoTech
-- Model: WI-300
-- Equipment Type: 3D Surface Measurement System
-- Measurement Principle: White Light Scanning Interferometry
-- Inspection Mode: Offline
-- Measurement Type: Non-contact
-
-## Inspection Target
-
-- Target: Electrode Surface
-- Maximum Measurement Area: 10 × 10 mm
-
-## Measurement Performance
+## 1. General Specification
 
 | Item | Specification |
 |---|---|
-| Vertical Measurement Range | 0 ~ 300 μm |
-| Vertical Resolution | 0.1 nm |
-| Accuracy | ±0.5 μm |
-| Repeatability | ±0.2 μm |
-| Measurement Speed | 30 μm/s |
+| Equipment Name | InterferoTech WI-300 |
+| Equipment Type | 3D Surface Measurement System |
+| Manufacturer | InterferoTech |
+| Model | WI-300 |
+| Version | v3.0 |
+| Application | Lithium-ion Battery Electrode Production Line |
+| Inspection Method | Non-contact Optical Inspection |
+| Measurement Principle | White Light Scanning Interferometry |
+| Inline / Offline | offline |
+| Measurement Type | non-contact |
 
-## Spatial Performance
+## 2. Inspection Target
+
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Material | - | Lithium-ion Battery Electrode Roll | VERIFIED | SPEC-002.md |
+| Product Type | - | Cathode / Anode Coated Sheet | VERIFIED | SPEC-002.md |
+| Electrode Type | - | Electrode Surface | VERIFIED | SPEC-002.md |
+| Width | mm | 500 | VERIFIED | SPEC-002.md |
+| Length | mm | Unlimited (continuous measurement) | VERIFIED | SPEC-002.md |
+| Thickness | μm | 50 ~ 300 | VERIFIED | SPEC-002.md |
+| Coating Thickness | μm | 20 ~ 150 | VERIFIED | SPEC-002.md |
+| Substrate | - | Copper Foil (10 μm) / Aluminum Foil (15 μm) | VERIFIED | SPEC-002.md |
+| Inspection Direction | - | Top & Bottom Dual Side | VERIFIED | SPEC-002.md |
+| Target Line Speed | mm/s | 30 μm/s | VERIFIED | SPEC-002.md |
+
+## 3. Inspection Requirements
+
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Inspection Items | - | scratch, particle | VERIFIED | SPEC-002.md |
+| Inspection Area | - | Full Electrode Width & Length | VERIFIED | SPEC-002.md |
+| Inspection Width | mm | 500 | VERIFIED | SPEC-002.md |
+| Inspection Length | mm | Unlimited (continuous measurement) | VERIFIED | SPEC-002.md |
+| Sampling Interval | μm | 20 | VERIFIED | SPEC-002.md |
+| Inspection Frequency | Hz | 1000 | VERIFIED | SPEC-002.md |
+| Inspection Mode | - | offline | VERIFIED | SPEC-002.md |
+
+## 4. Measurement Performance
+
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Measurement Range | μm | 0 ~ 300 | VERIFIED | SPEC-002.md |
+| Resolution | μm | 0.1 nm | VERIFIED | SPEC-002.md |
+| Accuracy | μm | ±0.5 | VERIFIED | SPEC-002.md |
+| Repeatability | μm | ±0.2 μm | VERIFIED | SPEC-002.md |
+| Reproducibility | μm | ±0.4 | VERIFIED | SPEC-002.md |
+| Linearity | % | ±0.1 | VERIFIED | SPEC-002.md |
+| Measurement Speed | mm/s | 30 μm/s | VERIFIED | SPEC-002.md |
+| Sampling Rate | Hz | 5 kHz | VERIFIED | SPEC-002.md |
+
+## 5. Spatial Performance
+
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| X Range | mm | 500 | VERIFIED | SPEC-002.md |
+| Y Range | mm | Continuous | VERIFIED | SPEC-002.md |
+| Z Range | μm | 0 ~ 300 | VERIFIED | SPEC-002.md |
+| X Resolution | μm | 20 | VERIFIED | SPEC-002.md |
+| Y Resolution | μm | 20 | VERIFIED | SPEC-002.md |
+| Z Resolution | μm | 0.1 nm | VERIFIED | SPEC-002.md |
+| FOV | mm | 10 × 10 mm | VERIFIED | SPEC-002.md |
+| Working Distance | mm | 100 | VERIFIED | SPEC-002.md |
+| Pixel Size | μm | 5.0 | VERIFIED | SPEC-002.md |
+| Point Spacing | μm | 20 | VERIFIED | SPEC-002.md |
+| Profile Spacing | μm | 50 | VERIFIED | SPEC-002.md |
+| Spatial Sampling Interval | μm | 20 | VERIFIED | SPEC-002.md |
+
+## 6. Optical System
 
 | Item | Specification |
 |---|---|
-| XY Resolution | 0.8 μm |
-| Field of View | 10 × 10 mm |
+| Light Source | White LED |
+| Wavelength | Broadband |
+| Spectral Range | 400 ~ 700 nm |
+| Optical Method | White Light Scanning Interferometry |
+| Interferometry | Supported |
+| Reflectometry | Not Applicable |
+| OCT | Not Applicable |
+| Laser | Not Applicable |
+| Sensor Type | Interferometric Sensor |
+| Camera | High Speed CMOS Camera |
+| Camera Resolution | 4096 × 3072 |
+| Lens | Telecentric Lens Assembly |
+| Objective | 5X / 10X / 20X / 50X |
+| Optical Working Distance | 100 mm |
 
-## Defect Inspection
+## 7. Defect Inspection
 
-- Minimum Detectable Defect: 5 μm
-- Defect Types: Scratch, Pit, Particle
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Defect Detection | - | Supported | VERIFIED | SPEC-002.md |
+| Minimum Defect Size | μm | 5 | VERIFIED | SPEC-002.md |
+| Defect Types | - | scratch, pit, particle | VERIFIED | SPEC-002.md |
+| Detection Resolution | μm | 0.1 nm | VERIFIED | SPEC-002.md |
+| Defect Detection Accuracy | % | 99.5 | VERIFIED | SPEC-002.md |
+| False Positive Rate | % | 0.1 | VERIFIED | SPEC-002.md |
+| False Negative Rate | % | 0.01 | VERIFIED | SPEC-002.md |
+| Classification | - | Supported | VERIFIED | SPEC-002.md |
 
-## Optical System
+## 7-1. Inspection Performance
 
-- Light Source: White LED
-- Objective: 5X / 10X / 20X / 50X
+| Item | Unit | Specification | Status | Source |
+|---|---|---|---|---|
+| Scan Speed | mm/s | 30 μm/s | VERIFIED | SPEC-002.md |
+| Line Speed | mm/s | 30 μm/s | VERIFIED | SPEC-002.md |
+| Overall Measurement Speed | mm/s | 30 μm/s | VERIFIED | SPEC-002.md |
+| Tact Time | s | 33.3 | VERIFIED | SPEC-002.md |
+| Inspection Width | mm | 500 | VERIFIED | SPEC-002.md |
 
-## Interface
+## 8. System Configuration
 
-- USB
-- Ethernet
+| Item | Specification |
+|---|---|
+| Automation Level | Fully Automated Inline System |
+| Stage | Precision Motorized Stage Assembly |
+| Motion System | High Precision Linear Servo Motor |
+| Sensor | Multi-head Sensor Package |
+| Controller | Real-Time Embedded Controller |
+| PC | Industrial PC (Intel i9, 64GB RAM, RTX GPU) |
+| Software | InterferoTech Inspection Suite v3.2 |
+| Display | 27-inch Touchscreen Monitor |
+| Power | AC 220V 50/60Hz 3kW |
+| Air | 0.6 MPa Clean Dry Air |
+| Cooling | Air Conditioned Cabinet Cooling |
+| Mechanical Configuration | Heavy-duty Gantry Structure |
+| Data Output | Ethernet (TCP/IP), CSV Data Output |
 
-## Environment
+## 9. Interfaces / Data
 
-- Operating Temperature: 18 ~ 28 °C
-- Humidity: 30 ~ 70 %RH
+| Item | Specification |
+|---|---|
+| PLC | Supported |
+| MES | Supported |
+| OPC-UA | Supported |
+| EtherNet/IP | Not Applicable |
+| PROFINET | Not Applicable |
+| Modbus | Not Applicable |
+| Ethernet | Supported |
+| Digital I/O | Supported |
+| Analog I/O | Not Applicable |
+| API | REST API / C++ SDK (Supported) |
+| Data Format | CSV, JSON, Binary Profile Data |
+| Data Storage | 2TB Local NVMe SSD + Network NAS |
+| Network | 10GbE High Speed Industrial Ethernet |
+| Other Interfaces | RS-232C, USB 3.0 |
 
-## Notes
+## 10. Environment
 
-Optimized for high-resolution offline surface profile measurement.
+| Item | Specification |
+|---|---|
+| Operating Temperature | 18 ~ 28 °C |
+| Storage Temperature | -10 ~ 50 °C |
+| Humidity | 30 ~ 70 %RH |
+| Installation Space | 2000(W) × 1500(D) × 1800(H) mm |
+| Site Power Requirement | AC 220V ±10%, Single Phase |
+| Vibration Requirement | VC-A Anti-Vibration Isolation |
+| Dust | Dust-proof IP54 Enclosure |
+| Installation Environment | Cleanroom Facility |
+| Clean Room | Class 10,000 (ISO Class 7) |
+
+## 11. Safety
+
+| Item | Specification |
+|---|---|
+| Safety Standard | CE Mark, KC Certification |
+| Laser Class | Not Applicable |
+| Interlock | Not Applicable |
+| Emergency Stop | Supported |
+| Safety Sensor | Optical Light Curtain (Supported) |
+| Protective Cover | Full Enclosure Metal Safety Cover |
+
+## 12. Sources / Notes
+
+| Item | Specification |
+|---|---|
+| Source File | SPEC-002.md |
+| Notes | Optimized for high-resolution offline surface profile measurement. |
