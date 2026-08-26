@@ -914,6 +914,16 @@ async def agent_page():
                     UNKNOWN: '<span class="badge badge-unknown">UNKNOWN</span>',
                 };
 
+                // Backend(agent.spec_validator/agent.candidate_matcher)가 만드는 reason
+                // 문구는 "... → PASS"처럼 결과를 문장 끝에 텍스트로도 붙여준다(사람이 읽는
+                // 근거 설명 자체에 필요) — 그런데 이 카드는 바로 옆에 같은 결과를 badge로도
+                // 보여주므로 그대로 두면 "PASS ... PASS"처럼 중복돼 보인다. 여기서는 화면
+                // 표시용으로만 그 꼬리를 잘라내고, reason 문자열 자체(다른 곳에서 재사용될
+                // 수 있는 원본 데이터)는 건드리지 않는다.
+                function stripTrailingResultArrow(reason) {
+                    return (reason || '').replace(/\s*(→|->)\s*(PASS|FAIL|UNKNOWN)\s*$/i, '');
+                }
+
                 function renderComparisonCard(content) {
                     const records = content.hardRequirementReport || [];
                     if (records.length === 0) {
@@ -927,7 +937,8 @@ async def agent_page():
                     const itemsHtml = records.map(r => {
                         const badge = RESULT_BADGE[r.result] || RESULT_BADGE.UNKNOWN;
                         const src = (r.result !== 'UNKNOWN' && r.source && r.source.document) ? sourceDetailHtml(r.source) : '';
-                        return `<li><span class="item-name">${escapeHtml(r.item)}</span><span class="reason">${escapeHtml(r.reason || '')} ${badge}${src}</span></li>`;
+                        const reasonText = escapeHtml(stripTrailingResultArrow(r.reason));
+                        return `<li><span class="item-name">${escapeHtml(r.item)}</span><span class="reason">${reasonText} ${badge}${src}</span></li>`;
                     }).join('');
                     return `
                         <div class="card">
