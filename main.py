@@ -52,44 +52,137 @@ if not check_ollama_available(OLLAMA_HOST):
 PAGE_STYLE = """
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
     body {
         font-family: -apple-system, "Segoe UI", "맑은 고딕", sans-serif;
-        background: #eef1f5;
+        background: #ffffff;
         color: #1a2530;
     }
 
-    /* ===== App shell ===== */
-    .app {
+    /* ===== 3단 레이아웃: 아이콘 사이드바 + 대화 관리 사이드바 + 메인 대화 영역 ===== */
+    .shell { display: flex; height: 100vh; width: 100%; }
+
+    .icon-sidebar {
+        width: 56px;
+        flex-shrink: 0;
+        background: #f7f8fa;
+        border-right: 1px solid #e2e8f0;
         display: flex;
         flex-direction: column;
-        height: 100vh;
-        max-width: 920px;
-        margin: 0 auto;
-        background: #ffffff;
-        box-shadow: 0 0 0 1px #e2e8f0;
+        align-items: center;
+        padding: 14px 0;
+        gap: 16px;
     }
-    .app-header {
+    .icon-btn {
+        width: 36px;
+        height: 36px;
+        border: none;
+        background: transparent;
+        border-radius: 8px;
+        font-size: 17px;
+        cursor: pointer;
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 14px 20px;
-        border-bottom: 1px solid #e2e8f0;
+        justify-content: center;
+        color: #4a5568;
+    }
+    .icon-btn:hover:not(:disabled) { background: #e2e8f0; }
+    .icon-btn.icon-btn-active { background: #2b6cb0; color: #ffffff; }
+    .icon-btn.icon-btn-active:hover { background: #2c5282; }
+    .icon-btn.icon-btn-ghost { color: #cbd5e0; cursor: default; }
+    .icon-sidebar-spacer { flex: 1; }
+
+    .conv-sidebar {
+        width: 280px;
+        flex-shrink: 0;
+        background: #f7f8fa;
+        border-right: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: width .15s ease, opacity .15s ease;
+    }
+    .shell.sidebar-collapsed .conv-sidebar { width: 0; opacity: 0; border-right: none; }
+
+    .conv-sidebar-header { padding: 18px 18px 12px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+    .conv-sidebar-header h1 { font-size: 15px; margin: 0; color: #1a2530; font-weight: 700; }
+    .conv-sidebar-header p { font-size: 12px; margin: 4px 0 0; color: #718096; }
+
+    .conv-action-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        border: none;
+        background: transparent;
+        text-align: left;
+        padding: 11px 18px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #2d3748;
+        cursor: pointer;
         flex-shrink: 0;
     }
-    .app-header .icon { font-size: 26px; line-height: 1; }
-    .app-header h1 { font-size: 16px; margin: 0; color: #1a2530; font-weight: 700; }
-    .app-header p { font-size: 12px; margin: 2px 0 0; color: #718096; }
+    .conv-action-row:hover { background: #edf1f5; }
+    .conv-action-icon { font-size: 14px; width: 16px; text-align: center; flex-shrink: 0; }
+
+    .conv-search-box { padding: 0 18px 10px; flex-shrink: 0; }
+    .conv-search-box input {
+        width: 100%;
+        border: 1px solid #cbd5e0;
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 13px;
+        font-family: inherit;
+    }
+    .conv-search-box input:focus { outline: none; border-color: #2b6cb0; }
+
+    .conv-list-label { padding: 10px 18px 4px; font-size: 11px; font-weight: 700; color: #a0aec0; letter-spacing: .03em; flex-shrink: 0; }
+    .conv-list { flex: 1; overflow-y: auto; padding-bottom: 10px; }
+    .conv-group-label { padding: 10px 18px 4px; font-size: 11px; font-weight: 700; color: #a0aec0; }
+    .conv-item {
+        display: block;
+        width: 100%;
+        border: none;
+        background: transparent;
+        text-align: left;
+        padding: 8px 18px;
+        font-size: 13px;
+        color: #2d3748;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .conv-item:hover { background: #edf1f5; }
+    .conv-item.active { background: #e2e8f0; font-weight: 700; color: #1a2530; }
+    .conv-empty { padding: 10px 18px; font-size: 12px; color: #a0aec0; }
+
+    .main-chat {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background: #ffffff;
+    }
 
     /* ===== Messages ===== */
     .messages {
         flex: 1;
         overflow-y: auto;
-        padding: 20px;
+        padding: 24px max(24px, calc(50% - 460px));
         display: flex;
         flex-direction: column;
         gap: 14px;
     }
+    .messages.is-empty { align-items: center; justify-content: center; }
+
+    .welcome-block { text-align: center; max-width: 520px; margin: 0 auto; transform: translateY(-8%); }
+    .welcome-icon { font-size: 30px; margin-bottom: 10px; }
+    .welcome-block h2 { font-size: 19px; margin: 0 0 8px; color: #1a2530; font-weight: 700; }
+    .welcome-block p { font-size: 14px; margin: 0; color: #4a5568; }
+    .welcome-block .chip-row { justify-content: center; margin-top: 18px; }
+
     .msg-row { display: flex; }
     .msg-row.user { justify-content: flex-end; }
     .msg-row.ai { justify-content: flex-start; }
@@ -101,14 +194,38 @@ PAGE_STYLE = """
         line-height: 1.65;
         word-break: break-word;
     }
-    /* white-space:pre-wrap은 .bubble 전체가 아니라 일반 텍스트 메시지에만 적용한다 —
-       .bubble에 두면 카드 컴포넌트(.card 등)의 들여쓰기된 템플릿 리터럴 안 개행/공백까지
-       상속되어(white-space는 상속 속성) 카드 사이에 의도치 않은 빈 공백이 렌더링된다. */
-    .msg-text { white-space: pre-wrap; }
     .card, .card * { white-space: normal; }
     .bubble.user { background: #2b6cb0; color: #ffffff; border-bottom-right-radius: 3px; }
     .bubble.ai { background: #f7f8fa; color: #1a2530; border: 1px solid #e2e8f0; border-bottom-left-radius: 3px; }
     .bubble.error { background: #fff5f5; border: 1px solid #feb2b2; color: #822727; }
+
+    /* ===== 경량 Markdown 렌더링(요청서 8절) — renderTextMessage/renderMarkdownLite ===== */
+    .md-body .md-p { margin: 0 0 8px; white-space: pre-wrap; }
+    .md-body .md-p:last-child { margin-bottom: 0; }
+    .md-body .md-heading { margin: 10px 0 6px; font-weight: 700; color: #1a2530; }
+    .md-body h3.md-heading { font-size: 15px; }
+    .md-body h4.md-heading { font-size: 14px; }
+    .md-body h5.md-heading { font-size: 13px; }
+    .md-body ul.md-list, .md-body ol.md-list { margin: 4px 0 10px; padding-left: 20px; }
+    .md-body li { margin: 2px 0; }
+    .md-body code { background: #edf2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; font-family: ui-monospace, monospace; }
+    .md-body pre.md-code { background: #1a2530; color: #e2e8f0; padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-size: 12.5px; margin: 6px 0; }
+    .md-body pre.md-code code { background: transparent; padding: 0; color: inherit; }
+    .md-body table.md-table { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; width: 100%; }
+    .md-body table.md-table th, .md-body table.md-table td { border: 1px solid #e2e8f0; padding: 5px 9px; text-align: left; }
+    .md-body table.md-table th { background: #f7f8fa; font-weight: 700; }
+
+    /* ===== typing indicator(요청서 11절) ===== */
+    .typing-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+    .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: #a0aec0; animation: typing-blink 1.2s infinite ease-in-out; }
+    .typing-dots span:nth-child(2) { animation-delay: .2s; }
+    .typing-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes typing-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+    /* ===== 참고 문서(요청서 10절) ===== */
+    .sources-block { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; }
+    .sources-title { font-size: 11px; font-weight: 700; color: #a0aec0; margin-bottom: 4px; letter-spacing: .03em; }
+    .sources-list { font-size: 12.5px; color: #4a5568; line-height: 1.8; }
 
     /* ===== Cards (used inside AI bubbles) ===== */
     .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
@@ -221,7 +338,7 @@ PAGE_STYLE = """
     .input-bar {
         display: flex;
         gap: 10px;
-        padding: 14px 20px;
+        padding: 16px max(24px, calc(50% - 460px));
         border-top: 1px solid #e2e8f0;
         background: #ffffff;
         flex-shrink: 0;
@@ -307,52 +424,129 @@ async def agent_page():
     """
     전극 검사기 사양서 자동 생성 AI — 대화형(챗봇) 인터페이스.
 
-    기존 "입력 -> 분석 버튼 -> 요구사항 확인 -> 사양서 생성" 단계형 위저드를,
-    하나의 대화 흐름 안에서 조건을 계속 추가/수정하며 재검색할 수 있는 채팅
-    인터페이스로 개편했다. Backend 파이프라인(RequirementParser/RequirementSchema/
+    아이콘 사이드바 + 대화 관리 사이드바(새 대화/검색/날짜별 이력) + 메인 대화
+    영역의 3단 레이아웃. Backend 파이프라인(RequirementParser/RequirementSchema/
     RAG 검색/CandidateMatcher/Hard Requirement 판정)은 전혀 바꾸지 않았다 —
     /api/agent/analyze-requirement · /api/agent/generate-spec · /api/agent/
-    build-markdown을 기존과 동일하게 그대로 호출하고, 새로 추가된 것은 후속
-    메시지를 대화 상태(state.currentRequirement)에 결정론적으로 "패치"하는
-    /api/agent/update-requirement 하나뿐이다(agent/requirement_parser.py의
-    apply_conversational_patch — LLM을 호출하지 않는다).
+    update-requirement · /api/agent/build-markdown을 기존과 동일하게 그대로
+    호출한다. 이번 UI 개편에서 Backend에는 단 한 줄도 손대지 않았다.
 
-    Conversation State(요청서 7절)는 서버에 별도로 저장하지 않고 이 페이지의
-    JS 전역 `state` 객체가 그대로 들고 있다 — 매 API 호출마다 현재 요구사항
-    전체를 함께 보내는 기존 방식(예전 UI의 `existing_requirement`)을 그대로
-    확장한 것이라, 서버 쪽에 세션/DB 같은 새 인프라를 추가하지 않는다.
+    Conversation은 서버에 저장하지 않고 브라우저에만 둔다 — 여러 개의 대화를
+    배열(state.conversations)로 관리하고 localStorage에 영속화한다(키:
+    electrode_ai_conversations_v1). Agent의 RAG/ChromaDB와는 완전히 분리된
+    Frontend 전용 상태이며, 매 API 호출은 활성 대화가 들고 있는 조각(current_
+    requirement 등)을 그대로 요청 본문에 실어 보낸다 — 서버는 여전히 요청 단위로
+    무상태다.
     """
     body_html = """
-            <div class="app">
-                <div class="app-header">
-                    <div class="icon">🔋</div>
-                    <div>
-                        <h1>전극 검사기 AI</h1>
-                        <p>전극 검사 설비 요구사항 분석 및 추천</p>
-                    </div>
+            <div class="shell" id="appShell">
+                <div class="icon-sidebar">
+                    <button type="button" id="hamburgerBtn" class="icon-btn" title="사이드바 접기/펼치기">☰</button>
+                    <button type="button" class="icon-btn icon-btn-active" title="전극 검사기 AI">🔋</button>
+                    <div class="icon-sidebar-spacer"></div>
+                    <button type="button" class="icon-btn icon-btn-ghost" title="추가 AI 서비스(예정)" disabled>⚙</button>
                 </div>
 
-                <div id="messages" class="messages"></div>
+                <div class="conv-sidebar" id="convSidebar">
+                    <div class="conv-sidebar-header">
+                        <h1>전극 검사기 AI</h1>
+                        <p>전극 검사 장비 검색 및 사양 분석</p>
+                    </div>
 
-                <form id="chatForm" class="input-bar">
-                    <textarea id="chatInput" rows="1" placeholder="메시지를 입력하세요..."></textarea>
-                    <button type="submit" id="sendBtn">전송</button>
-                </form>
+                    <button type="button" class="conv-action-row" id="newChatBtn">
+                        <span class="conv-action-icon">✏</span> 새로운 대화 시작
+                    </button>
+
+                    <button type="button" class="conv-action-row" id="searchToggleBtn">
+                        <span class="conv-action-icon">🔍</span> 지난 대화 검색
+                    </button>
+                    <div class="conv-search-box" id="convSearchBox" style="display:none;">
+                        <input type="text" id="convSearchInput" placeholder="대화 제목 검색...">
+                    </div>
+
+                    <div class="conv-list-label">최근 대화 목록</div>
+                    <div class="conv-list" id="convList"></div>
+                </div>
+
+                <div class="main-chat">
+                    <div id="messages" class="messages"></div>
+
+                    <form id="chatForm" class="input-bar">
+                        <textarea id="chatInput" rows="1" placeholder="필요한 전극 검사 조건이나 궁금한 내용을 입력하세요."></textarea>
+                        <button type="submit" id="sendBtn">전송</button>
+                    </form>
+                </div>
             </div>
 
             <script>
                 // ================================================================
-                // Conversation State — 요청서 7절. 서버 세션 없이 브라우저 메모리에만
-                // 둔다. 매 API 호출은 이 상태 중 필요한 조각(current_requirement 등)을
-                // 그대로 요청 본문에 실어 보낸다 — 서버는 여전히 요청 단위로 무상태다.
+                // Conversation State — 서버 세션/DB 없이 브라우저에만 둔다(요청서 12절).
+                // 대화 여러 개를 배열로 관리하고 localStorage에 영속화한다. 매 API
+                // 호출은 활성 대화(active conversation)가 들고 있는 조각(current_
+                // requirement 등)을 그대로 요청 본문에 실어 보낸다 — 서버는 여전히
+                // 요청 단위로 무상태이며, Agent의 RAG/ChromaDB와는 완전히 분리된
+                // Frontend 전용 상태다.
                 // ================================================================
+                const STORAGE_KEY = 'electrode_ai_conversations_v1';
+
                 const state = {
-                    conversationId: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
-                    messages: [],            // {id, role, type, content, timestamp}
-                    currentRequirement: null,
-                    currentCandidates: null, // 마지막 generate-spec의 hard_requirement_report
-                    lastSearchResult: null,  // {specification, validation, hardRequirementReport, retrievedSourcesCount}
+                    conversations: [],        // Conversation[] — 아래 getOrCreateActiveConversation() 참고
+                    activeConversationId: null,
+                    searchQuery: '',
                 };
+
+                function loadConversations() {
+                    try {
+                        const raw = localStorage.getItem(STORAGE_KEY);
+                        if (!raw) return [];
+                        const parsed = JSON.parse(raw);
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                        return [];
+                    }
+                }
+
+                function saveConversations() {
+                    try {
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations));
+                    } catch (e) {
+                        // localStorage 사용 불가(프라이빗 모드, 용량 초과 등) — 조용히 무시한다.
+                        // 세션 내 메모리(state.conversations)는 계속 정상 동작하므로 새로고침
+                        // 전까지는 대화가 유지된다(요청서 12절 1단계 수준으로 자연스럽게 저하).
+                    }
+                }
+
+                function getActiveConversation() {
+                    return state.conversations.find(c => c.id === state.activeConversationId) || null;
+                }
+
+                // 활성 대화가 없으면(홈 화면 상태) 이 시점에 새 레코드를 만든다 — "새로운
+                // 대화 시작" 버튼을 눌러도 실제로 메시지를 보내기 전까지는 사이드바 목록에
+                // 빈 대화가 쌓이지 않는다.
+                function getOrCreateActiveConversation() {
+                    let conv = getActiveConversation();
+                    if (conv) return conv;
+                    const now = new Date().toISOString();
+                    conv = {
+                        id: (crypto.randomUUID ? crypto.randomUUID() : 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2)),
+                        title: '새로운 대화',
+                        createdAt: now,
+                        updatedAt: now,
+                        messages: [],
+                        currentRequirement: null,
+                        currentCandidates: null,
+                        lastSearchResult: null,
+                    };
+                    state.conversations.push(conv);
+                    state.activeConversationId = conv.id;
+                    return conv;
+                }
+
+                function truncateTitle(text) {
+                    const t = (text || '').trim().replace(/\\s+/g, ' ');
+                    if (!t) return '새로운 대화';
+                    return t.length > 28 ? t.slice(0, 28) + '…' : t;
+                }
 
                 const EXAMPLE_QUESTIONS = [
                     '두께 측정 장비 찾기',
@@ -380,16 +574,15 @@ async def agent_page():
                 }
 
                 function addMessage(msg) {
+                    const conv = getOrCreateActiveConversation();
                     const full = Object.assign({ id: genId(), timestamp: new Date().toISOString() }, msg);
-                    state.messages.push(full);
-                    return full;
-                }
-
-                function lastMessageOfType(type) {
-                    for (let i = state.messages.length - 1; i >= 0; i--) {
-                        if (state.messages[i].type === type) return state.messages[i];
+                    conv.messages.push(full);
+                    conv.updatedAt = full.timestamp;
+                    if (msg.role === 'user' && conv.title === '새로운 대화') {
+                        conv.title = truncateTitle(msg.content && msg.content.text);
                     }
-                    return null;
+                    saveConversations();
+                    return full;
                 }
 
                 // ================================================================
@@ -455,8 +648,94 @@ async def agent_page():
                     return html;
                 }
 
+                // ----- 경량 Markdown 렌더러 (요청서 8절) -----
+                // 제목/소제목/bullet/번호 목록/표/강조/코드블록만 지원하는 최소 구현이다.
+                // escapeHtml()로 먼저 이스케이프한 뒤 그 결과 위에서 안전한 태그만
+                // 치환하므로(원본 <, >, &, ", ' 는 이미 엔티티로 바뀐 상태), 사용자/AI
+                // 텍스트에 실제 HTML 태그가 섞여 있어도 그대로 렌더링되지 않는다.
+                function renderMarkdownLite(rawText) {
+                    const escaped = escapeHtml(rawText);
+                    const lines = escaped.split('\\n');
+                    const htmlParts = [];
+                    let listBuffer = null;
+                    let tableBuffer = null;
+                    let codeBuffer = null;
+
+                    function flushList() {
+                        if (!listBuffer) return;
+                        const tag = listBuffer.type;
+                        htmlParts.push(`<${tag} class="md-list">` + listBuffer.items.map(i => `<li>${i}</li>`).join('') + `</${tag}>`);
+                        listBuffer = null;
+                    }
+                    function flushTable() {
+                        if (!tableBuffer) return;
+                        const headHtml = '<tr>' + tableBuffer.header.map(h => `<th>${h}</th>`).join('') + '</tr>';
+                        const bodyHtml = tableBuffer.rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('');
+                        htmlParts.push(`<table class="md-table"><thead>${headHtml}</thead><tbody>${bodyHtml}</tbody></table>`);
+                        tableBuffer = null;
+                    }
+                    function inline(s) {
+                        return s
+                            .replace(/`([^`]+)`/g, '<code>$1</code>')
+                            .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+                    }
+
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        if (line.trim().startsWith('```')) {
+                            if (codeBuffer === null) { flushList(); flushTable(); codeBuffer = []; }
+                            else { htmlParts.push(`<pre class="md-code"><code>${codeBuffer.join('\\n')}</code></pre>`); codeBuffer = null; }
+                            continue;
+                        }
+                        if (codeBuffer !== null) { codeBuffer.push(line); continue; }
+
+                        const headerMatch = line.match(/^(#{1,3})\\s+(.*)$/);
+                        if (headerMatch) {
+                            flushList(); flushTable();
+                            const level = headerMatch[1].length + 2;
+                            htmlParts.push(`<h${level} class="md-heading">${inline(headerMatch[2])}</h${level}>`);
+                            continue;
+                        }
+
+                        const tableRowMatch = line.match(/^\\|(.+)\\|\\s*$/);
+                        if (tableRowMatch) {
+                            const cells = tableRowMatch[1].split('|').map(c => c.trim());
+                            if (cells.every(c => /^:?-{2,}:?$/.test(c))) {
+                                continue; // 구분행(|---|---|)은 헤더 확정 후 건너뛴다.
+                            }
+                            if (!tableBuffer) { tableBuffer = { header: cells, rows: [] }; }
+                            else { tableBuffer.rows.push(cells); }
+                            continue;
+                        }
+                        if (tableBuffer) { flushTable(); }
+
+                        const bulletMatch = line.match(/^[-*]\\s+(.*)$/);
+                        if (bulletMatch) {
+                            if (!listBuffer || listBuffer.type !== 'ul') { flushList(); listBuffer = { type: 'ul', items: [] }; }
+                            listBuffer.items.push(inline(bulletMatch[1]));
+                            continue;
+                        }
+                        const numberedMatch = line.match(/^\\d+\\.\\s+(.*)$/);
+                        if (numberedMatch) {
+                            if (!listBuffer || listBuffer.type !== 'ol') { flushList(); listBuffer = { type: 'ol', items: [] }; }
+                            listBuffer.items.push(inline(numberedMatch[1]));
+                            continue;
+                        }
+                        flushList();
+
+                        if (line.trim() === '') { htmlParts.push('<br>'); continue; }
+                        htmlParts.push(`<p class="md-p">${inline(line)}</p>`);
+                    }
+                    flushList();
+                    flushTable();
+                    if (codeBuffer !== null) {
+                        htmlParts.push(`<pre class="md-code"><code>${codeBuffer.join('\\n')}</code></pre>`);
+                    }
+                    return htmlParts.join('');
+                }
+
                 function renderTextMessage(content) {
-                    return `<span class="msg-text">${escapeHtml(content.text)}</span>`;
+                    return `<div class="msg-text md-body">${renderMarkdownLite(content.text)}</div>`;
                 }
 
                 function renderErrorMessage(content) {
@@ -505,9 +784,14 @@ async def agent_page():
                     const steps = ['Requirement Parsing 완료', '관련 사양서 검색', '후보 장비 생성', 'Hard Requirement 검증'];
                     const done = content.status === 'done';
                     const itemsHtml = steps.map(s => `<li class="${done ? 'done' : 'pending'}">${escapeHtml(s)}</li>`).join('');
+                    // 실제 AI와 대화하는 느낌을 주기 위한 typing indicator(요청서 11절) —
+                    // 단순 spinner 대신 애니메이션 점 3개를 붙인다. 그 아래 단계 목록은
+                    // 여전히 실제 API 호출의 in-flight 여부를 정직하게 반영한다(가짜
+                    // 진행률 아님).
+                    const runningDots = done ? '' : '<span class="typing-dots"><span></span><span></span><span></span></span>';
                     return `
                         <div class="card">
-                            <div class="card-header">${done ? '✅ 검색 완료' : '⏳ 요구사항을 분석하고 검색 중입니다...'}</div>
+                            <div class="card-header">${done ? '✅ 검색 완료' : '전극검사기 AI가 장비 정보를 분석하고 있습니다'}${runningDots}</div>
                             <div class="card-body"><ul class="progress-list">${itemsHtml}</ul></div>
                         </div>
                     `;
@@ -554,6 +838,18 @@ async def agent_page():
                     return `<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">📄 마크다운 사양서 생성</button>`;
                 }
 
+                // ----- 참고 문서(요청서 10절) — EquipmentCard 하단에 별도 영역으로 표시 -----
+                function renderSourcesBlock(primarySources, retrievedSourcesCount) {
+                    if (!primarySources || primarySources.length === 0) return '';
+                    const items = primarySources.map(s => '📄 ' + escapeHtml(s)).join('<br>');
+                    return `
+                        <div class="sources-block">
+                            <div class="sources-title">참고 문서 (chunk ${escapeHtml(retrievedSourcesCount)}개)</div>
+                            <div class="sources-list">${items}</div>
+                        </div>
+                    `;
+                }
+
                 function renderEquipmentCard(content, msgId) {
                     const spec = content.specification;
                     const eq = spec.equipment || {};
@@ -578,7 +874,6 @@ async def agent_page():
                     // "미정" 등은 행 자체를 감춘다(Hard Requirement 비교 영역만 예외로
                     // 항상 PASS/FAIL/UNKNOWN을 명시한다).
                     const inspectionItemsText = (spec.inspection_items || []).join(', ');
-                    const sourcesText = primarySources.join(', ');
                     const rows = [
                         ['측정 범위', fmtSourcedRangeCell(mp.measurement_range_full)],
                         ['정확도', fmtSourcedCell(mp.equipment_accuracy_um)],
@@ -588,7 +883,6 @@ async def agent_page():
                         ['검사 속도', fmtSourcedCell(ip.line_speed_mm_s)],
                         ['검사 방식', eq.inline_offline ? `<span class="value">${escapeHtml(eq.inline_offline)}</span>` : null],
                         ['검사 항목', inspectionItemsText ? `<span class="value">${escapeHtml(inspectionItemsText)}</span>` : null],
-                        ['참고 문서', sourcesText ? `<span class="value">${escapeHtml(sourcesText)} (chunk ${escapeHtml(content.retrievedSourcesCount)}개)</span>` : null],
                     ];
                     const rowsHtml = rows
                         .filter(([, valueHtml]) => valueHtml !== null && valueHtml !== undefined)
@@ -603,6 +897,7 @@ async def agent_page():
                                 ${noResults}
                                 ${confirmationSummaryHtml(content.hardRequirementReport)}
                                 ${rowsHtml}
+                                ${renderSourcesBlock(primarySources, content.retrievedSourcesCount)}
                                 ${renderDownloadArea(content, msgId)}
                             </div>
                         </div>
@@ -655,20 +950,35 @@ async def agent_page():
                 }
 
                 function renderExampleChips() {
-                    if (state.messages.length > 0) return '';
                     const chips = EXAMPLE_QUESTIONS.map(q => `<button type="button" class="chip" data-question="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('');
                     return `<div class="chip-row">${chips}</div>`;
                 }
 
+                function makeWelcomeBlock() {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'welcome-block';
+                    wrap.innerHTML = `
+                        <div class="welcome-icon">🔋</div>
+                        <h2>안녕하세요. 전극검사기 AI입니다.</h2>
+                        <p>찾고 있는 전극 검사 장비의 조건이나 궁금한 내용을 입력해주세요.</p>
+                        ${renderExampleChips()}
+                    `;
+                    return wrap;
+                }
+
                 function renderAll() {
                     const container = document.getElementById('messages');
+                    const conv = getActiveConversation();
+                    const messages = conv ? conv.messages : [];
                     const wasAtBottom = (container.scrollTop + container.clientHeight) >= (container.scrollHeight - 40);
 
                     container.innerHTML = '';
-                    if (state.messages.length === 0) {
-                        container.appendChild(makeAiBubble(WELCOME_TEXT, renderExampleChips()));
+                    if (messages.length === 0) {
+                        container.classList.add('is-empty');
+                        container.appendChild(makeWelcomeBlock());
                     } else {
-                        state.messages.forEach(msg => {
+                        container.classList.remove('is-empty');
+                        messages.forEach(msg => {
                             const isUser = msg.role === 'user';
                             const row = document.createElement('div');
                             row.className = 'msg-row ' + (isUser ? 'user' : 'ai');
@@ -683,11 +993,12 @@ async def agent_page():
                             container.appendChild(row);
                         });
                     }
-                    if (wasAtBottom || state.messages.length <= 1) {
+                    if (wasAtBottom || messages.length <= 1) {
                         container.scrollTop = container.scrollHeight;
                     }
                     wireExampleChips();
                     wireCardActions();
+                    renderConvList();
                 }
 
                 function wireCardActions() {
@@ -701,7 +1012,8 @@ async def agent_page():
                 // 함께 보내(각 메시지 content에 스냅샷으로 저장해둠) 기존 build-markdown
                 // API(agent/routes.py, renderers/markdown_renderer.py)를 그대로 재사용한다.
                 async function buildMarkdownForMessage(msgId) {
-                    const msg = state.messages.find(m => m.id === msgId);
+                    const conv = getActiveConversation();
+                    const msg = conv && conv.messages.find(m => m.id === msgId);
                     if (!msg) return;
                     try {
                         const data = await postJSON('/api/agent/build-markdown', {
@@ -710,21 +1022,12 @@ async def agent_page():
                             validation: msg.content.validation,
                         });
                         msg.content.downloadUrl = data.download_url;
+                        saveConversations();
                         renderAll();
                     } catch (err) {
                         addMessage({ role: 'assistant', type: 'error', content: { text: '마크다운 사양서 생성 중 오류: ' + err.message } });
                         renderAll();
                     }
-                }
-
-                function makeAiBubble(text, extraHtml) {
-                    const row = document.createElement('div');
-                    row.className = 'msg-row ai';
-                    const bubble = document.createElement('div');
-                    bubble.className = 'bubble ai';
-                    bubble.innerHTML = `<span class="msg-text">${escapeHtml(text)}</span>` + (extraHtml || '');
-                    row.appendChild(bubble);
-                    return row;
                 }
 
                 function wireExampleChips() {
@@ -736,7 +1039,61 @@ async def agent_page():
                     });
                 }
 
-                const WELCOME_TEXT = '안녕하세요.\\n\\n전극 검사 설비의 요구사항을 알려주시면 사양서를 검색하여 적합한 검사 장비를 찾아드리겠습니다.\\n\\n예를 들어,\\n\\n"폭 800 mm 이상의 전극을 Inline으로 검사하고, 0~500 μm 범위를 측정할 수 있는 장비를 찾아줘."\\n\\n와 같이 입력할 수 있습니다.';
+                // ================================================================
+                // 대화 목록 사이드바 — 검색/날짜별 그룹핑/선택
+                // ================================================================
+                function formatGroupLabel(dateObj) {
+                    const now = new Date();
+                    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    const startOfYesterday = new Date(startOfToday);
+                    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+                    const startOfThat = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+                    if (startOfThat.getTime() === startOfToday.getTime()) return '오늘';
+                    if (startOfThat.getTime() === startOfYesterday.getTime()) return '어제';
+                    const y = dateObj.getFullYear();
+                    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                    const d = String(dateObj.getDate()).padStart(2, '0');
+                    return `${y}/${m}/${d}`;
+                }
+
+                function renderConvList() {
+                    const container = document.getElementById('convList');
+                    const query = (state.searchQuery || '').trim().toLowerCase();
+                    let list = state.conversations.filter(c => c.messages.length > 0);
+                    list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                    if (query) list = list.filter(c => (c.title || '').toLowerCase().includes(query));
+
+                    if (list.length === 0) {
+                        container.innerHTML = `<div class="conv-empty">${query ? '검색 결과가 없습니다.' : '대화 이력이 없습니다.'}</div>`;
+                        return;
+                    }
+
+                    const groups = [];
+                    const groupIndex = {};
+                    list.forEach(c => {
+                        const label = formatGroupLabel(new Date(c.updatedAt || c.createdAt));
+                        if (!(label in groupIndex)) { groupIndex[label] = { label: label, items: [] }; groups.push(groupIndex[label]); }
+                        groupIndex[label].items.push(c);
+                    });
+
+                    container.innerHTML = groups.map(g => `
+                        <div class="conv-group">
+                            <div class="conv-group-label">${escapeHtml(g.label)}</div>
+                            ${g.items.map(c => `
+                                <button type="button" class="conv-item ${c.id === state.activeConversationId ? 'active' : ''}" data-conv-id="${escapeHtml(c.id)}" title="${escapeHtml(c.title || '새로운 대화')}">
+                                    ${escapeHtml(c.title || '새로운 대화')}
+                                </button>
+                            `).join('')}
+                        </div>
+                    `).join('');
+
+                    container.querySelectorAll('.conv-item').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            state.activeConversationId = btn.dataset.convId;
+                            renderAll();
+                        });
+                    });
+                }
 
                 // ================================================================
                 // 메시지 처리 — 요청서 5/7/8/9/14/15절
@@ -753,8 +1110,8 @@ async def agent_page():
                 // 분리한다 — UNKNOWN이 하나라도 있으면 "추천된 이유"(=전부 만족한다는
                 // 인상을 주는 표현) 대신 "확인된 조건을 가장 많이 만족하는 후보"라고만
                 // 말하고, 확인되지 않은 조건과 추가 확인이 필요하다는 점을 명시한다.
-                function buildExplanationMessage() {
-                    const result = state.lastSearchResult;
+                function buildExplanationMessage(conv) {
+                    const result = conv.lastSearchResult;
                     if (!result) return '아직 추천된 장비가 없습니다. 먼저 요구사항을 말씀해 주세요.';
                     const spec = result.specification;
                     const records = result.hardRequirementReport || [];
@@ -822,7 +1179,7 @@ async def agent_page():
                     return data;
                 }
 
-                async function runSearch(requirement) {
+                async function runSearch(conv, requirement) {
                     const progressMsg = addMessage({ role: 'assistant', type: 'search_status', content: { status: 'running' } });
                     renderAll();
 
@@ -835,13 +1192,13 @@ async def agent_page():
                     const hasUnknown = hardRecords.some(r => r.result === 'UNKNOWN');
                     const retrievedSourcesCount = (data.retrieved_sources || []).length;
 
-                    state.lastSearchResult = {
+                    conv.lastSearchResult = {
                         specification: data.specification,
                         validation: data.validation,
                         hardRequirementReport: hardRecords,
                         retrievedSourcesCount: retrievedSourcesCount,
                     };
-                    state.currentCandidates = hardRecords;
+                    conv.currentCandidates = hardRecords;
 
                     addMessage({
                         role: 'assistant', type: 'equipment_result',
@@ -863,31 +1220,33 @@ async def agent_page():
                     addMessage({ role: 'user', type: 'text', content: { text: text } });
                     renderAll();
 
-                    if (isExplanationQuery(text) && state.lastSearchResult) {
-                        addMessage({ role: 'assistant', type: 'text', content: { text: buildExplanationMessage() } });
+                    const conv = getActiveConversation();
+
+                    if (isExplanationQuery(text) && conv.lastSearchResult) {
+                        addMessage({ role: 'assistant', type: 'text', content: { text: buildExplanationMessage(conv) } });
                         renderAll();
                         return;
                     }
 
                     setInputDisabled(true);
                     try {
-                        if (!state.currentRequirement) {
+                        if (!conv.currentRequirement) {
                             // 최초 메시지 — 기존 LLM 기반 전체 파싱(agent.requirement_parser.
                             // parse_requirement_text)을 그대로 재사용한다.
                             const data = await postJSON('/api/agent/analyze-requirement', { user_text: text });
-                            state.currentRequirement = data.requirement;
+                            conv.currentRequirement = data.requirement;
                             addMessage({ role: 'assistant', type: 'requirement_summary', content: { requirement: data.requirement, validation: data.validation } });
                             if (!data.validation.is_valid) {
                                 addMessage({ role: 'assistant', type: 'text', content: { text: buildFollowupQuestionText(data.validation) } });
                             }
                             renderAll();
-                            await runSearch(state.currentRequirement);
+                            await runSearch(conv, conv.currentRequirement);
                         } else {
                             // 후속 메시지 — LLM을 다시 부르지 않고 결정론적 패치만 적용한다
                             // (agent.requirement_parser.apply_conversational_patch, 요청서
                             // 22절 원칙 6).
-                            const data = await postJSON('/api/agent/update-requirement', { current_requirement: state.currentRequirement, message: text });
-                            state.currentRequirement = data.requirement;
+                            const data = await postJSON('/api/agent/update-requirement', { current_requirement: conv.currentRequirement, message: text });
+                            conv.currentRequirement = data.requirement;
                             const changedSummary = data.changed_summary || [];
                             if (changedSummary.length > 0) {
                                 addMessage({ role: 'assistant', type: 'text', content: { text: buildRequirementChangeMessage(changedSummary) } });
@@ -896,7 +1255,7 @@ async def agent_page():
                                 addMessage({ role: 'assistant', type: 'text', content: { text: '이 메시지에서 반영할 새 조건을 찾지 못해 기존 요구사항으로 계속 검색하겠습니다.' } });
                             }
                             renderAll();
-                            await runSearch(state.currentRequirement);
+                            await runSearch(conv, conv.currentRequirement);
                         }
                         renderAll();
                     } catch (err) {
@@ -938,9 +1297,53 @@ async def agent_page():
                     chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + 'px';
                 });
 
-                // 최종 사양서 다운로드(요청서 흐름의 마지막 단계) — EquipmentCard가 아니라
-                // 별도 텍스트 메시지로 안내한다. 검색 결과가 있을 때만 노출한다.
-                renderAll();
+                // ================================================================
+                // 사이드바 wiring — 새 대화 / 검색 / 접기
+                // ================================================================
+                document.getElementById('newChatBtn').addEventListener('click', () => {
+                    // 실제 레코드는 getOrCreateActiveConversation()이 첫 메시지 전송 시점에
+                    // 만든다 — 여기서는 활성 대화만 비워 홈 화면으로 되돌린다(요청서 4절).
+                    state.activeConversationId = null;
+                    renderAll();
+                    chatInput.focus();
+                });
+
+                const searchToggleBtn = document.getElementById('searchToggleBtn');
+                const convSearchBox = document.getElementById('convSearchBox');
+                const convSearchInput = document.getElementById('convSearchInput');
+                searchToggleBtn.addEventListener('click', () => {
+                    const isHidden = convSearchBox.style.display === 'none';
+                    convSearchBox.style.display = isHidden ? 'block' : 'none';
+                    if (isHidden) {
+                        convSearchInput.focus();
+                    } else {
+                        convSearchInput.value = '';
+                        state.searchQuery = '';
+                        renderConvList();
+                    }
+                });
+                convSearchInput.addEventListener('input', () => {
+                    state.searchQuery = convSearchInput.value;
+                    renderConvList();
+                });
+
+                document.getElementById('hamburgerBtn').addEventListener('click', () => {
+                    document.getElementById('appShell').classList.toggle('sidebar-collapsed');
+                });
+
+                // ================================================================
+                // 부팅 — localStorage에서 대화 목록을 복원한다(요청서 12절 2단계).
+                // 가장 최근에 갱신된 대화가 있으면 새로고침 후에도 이어서 보여준다.
+                // ================================================================
+                function boot() {
+                    state.conversations = loadConversations();
+                    if (state.conversations.length > 0) {
+                        const sorted = state.conversations.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                        state.activeConversationId = sorted[0].id;
+                    }
+                    renderAll();
+                }
+                boot();
             </script>
     """
     return HTMLResponse(content=render_page("전극 검사기 사양서 AI", body_html))
