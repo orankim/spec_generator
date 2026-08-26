@@ -24,7 +24,7 @@ PARSE_PROMPT = """당신은 전극 검사기(인라인 계측 설비) 요구사�
   결함 이름(스크래치, 오염/이물, 파티클, 핀홀, 보이드, 코팅 불균일, 엣지 크랙 등)을
   말했다면 상위 개념(surface_defect 등)으로 뭉뚱그리지 말고 그 구체적인 이름을 그대로
   담으세요. 가능한 값: thickness, surface_defect, profile_3d, coating, edge_defect,
-  scratch, contamination, particle, pinhole, void, coating_non_uniformity, edge_crack.
+  scratch, contamination, particle, pinhole, void, coating_non_uniformity, coating_defect, edge_crack.
 - measurement_method는 "비접촉/무접촉"이면 non_contact, "접촉식"이면 contact, 언급이 없으면 null로 두세요.
 - measurement_principle은 레이저/OCT/간섭계/비전 중 사용자가 명시한 것만 채우고, 아니면 null로 두세요.
 - "0~200 μm", "0-200um", "0 to 200 mm" 처럼 측정 범위가 언급되면 measurement_range에
@@ -87,7 +87,13 @@ def parse_requirement_text(
 _INSPECTION_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     # 구체적 결함 이름 없이 포괄적으로만 언급된 경우에 쓰는 상위 카테고리 키워드
     # (구체적 이름은 아래 _FINE_DEFECT_ITEM_KEYWORDS가 별도로 다룬다 — 문제2).
-    "surface_defect": ("표면 결함", "표면결함", "결함", "defect"),
+    # 바레(qualifier 없는) "결함"/"defect"는 넣지 않는다 — 이 corpus의 Defect
+    # Types 표기는 "Edge Defect"/"Coating Defect"처럼 다른 canonical item의
+    # 이름에도 "Defect"가 포함되어 있어, 바레 키워드로는 "Edge Defect와 Edge
+    # Crack을 검출"처럼 edge_defect만 요구한 문장에서도 surface_defect가 잘못
+    # 함께 잡히는 문제가 실제로 발견됐다(T009 회귀 테스트로 확인). "표면"/
+    # "surface" 한정어가 있을 때만 surface_defect로 인정한다.
+    "surface_defect": ("표면 결함", "표면결함", "surface defect", "surface_defect"),
     "profile_3d": ("3d", "프로파일", "profile", "형상", "높이"),
     "coating": ("코팅", "coating", "도포", "loading"),
     "edge_defect": ("엣지", "edge", "가장자리", "버", "burr"),
@@ -107,6 +113,7 @@ _FINE_DEFECT_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
         "코팅 불균일", "코팅불균일", "coating non-uniformity", "coating nonuniformity", "coating non uniformity",
     ),
     "edge_crack": ("엣지 크랙", "엣지크랙", "edge crack"),
+    "coating_defect": ("코팅 결함", "코팅결함", "coating defect"),
 }
 # 세부 항목이 속하는 상위 카테고리 — RequirementSchema.inspection_categories(검색
 # 확장 전용)에만 쓰고, 세부 항목이 이미 있으면 그 상위 카테고리를 inspection_items
@@ -116,7 +123,15 @@ _FINE_ITEM_CATEGORY: Dict[str, str] = {
     "contamination": "surface_defect",
     "particle": "surface_defect",
     "pinhole": "surface_defect",
-    "edge_crack": "edge_defect",
+    "coating_defect": "surface_defect",
+    "coating_non_uniformity": "coating",
+    # edge_crack은 여기 넣지 않는다: 이 corpus에서 "Edge Defect"와 "Edge Crack"은
+    # (surface_defect와 scratch/contamination의 관계와 달리) Defect Types 목록에
+    # 나란히 등장하는 서로 다른 개별 항목이다(예: SPEC-027 "Defect Types: Edge
+    # Defect, Edge Crack"). 여기 넣으면 "Edge Defect와 Edge Crack을 모두 검사"처럼
+    # 사용자가 둘 다 명시했을 때 edge_defect가 covered_families에 걸려
+    # inspection_items에서 빠지고 categories로만 밀려나 Hard Requirement 판정
+    # 대상에서 사라지는 문제가 생긴다(문제2와 동일한 종류의 데이터 손실).
 }
 
 

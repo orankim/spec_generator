@@ -96,7 +96,14 @@ def test_spec_passes_its_own_measurement_range_and_accuracy(db, source, query_te
         f"{by_item['Measurement Range'].result}로 판정됨 (라벨 인식 회귀 가능성)"
     )
     assert by_item["Accuracy"].result == "PASS"
-    assert candidate.hard_requirements_pass is True
+    # 이 테스트의 목적은 Range/Accuracy 라벨 인식 자체이므로 그 둘만 확정 검증한다.
+    # inspection_items=["thickness"]는 파싱 경로를 그대로 타게 하려는 부수 설정일
+    # 뿐, 사양서 원문에 "thickness"를 실제로 지원한다는 서술 근거(Equipment Type/
+    # Notes)가 없는 SPEC-002/005/007/009/010(3D/profile 계열 장비, Z축 범위만
+    # 있고 두께 측정이라는 명시적 근거는 없음)은 candidate_matcher가 이제 Thickness
+    # Measurement를 정직하게 UNKNOWN으로 남긴다 — 그래서 hard_requirements_pass가
+    # 전부 True는 아니다(요청서 문제3: Measurement Range (Z)만으로 두께 측정
+    # 지원을 단정하면 안 된다).
 
 
 # 표 라벨이 "Measurement Range"라는 고정 문구를 쓰지 않는 회귀 케이스만 별도로
