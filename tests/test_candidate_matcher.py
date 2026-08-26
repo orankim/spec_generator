@@ -39,6 +39,7 @@ from agent.spec_generator import generate_specification
 from agent.spec_validator import build_hard_requirement_report, build_inspection_item_hard_requirement_records
 from agent.units import evaluate_hard_requirements
 from build_rag_ollama import build_vector_db
+from tests.scoped_spec_db import build_scoped_vector_db
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TEST_DB = "./_test_chroma_db_candidate_matcher"
@@ -252,10 +253,20 @@ def test_reported_bug_spec_005_min_defect_size_2um_fails_hard_requirement(db):
     assert spec005.hard_requirements_pass is False
 
 
-def test_spec_generator_applies_equipment_minimum_defect_size_from_chosen_candidate(db):
+def test_spec_generator_applies_equipment_minimum_defect_size_from_chosen_candidate(tmp_path):
     """generate_specification()이 선택된 후보(SPEC-005.md)의 실제 최소 검출 결함 크기를
     spec.defect_detection.equipment_minimum_defect_size_um에 VERIFIED+source로 채우고,
-    build_hard_requirement_report가 이를 근거로 FAIL을 보고하는지 검증한다."""
+    build_hard_requirement_report가 이를 근거로 FAIL을 보고하는지 검증한다.
+
+    SPEC-005.md 하나만 있는 격리된 corpus를 쓴다 — sample_specs/ 전체(SPEC-011~050
+    포함)에는 이제 이 조건을 SPEC-005보다 더 잘 만족하는 신규 장비도 있어(예:
+    ProfileScan PS-600은 최소 검출 결함 크기가 UNKNOWN이라 "FAIL"인 SPEC-005보다
+    select_best_candidate에서 더 높은 순위를 받을 수 있다 — 이는 버그가 아니라
+    올바른 동작이다), "corpus 전체에서 SPEC-005가 유일하게 이긴다"는 이 테스트의
+    원래 전제가 더 이상 성립하지 않는다. 이 테스트가 검증하려는 것은 "선택된 후보의
+    실측값이 올바르게 전파되는가"이므로, SPEC-005를 확정적으로 고르도록 격리한다.
+    """
+    db = build_scoped_vector_db(tmp_path, ["SPEC-005.md"])
     requirement = RequirementSchema(
         target=RequirementTarget(material="음극", width_mm=300),
         inspection_items=["thickness", "profile_3d"],
@@ -321,7 +332,13 @@ def test_F_spec_001_passes_hard_requirement_for_reported_query(db):
 # G. 최종 생성 결과에서 equipment.name/measurement_range/accuracy 각각이
 #    source.document=SPEC-001.md로 연결되는지 검증
 # ---------------------------------------------------------------
-def test_G_final_specification_links_each_field_to_spec_001(db):
+def test_G_final_specification_links_each_field_to_spec_001(tmp_path):
+    # SPEC-001.md만 있는 격리된 corpus — sample_specs/ 전체(SPEC-011~050 포함)에는
+    # 이제 동일한 범위/정확도 조건을 동등하게 만족하는 신규 장비가 여러 개 있어
+    # (설계 의도, 요청서 11절) "SPEC-001이 corpus 전체에서 유일하게 이긴다"는
+    # 전제가 더 이상 성립하지 않는다. 이 테스트는 필드별 source 연결 메커니즘
+    # 자체를 검증하는 것이 목적이므로 SPEC-001로 확정적으로 격리한다.
+    db = build_scoped_vector_db(tmp_path, ["SPEC-001.md"])
     requirement = RequirementSchema(
         raw_text=_REPORTED_QUERY,
         target=RequirementTarget(material="음극", width_mm=5),
@@ -362,13 +379,17 @@ def test_G_final_specification_links_each_field_to_spec_001(db):
 # ---------------------------------------------------------------
 # H. 사용자 요구값과 장비 실제값이 API 응답 레벨에서 명확히 구분되는지 검증
 # ---------------------------------------------------------------
-def test_H_required_value_and_equipment_value_are_distinct_in_api_response(db):
+def test_H_required_value_and_equipment_value_are_distinct_in_api_response(tmp_path):
     """
     회귀: 이전에는 measurement_performance.accuracy_um이 사용자 요구값으로 고정되어
     "정확도: 1 μm (사용자 요구사항)"만 보이고 장비의 실제 정확도와 구분되지 않았다.
     이제 requirement.accuracy(요구값)와 specification.measurement_performance.
     equipment_accuracy_um(장비 실측값)이 서로 다른 필드로 명확히 분리되어야 한다.
+
+    SPEC-001.md만 있는 격리된 corpus를 쓴다(test_G와 동일한 이유 — SPEC-011~050
+    추가로 corpus 전체에서 SPEC-001의 유일한 승리가 더 이상 보장되지 않는다).
     """
+    db = build_scoped_vector_db(tmp_path, ["SPEC-001.md"])
     requirement = RequirementSchema(
         raw_text=_REPORTED_QUERY,
         target=RequirementTarget(material="음극", width_mm=5),
@@ -407,12 +428,15 @@ def test_H_required_value_and_equipment_value_are_distinct_in_api_response(db):
 # Requirement를 PASS로 판정했으므로, 최종 결과에 "PASS인데 INFERRED"라는 모순이
 # 남아 있었다.
 # ---------------------------------------------------------------
-def test_reconciliation_1_pass_range_reconciles_legacy_field_to_verified(db):
+def test_reconciliation_1_pass_range_reconciles_legacy_field_to_verified(tmp_path):
     """
     Test 1: 사용자 요구 0~200 μm, 문서(SPEC-001.md) 0~200 μm → PASS.
     LLM이 legacy measurement_range를 검증 불가능한 값(범위의 하한 "0")으로 잘못
     채워도, Hard Requirement가 PASS로 확정한 값으로 재조정(VERIFIED)되어야 한다.
+
+    SPEC-001.md만 있는 격리된 corpus를 쓴다(test_G와 동일한 이유).
     """
+    db = build_scoped_vector_db(tmp_path, ["SPEC-001.md"])
     requirement = RequirementSchema(
         raw_text=_REPORTED_QUERY,
         target=RequirementTarget(material="음극", width_mm=5),
@@ -505,12 +529,15 @@ def test_reconciliation_3_accuracy_pass_reconciles_equipment_field_to_verified()
     assert eq_acc.source.document == "SPEC-001.md"
 
 
-def test_reconciliation_4_full_reported_query_end_to_end(db):
+def test_reconciliation_4_full_reported_query_end_to_end(tmp_path):
     """
     Test 4: 사용자가 실제로 보고한 정확한 질문에 대해 파이프라인(retrieve_and_generate)
     최종 결과를 검증한다. LLM이 legacy measurement_range를 검증 불가능한 값(0)으로
     채우는 실제 관찰된 시나리오를 재현해, 최종 결과에서 모순이 사라졌는지 확인한다.
+
+    SPEC-001.md만 있는 격리된 corpus를 쓴다(test_G와 동일한 이유).
     """
+    db = build_scoped_vector_db(tmp_path, ["SPEC-001.md"])
     requirement = RequirementSchema(
         raw_text=_REPORTED_QUERY,
         target=RequirementTarget(material="음극", width_mm=5),
@@ -637,14 +664,21 @@ def test_select_best_candidate_prefers_candidate_supporting_both_requested_defec
     assert best.hard_requirements_pass is True
 
 
-def test_reported_bug_test17_edge_and_surface_defect_both_required(db):
+def test_reported_bug_test17_edge_and_surface_defect_both_required(tmp_path):
     """
     Test17(실사용자 보고): "전극의 Edge Defect와 표면 결함을 동시에 검사할 수 있는
     Inline 검사기를 찾아줘." → 시스템이 OptiScan ES-200(SPEC-001.md, Defect Types:
     Scratch, Pin Hole, Coating Defect — Edge Defect는 없음)을 "Hard Requirement
     조건을 모두 충족합니다"로 잘못 안내했다. Edge Defect Detection이 FAIL로
     판정되어야 한다.
+
+    SPEC-001.md만 있는 격리된 corpus를 쓴다 — SPEC-011~050 추가로 fake-hash
+    임베딩 기반 top-k 검색이 SPEC-001의 Defect Types chunk를 더 이상 안정적으로
+    포함하지 못할 수 있어(corpus 전체 chunk 수가 84→365로 늘어남), 이 테스트가
+    검증하려는 "Edge Defect Detection이 FAIL로 판정되는가"와 무관한 이유로
+    흔들리는 것을 막는다.
     """
+    db = build_scoped_vector_db(tmp_path, ["SPEC-001.md"])
     requirement = RequirementSchema(
         target=RequirementTarget(material="전극", width_mm=5),
         inspection_items=["edge_defect", "surface_defect"],

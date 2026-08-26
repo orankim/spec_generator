@@ -36,6 +36,7 @@ from agent.spec_generator import generate_specification
 from agent.spec_validator import build_hard_requirement_report
 from agent.units import evaluate_hard_requirements
 from build_rag_ollama import build_vector_db
+from tests.scoped_spec_db import build_scoped_vector_db
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TEST_DB = "./_test_chroma_db_integration_verification"
@@ -97,7 +98,14 @@ def _dump(label, requirement=None, docs=None, candidates=None, spec=None, hard_r
 # =================================================================
 # TEST 1 — 기본 PASS (실제 pipeline, 실제 SPEC-001.md 사용)
 # =================================================================
-def test_1_basic_pass(db):
+def test_1_basic_pass(tmp_path):
+    # SPEC-001.md만 있는 격리된 corpus를 쓴다 — sample_specs/에 SPEC-011~050이
+    # 추가되면서, 이 정확한 범위/정확도 조건을 SPEC-001과 동등하게 만족하는 신규
+    # 장비가 여러 개 생겨(설계 의도, 요청서 11절) "corpus 전체에서 SPEC-001이
+    # 유일하게 이긴다"는 이 테스트의 전제가 더 이상 성립하지 않는다. 이 테스트가
+    # 검증하려는 것은 candidate_matcher/spec_generator의 필드 전파 메커니즘이므로
+    # SPEC-001로 확정적으로 격리한다.
+    db = build_scoped_vector_db(tmp_path, ["SPEC-001.md"])
     requirement = RequirementSchema(
         raw_text=_REPORTED_QUERY,
         target=RequirementTarget(material="음극", width_mm=5),
@@ -247,16 +255,18 @@ def test_5_range_containment_real_document(db):
 # =================================================================
 def test_6_no_matching_equipment(db):
     """
-    "0~500 μm 측정 범위와 ±0.1 μm 이하 정확도" — sample_specs/*.md 전체를 확인한 결과
-    (grep으로 사전 확인, 이 테스트에서도 재확인) 정확도 <=0.1μm을 만족하는 문서는
-    하나도 없다(가장 좋은 게 SPEC-007의 ±0.3μm). 조건을 만족하는 후보가 없다는 것이
-    확인된 상태에서, 시스템이 허위로 PASS를 만들어내지 않는지 검증한다.
+    "0~500 μm 측정 범위와 ±0.05 μm 이하 정확도" — sample_specs/*.md 전체(SPEC-001~050,
+    50개)를 확인한 결과 정확도 <=0.05μm을 만족하는 문서는 하나도 없다(가장 좋은 게
+    SPEC-014 PrecisionGauge PG-100의 ±0.1μm — SPEC-011~050 추가 이전에는 SPEC-007의
+    ±0.3μm이 최선이었으나, 신규 corpus에 더 정밀한 장비가 추가되어 임계값을 그보다
+    더 엄격하게 조정했다). 조건을 만족하는 후보가 없다는 것이 확인된 상태에서,
+    시스템이 허위로 PASS를 만들어내지 않는지 검증한다.
     """
     requirement = RequirementSchema(
-        raw_text="0~500 μm 측정 범위와 ±0.1 μm 이하 정확도가 필요한 전극 검사기를 찾아줘.",
+        raw_text="0~500 μm 측정 범위와 ±0.05 μm 이하 정확도가 필요한 전극 검사기를 찾아줘.",
         measurement_range=RequirementRange(min=0.0, max=500.0, unit="um"),
-        accuracy=RequirementValue(value=0.1, unit="um", operator="<="),
-        required_accuracy_um=0.1,
+        accuracy=RequirementValue(value=0.05, unit="um", operator="<="),
+        required_accuracy_um=0.05,
         inspection_items=["thickness"],
     )
     docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db, k_per_query=5)
@@ -270,16 +280,16 @@ def test_6_no_matching_equipment(db):
     for f in all_md:
         text = f.read_text(encoding="utf-8")
         fact = _extract_candidate_fact([Document(page_content=text, metadata={"filename": f.name})])
-        if fact.accuracy and fact.accuracy[0] <= 0.1:
+        if fact.accuracy and fact.accuracy[0] <= 0.05:
             any_real_pass = True
-    assert any_real_pass is False, "전제 확인 실패: 실제로 <=0.1um을 만족하는 문서가 존재합니다"
+    assert any_real_pass is False, "전제 확인 실패: 실제로 <=0.05um을 만족하는 문서가 존재합니다"
 
     best = select_best_candidate(candidates)
     _dump("TEST 6 — 적합 장비 없음", requirement, docs, candidates)
 
     if best is not None:
         by_item = {m.item: m for m in best.matches}
-        assert by_item["Accuracy"].result != "PASS", "정확도 <=0.1um을 만족하는 실제 문서가 없으므로 PASS로 잘못 판정되면 안 된다"
+        assert by_item["Accuracy"].result != "PASS", "정확도 <=0.05um을 만족하는 실제 문서가 없으므로 PASS로 잘못 판정되면 안 된다"
         assert best.hard_requirements_pass is False, "적합 장비가 없는데 hard_requirements_pass=True가 되면 안 된다"
 
     # generate_specification까지 실행해도(LLM 모킹, 빈 응답 = 값을 지어내지 않음)
