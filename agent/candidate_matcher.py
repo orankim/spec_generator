@@ -55,6 +55,10 @@ _EQUIPMENT_TYPE_RE = re.compile(r"(?:^|\n)[-*]?\s*Equipment Type\s*[:：]\s*(.+)
 # "## Inspection Target" 절의 불릿 리스트 형태(sample_specs: "Maximum Electrode Width"/
 # "Maximum Width" 두 표기가 섞여 있다).
 _MAXIMUM_WIDTH_RE = re.compile(r"(?:^|\n)[-*]?\s*Maximum(?:\s+Electrode)?\s+Width\s*[:：]\s*(.+)", re.IGNORECASE)
+# "## Notes" 절 본문(다음 heading 또는 문서 끝까지) — Thickness Measurement 지원
+# 여부의 서술적 근거(예: "Designed for continuous inline electrode thickness
+# measurement.")를 찾는 데 쓴다(문제3).
+_NOTES_RE = re.compile(r"(?:^|\n)#{1,3}\s*Notes\s*\n+(.+?)(?=\n#{1,3}\s|\Z)", re.IGNORECASE | re.DOTALL)
 
 _RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
 _ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
@@ -76,7 +80,13 @@ _SPEED_LABEL_HINTS = ("speed",)
 # 하나만 지원해도 나머지는 별도로 FAIL/UNKNOWN이 남는다(요청서 문제2: 상위
 # 카테고리 하나로 뭉쳐서 판정하면 안 됨).
 _INSPECTION_ITEM_DEFECT_KEYWORDS: Dict[str, Tuple[str, ...]] = {
-    "surface_defect": ("scratch", "crack", "pinhole", "pin hole", "particle", "contamination", "pit", "void", "defect"),
+    # 바레 "defect"/"void"는 넣지 않는다 — "void"는 별도 canonical item(자기
+    # 자신의 키워드로 독립 판정)이고, 바레 "defect"는 "Edge Defect"/"Coating
+    # Defect"처럼 다른 canonical item의 Defect Types 표기에도 포함돼 있어 그
+    # 항목만 지원하는 후보를 surface_defect까지 PASS로 잘못 인정하게 된다.
+    # 다만 qualifier가 붙은 "surface defect"는 이 corpus(SPEC-042~044 등)가
+    # Defect Types 값 자체로 그대로 쓰는 표현이라 명확한 근거이므로 유지한다.
+    "surface_defect": ("scratch", "crack", "pinhole", "pin hole", "particle", "contamination", "pit", "surface defect"),
     "edge_defect": ("edge",),
     "scratch": ("scratch",),
     "contamination": ("contamination", "contaminant"),
@@ -85,6 +95,7 @@ _INSPECTION_ITEM_DEFECT_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "void": ("void",),
     "coating_non_uniformity": ("coating non-uniformity", "coating non uniformity", "coating nonuniformity"),
     "edge_crack": ("edge crack",),
+    "coating_defect": ("coating defect",),
 }
 # profile_3d는 Defect Types 목록이 아니라 Equipment Type/Measurement Principle
 # 서술 텍스트(agent.categorical_match.match_inspection_item_capability)로 판정한다 —
@@ -101,7 +112,25 @@ _INSPECTION_ITEM_LABELS = {
     "void": "Void Detection",
     "coating_non_uniformity": "Coating Non-uniformity Detection",
     "edge_crack": "Edge Crack Detection",
+    "coating_defect": "Coating Defect Detection",
 }
+
+# 두께 측정을 실제로 지원한다는 명시적 근거 키워드 — 이 키워드가 Equipment
+# Type 또는 Notes(서술문)에 있을 때만 Thickness Measurement를 PASS로 판정한다.
+# "Measurement Range (Z)"/"Z Resolution"/"3D Profile" 같은 필드가 존재한다는
+# 사실만으로는(=수치 범위가 있다는 것만으로는) 두께 측정 근거로 인정하지
+# 않는다 — 3D Profile 전용 장비도 Z축 범위를 갖고 있어 이 필드만으로는 실제로
+# "두께"를 측정하는지 구분할 수 없기 때문이다(요청서 문제3의 근본 원인).
+_THICKNESS_EVIDENCE_KEYWORDS: Tuple[str, ...] = ("thickness", "두께")
+
+
+def _thickness_evidence(fact: "_CandidateFact") -> Optional[Tuple[str, Optional[Document]]]:
+    """Equipment Type 또는 Notes 서술문에서 두께 측정 지원의 명시적 근거를 찾는다.
+    찾으면 (근거 텍스트, 근거 chunk)를, 못 찾으면 None을 반환한다."""
+    for text, doc in ((fact.equipment_type_text, fact.equipment_type_doc), (fact.notes_text, fact.notes_doc)):
+        if text and any(kw in text.lower() for kw in _THICKNESS_EVIDENCE_KEYWORDS):
+            return text, doc
+    return None
 
 
 def _is_range_label(label_lower: str) -> bool:
@@ -198,6 +227,8 @@ class _CandidateFact:
         self.speed: Optional[Tuple[float, str]] = None
         self.speed_doc: Optional[Document] = None
         self.speed_text: Optional[str] = None
+        self.notes_text: Optional[str] = None
+        self.notes_doc: Optional[Document] = None
 
 
 def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
@@ -254,6 +285,12 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
         if not fact.thickness_not_supported and _THICKNESS_NOT_SUPPORTED_RE.search(text):
             fact.thickness_not_supported = True
             fact.thickness_not_supported_doc = doc
+
+        if fact.notes_text is None:
+            m = _NOTES_RE.search(text)
+            if m:
+                fact.notes_text = m.group(1).strip()
+                fact.notes_doc = doc
 
         if fact.width_mm is None:
             m = _MAXIMUM_WIDTH_RE.search(text)
@@ -615,24 +652,35 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
         # 동시에 요구했을 때 Edge Defect를 지원하지 않는 장비도 구분 없이 PASS 취급됨).
         for item in requirement.inspection_items:
             if item == "thickness":
-                # "Thickness Measurement: Not Supported" 같은 명시적 반증이 없는 한,
-                # 이미 Measurement Range hard requirement가 추출해 둔 fact.range를
-                # 그대로 "이 장비가 두께(범위)를 측정한다"는 근거로 재사용한다 — 별도
-                # 추출 로직을 중복 구현하지 않는다. required_range 유무와 무관하게
-                # fact.range는 항상 시도되므로(측정 범위 조건을 요구하지 않았어도)
-                # thickness 항목만 요구한 경우에도 판정할 수 있다.
+                # "Thickness Measurement: Not Supported" 같은 명시적 반증이 있으면 FAIL.
+                # 그 외에는 Equipment Type/Notes에 두께 측정을 실제로 수행한다는 명시적
+                # 서술 근거가 있을 때만 PASS로 판정한다 — Measurement Range (Z)/Z
+                # Resolution/3D Profile 같은 필드가 존재한다는 사실만으로는 두께 측정
+                # 지원 근거로 인정하지 않는다(요청서 문제3: 3D Profile 전용 장비의
+                # Z축 범위를 두께 측정 지원으로 착각해 PASS 처리되던 버그가 있었다).
                 if fact.thickness_not_supported:
                     item_result = "FAIL"
                     found_text = "Not Supported"
                     evidence = "Thickness Measurement: Not Supported"
                     source_doc = fact.thickness_not_supported_doc
-                elif fact.range is not None:
-                    item_result = "PASS"
-                    found_text = fact.range_text
-                    evidence = fact.range_text
-                    source_doc = fact.range_doc
                 else:
-                    item_result, found_text, evidence, source_doc = "UNKNOWN", None, None, None
+                    hit = _thickness_evidence(fact)
+                    if hit is None:
+                        item_result, found_text, evidence, source_doc = "UNKNOWN", None, None, None
+                    else:
+                        item_result = "PASS"
+                        evidence_text, evidence_doc = hit
+                        if fact.range is not None:
+                            # 실측 범위가 있으면 그 수치를 화면에 보여주되(더 구체적),
+                            # 판정 근거(evidence)에는 두께 지원을 뒷받침한 서술 문구도
+                            # 함께 남겨 "왜 PASS인지" 추적 가능하게 한다.
+                            found_text = fact.range_text
+                            evidence = f"{fact.range_text} (근거: {evidence_text})"
+                            source_doc = fact.range_doc
+                        else:
+                            found_text = evidence_text
+                            evidence = evidence_text
+                            source_doc = evidence_doc
                 matches.append(
                     CandidateFieldMatch(
                         item=_INSPECTION_ITEM_LABELS.get(item, item),

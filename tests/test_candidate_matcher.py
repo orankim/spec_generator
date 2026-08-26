@@ -956,7 +956,12 @@ _TEST10_DOC = Document(
         "| Measurement Range (Z) | 0 ~ 300 μm |\n"
         "| Accuracy | ±1.0 μm |\n\n"
         "## Defect Inspection\n\n| Item | Specification |\n|---|---|\n"
-        "| Defect Types | Scratch, Pin Hole, Coating Defect |\n"
+        "| Defect Types | Scratch, Pin Hole, Coating Defect |\n\n"
+        # Thickness Measurement PASS는 이제 Measurement Range(Z) 필드가 있다는 것
+        # 만으로는 인정되지 않고 Equipment Type/Notes의 명시적 서술 근거가 있어야
+        # 한다(요청서 문제3) — 이 후보가 실제로 두께 측정을 지원한다는 의도를
+        # 살리려면 그 근거를 문서에 명시해야 한다.
+        "## Notes\n\nSupports combined electrode thickness and surface defect inspection.\n"
     ),
     metadata={"filename": "SPEC-900.md", "source": "SPEC-900.md", "source_type": "markdown", "chunk_id": 0},
 )
