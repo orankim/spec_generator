@@ -41,6 +41,7 @@ from agent.spec_generator import (
 )
 from agent.spec_validator import validate_specification
 from build_rag_ollama import build_vector_db
+from tests.scoped_spec_db import build_scoped_vector_db
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SAMPLE_SPECS_DIR = _REPO_ROOT / "sample_specs"
@@ -220,7 +221,7 @@ def test_generate_specification_downgrades_hallucinated_verified_value(db):
     assert "measurement_performance.reproducibility_um" in spec.needs_confirmation
 
 
-def test_generate_specification_reproduces_reported_bug_fixed_end_to_end(db):
+def test_generate_specification_reproduces_reported_bug_fixed_end_to_end(tmp_path):
     """
     사용자가 실제로 보고한 시나리오 그대로 재현: "0~200 μm 측정 범위와 ±1 μm 이하
     정확도가 필요한 전극 검사기를 찾아줘." 질의에 대해, 소형 LLM이 measurement_range를
@@ -230,7 +231,15 @@ def test_generate_specification_reproduces_reported_bug_fixed_end_to_end(db):
     equipment.name은 N/A로 남았다.
     수정 후: SPEC-001.md가 검색되고, VERIFIED 값의 근거가 실제로 채워지고,
     equipment.name이 그 근거 문서(SPEC-001.md, OptiScan ES-200)에서 정확히 채워진다.
+
+    SPEC-001.md만 있는 격리된 corpus를 쓴다 — sample_specs/에 SPEC-011~050이
+    추가되면서 이 조건을 SPEC-001과 동등하게 만족하는 신규 장비가 여러 개 생겼다
+    (설계 의도, 요청서 11절). k_per_query=3(원래 버그의 핵심 — 좁은 top-k에서도
+    range_boost로 SPEC-001이 검색되는지)과 VERIFIED source 재조정 메커니즘은
+    이 격리된 corpus에서도 동일하게 검증된다 — 달라지는 것은 "corpus 전체에서
+    유일하게 이겨야 한다"는, 더 이상 성립하지 않는 전제뿐이다.
     """
+    db = build_scoped_vector_db(tmp_path, ["SPEC-001.md"])
     requirement = RequirementSchema(
         raw_text=_REPORTED_QUERY,
         target=RequirementTarget(material="전극", width_mm=500),
