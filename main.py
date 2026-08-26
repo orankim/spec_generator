@@ -50,48 +50,28 @@ if not check_ollama_available(OLLAMA_HOST):
 # 1. 공통 페이지 레이아웃 (공통 스타일)
 # ==========================================
 PAGE_STYLE = """
-    :root {
-        color-scheme: light;
-        --bg-main: #ffffff;
-        --bg-sidebar: #f8fafc;
-        --bg-iconbar: #f1f5f9;
-        --border-color: #e2e8f0;
-        --border-subtle: #f1f5f9;
-        --text-primary: #0f172a;
-        --text-secondary: #475569;
-        --text-muted: #94a3b8;
-        --accent-primary: #2563eb;
-        --accent-hover: #1d4ed8;
-        --accent-light: #eff6ff;
-        --card-bg: #ffffff;
-        --user-bubble-bg: #edf2f7;
-        --user-bubble-border: #cbd5e1;
-    }
-
+    :root { color-scheme: light; }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; overflow: hidden; }
     body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "맑은 고딕", sans-serif;
-        background: var(--bg-main);
-        color: var(--text-primary);
-        -webkit-font-smoothing: antialiased;
+        font-family: -apple-system, "Segoe UI", "맑은 고딕", sans-serif;
+        background: #ffffff;
+        color: #1a2530;
     }
 
     /* ===== 3단 레이아웃: 아이콘 사이드바 + 대화 관리 사이드바 + 메인 대화 영역 ===== */
-    .shell { display: flex; height: 100vh; width: 100%; background: var(--bg-main); }
+    .shell { display: flex; height: 100vh; width: 100%; }
 
-    /* 1) 좌측 아이콘 바 (약 52px) */
     .icon-sidebar {
-        width: 52px;
+        width: 56px;
         flex-shrink: 0;
-        background: var(--bg-iconbar);
-        border-right: 1px solid var(--border-color);
+        background: #f7f8fa;
+        border-right: 1px solid #e2e8f0;
         display: flex;
         flex-direction: column;
         align-items: center;
         padding: 14px 0;
-        gap: 14px;
-        z-index: 10;
+        gap: 16px;
     }
     .icon-btn {
         width: 36px;
@@ -99,50 +79,34 @@ PAGE_STYLE = """
         border: none;
         background: transparent;
         border-radius: 8px;
-        font-size: 16px;
+        font-size: 17px;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--text-secondary);
-        transition: all 0.15s ease;
+        color: #4a5568;
     }
-    .icon-btn:hover:not(:disabled) { background: #e2e8f0; color: var(--text-primary); }
-    .icon-btn.icon-btn-active { background: var(--accent-primary); color: #ffffff; }
-    .icon-btn.icon-btn-active:hover { background: var(--accent-hover); }
-    .icon-btn.icon-btn-ghost { color: var(--text-muted); cursor: default; }
+    .icon-btn:hover:not(:disabled) { background: #e2e8f0; }
+    .icon-btn.icon-btn-active { background: #2b6cb0; color: #ffffff; }
+    .icon-btn.icon-btn-active:hover { background: #2c5282; }
+    .icon-btn.icon-btn-ghost { color: #cbd5e0; cursor: default; }
     .icon-sidebar-spacer { flex: 1; }
 
-    /* 2) 대화 관리 사이드바 (약 260px) */
     .conv-sidebar {
-        width: 260px;
+        width: 280px;
         flex-shrink: 0;
-        background: var(--bg-sidebar);
-        border-right: 1px solid var(--border-color);
+        background: #f7f8fa;
+        border-right: 1px solid #e2e8f0;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        transition: width .2s ease, opacity .2s ease;
+        transition: width .15s ease, opacity .15s ease;
     }
     .shell.sidebar-collapsed .conv-sidebar { width: 0; opacity: 0; border-right: none; }
 
-    .conv-sidebar-header {
-        padding: 18px 18px 14px;
-        border-bottom: 1px solid var(--border-color);
-        flex-shrink: 0;
-    }
-    .conv-sidebar-header h1 {
-        font-size: 15px;
-        margin: 0;
-        color: var(--text-primary);
-        font-weight: 700;
-        letter-spacing: -0.01em;
-    }
-    .conv-sidebar-header p {
-        font-size: 12px;
-        margin: 4px 0 0;
-        color: var(--text-secondary);
-    }
+    .conv-sidebar-header { padding: 18px 18px 12px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+    .conv-sidebar-header h1 { font-size: 15px; margin: 0; color: #1a2530; font-weight: 700; }
+    .conv-sidebar-header p { font-size: 12px; margin: 4px 0 0; color: #718096; }
 
     .conv-action-row {
         display: flex;
@@ -155,521 +119,272 @@ PAGE_STYLE = """
         padding: 11px 18px;
         font-size: 13px;
         font-weight: 600;
-        color: var(--text-primary);
+        color: #2d3748;
         cursor: pointer;
         flex-shrink: 0;
-        transition: background 0.15s ease;
     }
-    .conv-action-row:hover { background: #e2e8f0; }
-    .conv-action-icon { font-size: 14px; width: 18px; text-align: center; color: var(--accent-primary); flex-shrink: 0; }
+    .conv-action-row:hover { background: #edf1f5; }
+    .conv-action-icon { font-size: 14px; width: 16px; text-align: center; flex-shrink: 0; }
 
-    .conv-search-box { padding: 0 16px 10px; flex-shrink: 0; }
+    .conv-search-box { padding: 0 18px 10px; flex-shrink: 0; }
     .conv-search-box input {
         width: 100%;
-        border: 1px solid var(--border-color);
+        border: 1px solid #cbd5e0;
         border-radius: 6px;
-        padding: 7px 11px;
+        padding: 7px 10px;
         font-size: 13px;
         font-family: inherit;
-        background: #ffffff;
-        color: var(--text-primary);
     }
-    .conv-search-box input:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+    .conv-search-box input:focus { outline: none; border-color: #2b6cb0; }
 
-    .conv-list-label {
-        padding: 12px 18px 6px;
-        font-size: 11px;
-        font-weight: 700;
-        color: var(--text-muted);
-        letter-spacing: 0.04em;
-        flex-shrink: 0;
-    }
-    .conv-list { flex: 1; overflow-y: auto; padding-bottom: 14px; }
-    .conv-group-label { padding: 10px 18px 4px; font-size: 11px; font-weight: 700; color: var(--text-muted); }
+    .conv-list-label { padding: 10px 18px 4px; font-size: 11px; font-weight: 700; color: #a0aec0; letter-spacing: .03em; flex-shrink: 0; }
+    .conv-list { flex: 1; overflow-y: auto; padding-bottom: 10px; }
+    .conv-group-label { padding: 10px 18px 4px; font-size: 11px; font-weight: 700; color: #a0aec0; }
     .conv-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        display: block;
         width: 100%;
         border: none;
         background: transparent;
         text-align: left;
-        padding: 9px 18px;
+        padding: 8px 18px;
         font-size: 13px;
-        color: var(--text-secondary);
+        color: #2d3748;
         cursor: pointer;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        transition: background 0.12s ease;
     }
-    .conv-item:hover { background: #e2e8f0; color: var(--text-primary); }
-    .conv-item.active { background: #e2e8f0; font-weight: 600; color: var(--accent-primary); }
-    .conv-item-title { overflow: hidden; text-overflow: ellipsis; flex: 1; }
-    .conv-item-delete {
-        opacity: 0;
-        border: none;
-        background: transparent;
-        color: #ef4444;
-        font-size: 12px;
-        cursor: pointer;
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .conv-item:hover .conv-item-delete { opacity: 1; }
-    .conv-item-delete:hover { background: #fee2e2; }
-    .conv-empty { padding: 12px 18px; font-size: 12px; color: var(--text-muted); text-align: center; }
+    .conv-item:hover { background: #edf1f5; }
+    .conv-item.active { background: #e2e8f0; font-weight: 700; color: #1a2530; }
+    .conv-empty { padding: 10px 18px; font-size: 12px; color: #a0aec0; }
 
-    /* 3) 메인 대화 영역 (Flex 1) */
     .main-chat {
         flex: 1;
         display: flex;
         flex-direction: column;
         min-width: 0;
-        background: var(--bg-main);
-        position: relative;
+        background: #ffffff;
     }
 
-    /* ===== 메인 대화 스크롤 영역 ===== */
+    /* ===== Messages ===== */
     .messages {
         flex: 1;
         overflow-y: auto;
-        padding: 32px 24px 24px;
+        padding: 24px max(24px, calc(50% - 460px));
         display: flex;
         flex-direction: column;
-        gap: 20px;
-        scroll-behavior: smooth;
-    }
-    .messages-inner {
-        max-width: 920px;
-        width: 100%;
-        margin: 0 auto;
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
-    }
-    .messages.is-empty { justify-content: center; align-items: center; }
-
-    /* State A: 홈 화면 / 새로운 대화 */
-    .welcome-block {
-        text-align: center;
-        max-width: 600px;
-        margin: auto;
-        padding: 40px 20px;
-    }
-    .welcome-icon {
-        width: 54px;
-        height: 54px;
-        background: var(--accent-light);
-        color: var(--accent-primary);
-        border-radius: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 26px;
-        margin: 0 auto 20px;
-        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.1);
-    }
-    .welcome-block h2 {
-        font-size: 22px;
-        margin: 0 0 12px;
-        color: var(--text-primary);
-        font-weight: 700;
-        letter-spacing: -0.02em;
-    }
-    .welcome-block p {
-        font-size: 15px;
-        margin: 0 0 28px;
-        color: var(--text-secondary);
-        line-height: 1.6;
-    }
-
-    /* 예시 질문 칩 */
-    .chip-container {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        text-align: left;
-        margin-top: 10px;
-    }
-    .chip-label {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--text-muted);
-        margin-bottom: 4px;
-        letter-spacing: 0.02em;
-    }
-    .chip-item {
-        border: 1px solid var(--border-color);
-        background: #ffffff;
-        color: var(--text-primary);
-        border-radius: 10px;
-        padding: 11px 16px;
-        font-size: 13.5px;
-        cursor: pointer;
-        text-align: left;
-        transition: all 0.15s ease;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .chip-item:hover {
-        border-color: var(--accent-primary);
-        background: var(--accent-light);
-        color: var(--accent-primary);
-        transform: translateY(-1px);
-        box-shadow: 0 2px 6px rgba(0,0,0,0.03);
-    }
-    .chip-arrow { font-size: 14px; color: var(--text-muted); }
-    .chip-item:hover .chip-arrow { color: var(--accent-primary); }
-
-    /* State B & C: 메시지 행 구조 */
-    .msg-row { display: flex; width: 100%; }
-    .msg-row.user { justify-content: flex-end; margin-bottom: 4px; }
-    .msg-row.ai { justify-content: flex-start; }
-
-    /* 사용자 질문 Bubble: 작고 절제된 우측 상단 Bubble */
-    .bubble-user {
-        background: var(--user-bubble-bg);
-        color: var(--text-primary);
-        border: 1px solid var(--user-bubble-border);
-        border-radius: 16px 16px 4px 16px;
-        padding: 10px 16px;
-        font-size: 14px;
-        line-height: 1.55;
-        max-width: 72%;
-        word-break: break-word;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-    }
-
-    /* AI 문서형 콘텐츠 Container */
-    .ai-doc-container {
-        width: 100%;
-        background: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        padding: 24px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-        margin-top: 2px;
-    }
-
-    /* ===== Markdown body styling ===== */
-    .md-body { line-height: 1.7; font-size: 14.5px; color: var(--text-primary); }
-    .md-body .md-p { margin: 0 0 12px; white-space: pre-wrap; word-break: break-word; }
-    .md-body .md-p:last-child { margin-bottom: 0; }
-    .md-body .md-heading { margin: 18px 0 10px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
-    .md-body h1.md-heading { font-size: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
-    .md-body h2.md-heading { font-size: 17px; }
-    .md-body h3.md-heading { font-size: 15.5px; }
-    .md-body h4.md-heading { font-size: 14.5px; }
-    .md-body ul.md-list, .md-body ol.md-list { margin: 8px 0 14px; padding-left: 22px; }
-    .md-body li { margin: 4px 0; }
-    .md-body hr.md-hr { border: none; border-top: 1px solid var(--border-color); margin: 20px 0; }
-    .md-body code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #0f172a; }
-    .md-body pre.md-code { background: #0f172a; color: #f8fafc; padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; margin: 12px 0; }
-    .md-body pre.md-code code { background: transparent; padding: 0; color: inherit; }
-    .md-body table.md-table { border-collapse: collapse; margin: 12px 0; font-size: 13.5px; width: 100%; }
-    .md-body table.md-table th, .md-body table.md-table td { border: 1px solid var(--border-color); padding: 8px 12px; text-align: left; }
-    .md-body table.md-table th { background: #f8fafc; font-weight: 700; color: var(--text-primary); }
-
-    /* ===== State C: 검색 및 분석 진행 상태 UI ===== */
-    .progress-card {
-        background: #ffffff;
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        padding: 20px 24px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.03);
-    }
-    .progress-header {
-        font-size: 15px;
-        font-weight: 700;
-        color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 16px;
-    }
-    .progress-steps {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-    .progress-step {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 13.5px;
-        color: var(--text-secondary);
-    }
-    .progress-step.done { color: var(--text-primary); font-weight: 500; }
-    .progress-step-icon {
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        flex-shrink: 0;
-    }
-    .progress-step.done .progress-step-icon { background: #dcfce7; color: #15803d; }
-    .progress-step.running .progress-step-icon { background: #dbeafe; color: var(--accent-primary); }
-    .progress-step.pending .progress-step-icon { background: #f1f5f9; color: var(--text-muted); }
-
-    /* 진행 중 candidate list preview */
-    .candidate-preview-box {
-        margin-top: 16px;
-        padding-top: 14px;
-        border-top: 1px dashed var(--border-color);
-    }
-    .candidate-preview-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
-    .candidate-preview-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 6px 10px;
-        background: #f8fafc;
-        border-radius: 6px;
-        margin-bottom: 6px;
-        font-size: 12.5px;
-        color: var(--text-primary);
-    }
-    .candidate-preview-badge { font-size: 11px; background: #e2e8f0; color: var(--text-secondary); padding: 2px 6px; border-radius: 4px; }
-
-    /* ===== 장비 추천 결과 카드 UI ===== */
-    .equipment-card {
-        background: #ffffff;
-        border: 1px solid var(--border-color);
-        border-radius: 10px;
-        overflow: hidden;
-        margin-top: 12px;
-    }
-    .equipment-card-header {
-        padding: 14px 18px;
-        background: #f8fafc;
-        border-bottom: 1px solid var(--border-color);
-        font-weight: 700;
-        font-size: 15px;
-        color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .equipment-card-body { padding: 18px; }
-
-    /* 요약 충족 여부 찌르기 버너 */
-    .compliance-summary-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 10px;
-        margin-bottom: 16px;
-    }
-    .compliance-item {
-        padding: 10px 14px;
-        border-radius: 8px;
-        font-size: 13px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .compliance-item.pass { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
-    .compliance-item.fail { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
-    .compliance-item.unknown { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
-    .compliance-item-icon { font-weight: 700; font-size: 14px; }
-
-    /* 상세 사양 Key-Value Table */
-    .spec-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-top: 12px;
-    }
-    @media (max-width: 640px) { .spec-grid { grid-template-columns: 1fr; } }
-    .spec-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 12px;
-        background: #f8fafc;
-        border-radius: 6px;
-        font-size: 13px;
-    }
-    .spec-label { color: var(--text-secondary); }
-    .spec-value { font-weight: 600; color: var(--text-primary); text-align: right; }
-
-    /* ===== 참고 문서 (References) 영역 ===== */
-    .references-section {
-        margin-top: 24px;
-        padding-top: 16px;
-        border-top: 1px solid var(--border-color);
-    }
-    .references-title {
-        font-size: 12.5px;
-        font-weight: 700;
-        color: var(--text-muted);
-        letter-spacing: 0.03em;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .reference-list { display: flex; flex-direction: column; gap: 6px; }
-    .reference-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 12px;
-        background: #f8fafc;
-        border: 1px solid var(--border-subtle);
-        border-radius: 6px;
-        font-size: 13px;
-        color: var(--text-primary);
-    }
-    .reference-name { display: flex; align-items: center; gap: 8px; font-weight: 500; }
-    .reference-action { font-size: 12px; color: var(--accent-primary); text-decoration: none; cursor: pointer; }
-    .reference-action:hover { text-decoration: underline; }
-
-    /* ===== 추가 질문 제안 (Related Questions) 영역 ===== */
-    .related-section {
-        margin-top: 24px;
-        padding-top: 16px;
-        border-top: 1px dashed var(--border-color);
-    }
-    .related-title {
-        font-size: 12.5px;
-        font-weight: 700;
-        color: var(--text-muted);
-        letter-spacing: 0.03em;
-        margin-bottom: 10px;
-    }
-    .related-list { display: flex; flex-direction: column; gap: 6px; }
-    .related-btn {
-        text-align: left;
-        background: #ffffff;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        padding: 9px 14px;
-        font-size: 13px;
-        color: var(--text-primary);
-        cursor: pointer;
-        transition: all 0.15s ease;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .related-btn:hover {
-        border-color: var(--accent-primary);
-        background: var(--accent-light);
-        color: var(--accent-primary);
-    }
-
-    /* ===== 에러 메시지 & Retry 버튼 ===== */
-    .error-card {
-        background: #fef2f2;
-        border: 1px solid #fecaca;
-        border-radius: 10px;
-        padding: 16px 20px;
-        color: #991b1b;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
         gap: 14px;
     }
-    .retry-btn {
-        background: #dc2626;
-        color: #ffffff;
-        border: none;
-        padding: 6px 14px;
-        border-radius: 6px;
+    .messages.is-empty { align-items: center; justify-content: center; }
+
+    .welcome-block { text-align: center; max-width: 520px; margin: 0 auto; transform: translateY(-8%); }
+    .welcome-icon { font-size: 30px; margin-bottom: 10px; }
+    .welcome-block h2 { font-size: 19px; margin: 0 0 8px; color: #1a2530; font-weight: 700; }
+    .welcome-block p { font-size: 14px; margin: 0; color: #4a5568; }
+    .welcome-block .chip-row { justify-content: center; margin-top: 18px; }
+
+    .msg-row { display: flex; }
+    .msg-row.user { justify-content: flex-end; }
+    .msg-row.ai { justify-content: flex-start; }
+    .bubble {
+        max-width: 82%;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 14px;
+        line-height: 1.65;
+        word-break: break-word;
+    }
+    .card, .card * { white-space: normal; }
+    .bubble.user { background: #2b6cb0; color: #ffffff; border-bottom-right-radius: 3px; }
+    .bubble.ai { background: #f7f8fa; color: #1a2530; border: 1px solid #e2e8f0; border-bottom-left-radius: 3px; }
+    .bubble.error { background: #fff5f5; border: 1px solid #feb2b2; color: #822727; }
+
+    /* ===== 경량 Markdown 렌더링(요청서 8절) — renderTextMessage/renderMarkdownLite ===== */
+    .md-body .md-p { margin: 0 0 8px; white-space: pre-wrap; }
+    .md-body .md-p:last-child { margin-bottom: 0; }
+    .md-body .md-heading { margin: 10px 0 6px; font-weight: 700; color: #1a2530; }
+    .md-body h3.md-heading { font-size: 15px; }
+    .md-body h4.md-heading { font-size: 14px; }
+    .md-body h5.md-heading { font-size: 13px; }
+    .md-body ul.md-list, .md-body ol.md-list { margin: 4px 0 10px; padding-left: 20px; }
+    .md-body li { margin: 2px 0; }
+    .md-body code { background: #edf2f7; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; font-family: ui-monospace, monospace; }
+    .md-body pre.md-code { background: #1a2530; color: #e2e8f0; padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-size: 12.5px; margin: 6px 0; }
+    .md-body pre.md-code code { background: transparent; padding: 0; color: inherit; }
+    .md-body table.md-table { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; width: 100%; }
+    .md-body table.md-table th, .md-body table.md-table td { border: 1px solid #e2e8f0; padding: 5px 9px; text-align: left; }
+    .md-body table.md-table th { background: #f7f8fa; font-weight: 700; }
+
+    /* ===== typing indicator(요청서 11절) ===== */
+    .typing-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+    .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: #a0aec0; animation: typing-blink 1.2s infinite ease-in-out; }
+    .typing-dots span:nth-child(2) { animation-delay: .2s; }
+    .typing-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes typing-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+    /* ===== 참고 문서(요청서 10절) ===== */
+    .sources-block { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; }
+    .sources-title { font-size: 11px; font-weight: 700; color: #a0aec0; margin-bottom: 4px; letter-spacing: .03em; }
+    .sources-list { font-size: 12.5px; color: #4a5568; line-height: 1.8; }
+
+    /* ===== Cards (used inside AI bubbles) ===== */
+    .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .bubble .card { margin-top: 4px; }
+    .card + .card { margin-top: 10px; }
+    .card-header {
+        padding: 9px 14px;
+        background: #f0f4f8;
+        border-bottom: 1px solid #e2e8f0;
+        font-weight: 700;
         font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        flex-shrink: 0;
-    }
-    .retry-btn:hover { background: #b91c1c; }
-
-    /* ===== 하단 공통 질문 입력창 ===== */
-    .input-bar-wrapper {
-        padding: 16px 24px;
-        background: var(--bg-main);
-        flex-shrink: 0;
-    }
-    .input-bar-inner {
-        max-width: 920px;
-        margin: 0 auto;
-    }
-    .input-box {
+        color: #2d3748;
         display: flex;
-        align-items: flex-end;
-        gap: 8px;
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 20px;
-        padding: 8px 12px 8px 16px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-    .input-box:focus-within {
-        border-color: var(--accent-primary);
-        box-shadow: 0 2px 12px rgba(37,99,235,0.12);
-    }
-    .input-box textarea {
-        flex: 1;
-        border: none;
-        background: transparent;
-        resize: none;
-        padding: 6px 0;
-        font-size: 14.5px;
-        font-family: inherit;
-        color: var(--text-primary);
-        max-height: 160px;
-        line-height: 1.5;
-    }
-    .input-box textarea:focus { outline: none; }
-    .input-action-btn {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        border: none;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        flex-shrink: 0;
-        transition: background 0.15s ease;
-    }
-    .attach-btn { background: transparent; color: var(--text-secondary); font-size: 16px; }
-    .attach-btn:hover { background: #f1f5f9; color: var(--text-primary); }
-    .send-btn { background: var(--accent-primary); color: #ffffff; font-size: 15px; font-weight: 700; }
-    .send-btn:hover:not(:disabled) { background: var(--accent-hover); }
-    .send-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
-
-    .download-btn {
-        display: inline-flex;
         align-items: center;
         gap: 6px;
-        margin-top: 12px;
+    }
+    .card-body { padding: 10px 14px; }
+    .card-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 6px 0;
+        border-bottom: 1px dashed #edf2f7;
+        font-size: 13px;
+    }
+    .card-row:last-child { border-bottom: none; }
+    .card-row .label { color: #718096; flex-shrink: 0; }
+    .card-row .value {
+        color: #1a2530;
+        font-weight: 600;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+    .card-row .value.muted { color: #a0aec0; font-weight: 400; }
+
+    /* ===== Status badges ===== */
+    .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .02em;
+        white-space: nowrap;
+    }
+    .badge-pass { background: #e6fffa; color: #276749; border: 1px solid #9ae6b4; }
+    .badge-fail { background: #fff5f5; color: #9b2c2c; border: 1px solid #feb2b2; }
+    .badge-unknown { background: #fffaf0; color: #9c4221; border: 1px solid #fbd38d; }
+    .badge-verified { background: #ebf8ff; color: #2c5282; border: 1px solid #90cdf4; }
+    .badge-inferred { background: #faf5ff; color: #553c9a; border: 1px solid #d6bcfa; }
+    .badge-userdefined { background: #f0fff4; color: #22543d; border: 1px solid #9ae6b4; }
+    .badge-unset { background: #f7fafc; color: #a0aec0; border: 1px solid #e2e8f0; }
+
+    .banner { padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+    .banner-pass { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; }
+    .banner-fail { background: #fff5f5; border: 1px solid #feb2b2; color: #822727; }
+    .banner-unknown { background: #fffaf0; border: 1px solid #fbd38d; color: #7b341e; }
+
+    /* ===== Hard requirement comparison list ===== */
+    .hard-req-list { list-style: none; margin: 0; padding: 0; }
+    .hard-req-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px dashed #edf2f7;
+        font-size: 13px;
+    }
+    .hard-req-list li:last-child { border-bottom: none; }
+    .hard-req-list .item-name { color: #2d3748; font-weight: 600; flex-shrink: 0; }
+    .hard-req-list .reason { color: #4a5568; flex: 1; text-align: right; }
+
+    /* ===== Ranking(추천 순위) vs Compliance(요구조건 충족) 요약 — EquipmentCard ===== */
+    .confirm-block { font-size: 12px; line-height: 1.7; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; }
+    .confirm-block strong { display: block; font-size: 11px; margin-bottom: 2px; }
+    .confirm-pass { background: #f0fff4; color: #276749; }
+    .confirm-fail { background: #fff5f5; color: #9b2c2c; }
+    .confirm-unknown { background: #fffaf0; color: #9c4221; }
+
+    /* ===== Search progress ===== */
+    .progress-list { list-style: none; margin: 0; padding: 0; }
+    .progress-list li { padding: 3px 0; font-size: 13px; color: #4a5568; }
+    .progress-list li.done { color: #2d3748; }
+    .progress-list li.done::before { content: "✓ "; color: #38a169; font-weight: 700; }
+    .progress-list li.pending::before { content: "… "; color: #a0aec0; }
+
+    /* ===== Source (VERIFIED evidence) ===== */
+    details.source-detail { margin-top: 4px; font-size: 12px; }
+    details.source-detail summary { color: #3182ce; cursor: pointer; list-style: none; }
+    details.source-detail summary::-webkit-details-marker { display: none; }
+    details.source-detail summary::before { content: "📄 근거 보기"; }
+    details.source-detail[open] summary::before { content: "📄 근거 숨기기"; }
+    details.source-detail .source-body { color: #718096; margin-top: 4px; padding-left: 4px; }
+
+    /* ===== Example question chips (shown before first message) ===== */
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip {
+        border: 1px solid #cbd5e0;
+        background: #ffffff;
+        color: #2b6cb0;
+        border-radius: 16px;
+        padding: 6px 14px;
+        font-size: 13px;
+        cursor: pointer;
+    }
+    .chip:hover { background: #ebf8ff; }
+
+    /* ===== Input bar ===== */
+    .input-bar {
+        display: flex;
+        gap: 10px;
+        padding: 16px max(24px, calc(50% - 460px));
+        border-top: 1px solid #e2e8f0;
+        background: #ffffff;
+        flex-shrink: 0;
+    }
+    .input-bar textarea {
+        flex: 1;
+        resize: none;
+        border: 1px solid #cbd5e0;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 14px;
+        font-family: inherit;
+        max-height: 140px;
+    }
+    .input-bar textarea:focus { outline: none; border-color: #2b6cb0; }
+    .input-bar button {
+        border: none;
+        background: #2b6cb0;
+        color: white;
+        padding: 0 22px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .input-bar button:hover:not(:disabled) { background: #2c5282; }
+    .input-bar button:disabled { background: #a0aec0; cursor: not-allowed; }
+
+    a.download-btn {
+        display: inline-block;
+        margin-top: 8px;
         padding: 8px 16px;
-        background: #0f766e;
-        color: #ffffff;
+        background: #319795;
+        color: white;
         text-decoration: none;
         border-radius: 6px;
-        font-weight: 600;
+        font-weight: 700;
         font-size: 13px;
-        border: none;
-        cursor: pointer;
-        transition: background 0.15s ease;
     }
-    .download-btn:hover { background: #0d9488; }
 """
 
 
 def render_page(title: str, body_html: str) -> str:
-    """페이지 공통 레이아웃."""
+    """페이지 공통 레이아웃. 전극 검사기 AI(챗봇)가 유일한 기능이므로 body_html이
+    전체 앱 셸(.app)을 직접 구성한다 — 예전 위저드 UI가 쓰던 카드형 컨테이너/탭
+    네비게이션 wrapper는 채팅 인터페이스에 맞지 않아 제거했다."""
     return f"""
     <!DOCTYPE html>
     <html lang="ko">
@@ -688,32 +403,50 @@ def render_page(title: str, body_html: str) -> str:
 
 @app.get("/", include_in_schema=False)
 async def read_root():
-    """루트 접속 시 바로 전극 검사기 AI 화면으로 이동한다."""
+    """루트 접속 시 바로 전극 검사기 AI 화면으로 이동한다 (유일한 사용자 기능)."""
     return RedirectResponse(url="/agent")
 
 
+# ==========================================
+# 2. (제거됨) 사양서 제작하기 / 사양서 업로드하기
+# ==========================================
+# 기존에는 여기에 "/"(자연어 요구사항으로 PPTX 생성)와 "/upload"(RAG 학습용 PPTX
+# 업로드) 페이지가 있었다. 전극 검사기 AI(/agent)만 사용자 기능으로 남기기로 하여
+# UI/라우트를 제거했다. 이 기능들이 쓰던 generator.py(SpecGenerator)/pptx_builder.py
+# (PPTXBuilder) 모듈 자체는 삭제하지 않았다 — preprocess_specs.py가 계속
+# import하고, pptx_builder.py는 agent/pptx_electrode_builder.py(Agent의 PPTX 출력
+# 기능)가 재사용하는 공통 모듈이기 때문이다.
 # ==========================================
 # 3. 전극 검사기 사양서 자동 생성 AI Agent 페이지
 # ==========================================
 @app.get("/agent", response_class=HTMLResponse)
 async def agent_page():
     """
-    전극 검사기 AI 대화형 서비스 UI/UX.
+    전극 검사기 사양서 자동 생성 AI — 대화형(챗봇) 인터페이스.
 
-    3단 레이아웃 (아이콘 바 + 대화 관리 사이드바 + 메인 대화 영역) 및
-    3가지 메인 화면 상태 (Home View, Document Answer View, Progress View) 제공.
+    아이콘 사이드바 + 대화 관리 사이드바(새 대화/검색/날짜별 이력) + 메인 대화
+    영역의 3단 레이아웃. Backend 파이프라인(RequirementParser/RequirementSchema/
+    RAG 검색/CandidateMatcher/Hard Requirement 판정)은 전혀 바꾸지 않았다 —
+    /api/agent/analyze-requirement · /api/agent/generate-spec · /api/agent/
+    update-requirement · /api/agent/build-markdown을 기존과 동일하게 그대로
+    호출한다. 이번 UI 개편에서 Backend에는 단 한 줄도 손대지 않았다.
+
+    Conversation은 서버에 저장하지 않고 브라우저에만 둔다 — 여러 개의 대화를
+    배열(state.conversations)로 관리하고 localStorage에 영속화한다(키:
+    electrode_ai_conversations_v1). Agent의 RAG/ChromaDB와는 완전히 분리된
+    Frontend 전용 상태이며, 매 API 호출은 활성 대화가 들고 있는 조각(current_
+    requirement 등)을 그대로 요청 본문에 실어 보낸다 — 서버는 여전히 요청 단위로
+    무상태다.
     """
     body_html = """
             <div class="shell" id="appShell">
-                <!-- 1) 좌측 아이콘 바 -->
                 <div class="icon-sidebar">
                     <button type="button" id="hamburgerBtn" class="icon-btn" title="사이드바 접기/펼치기">☰</button>
-                    <button type="button" class="icon-btn icon-btn-active" title="전극검사기 AI">🔋</button>
+                    <button type="button" class="icon-btn icon-btn-active" title="전극 검사기 AI">🔋</button>
                     <div class="icon-sidebar-spacer"></div>
-                    <button type="button" class="icon-btn icon-btn-ghost" title="설정/추가 서비스(예정)" disabled>⚙</button>
+                    <button type="button" class="icon-btn icon-btn-ghost" title="추가 AI 서비스(예정)" disabled>⚙</button>
                 </div>
 
-                <!-- 2) 대화 관리 사이드바 -->
                 <div class="conv-sidebar" id="convSidebar">
                     <div class="conv-sidebar-header">
                         <h1>전극 검사기 AI</h1>
@@ -721,48 +454,45 @@ async def agent_page():
                     </div>
 
                     <button type="button" class="conv-action-row" id="newChatBtn">
-                        <span class="conv-action-icon">✎</span> 새로운 대화 시작
+                        <span class="conv-action-icon">✏</span> 새로운 대화 시작
                     </button>
 
                     <button type="button" class="conv-action-row" id="searchToggleBtn">
-                        <span class="conv-action-icon">⌕</span> 지난 대화 검색
+                        <span class="conv-action-icon">🔍</span> 지난 대화 검색
                     </button>
                     <div class="conv-search-box" id="convSearchBox" style="display:none;">
                         <input type="text" id="convSearchInput" placeholder="대화 제목 검색...">
                     </div>
 
-                    <div class="conv-list-label">▣ 최근 대화 목록</div>
+                    <div class="conv-list-label">최근 대화 목록</div>
                     <div class="conv-list" id="convList"></div>
                 </div>
 
-                <!-- 3) 메인 대화 영역 -->
                 <div class="main-chat">
                     <div id="messages" class="messages"></div>
 
-                    <!-- 하단 공통 질문 입력창 -->
-                    <div class="input-bar-wrapper">
-                        <div class="input-bar-inner">
-                            <form id="chatForm" class="input-box">
-                                <button type="button" class="input-action-btn attach-btn" title="파일 첨부 (준비 중)">📎</button>
-                                <textarea id="chatInput" rows="1" placeholder="필요한 전극 검사 조건이나 궁금한 내용을 입력하세요."></textarea>
-                                <button type="submit" id="sendBtn" class="input-action-btn send-btn" title="전송">↑</button>
-                            </form>
-                        </div>
-                    </div>
+                    <form id="chatForm" class="input-bar">
+                        <textarea id="chatInput" rows="1" placeholder="필요한 전극 검사 조건이나 궁금한 내용을 입력하세요."></textarea>
+                        <button type="submit" id="sendBtn">전송</button>
+                    </form>
                 </div>
             </div>
 
             <script>
                 // ================================================================
-                // Conversation State & LocalStorage Management
+                // Conversation State — 서버 세션/DB 없이 브라우저에만 둔다(요청서 12절).
+                // 대화 여러 개를 배열로 관리하고 localStorage에 영속화한다. 매 API
+                // 호출은 활성 대화(active conversation)가 들고 있는 조각(current_
+                // requirement 등)을 그대로 요청 본문에 실어 보낸다 — 서버는 여전히
+                // 요청 단위로 무상태이며, Agent의 RAG/ChromaDB와는 완전히 분리된
+                // Frontend 전용 상태다.
                 // ================================================================
                 const STORAGE_KEY = 'electrode_ai_conversations_v1';
 
                 const state = {
-                    conversations: [],
+                    conversations: [],        // Conversation[] — 아래 getOrCreateActiveConversation() 참고
                     activeConversationId: null,
                     searchQuery: '',
-                    lastFailedText: null, // 에러 발생 시 재시도용 질문 텍스트
                 };
 
                 function loadConversations() {
@@ -779,13 +509,20 @@ async def agent_page():
                 function saveConversations() {
                     try {
                         localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations));
-                    } catch (e) {}
+                    } catch (e) {
+                        // localStorage 사용 불가(프라이빗 모드, 용량 초과 등) — 조용히 무시한다.
+                        // 세션 내 메모리(state.conversations)는 계속 정상 동작하므로 새로고침
+                        // 전까지는 대화가 유지된다(요청서 12절 1단계 수준으로 자연스럽게 저하).
+                    }
                 }
 
                 function getActiveConversation() {
                     return state.conversations.find(c => c.id === state.activeConversationId) || null;
                 }
 
+                // 활성 대화가 없으면(홈 화면 상태) 이 시점에 새 레코드를 만든다 — "새로운
+                // 대화 시작" 버튼을 눌러도 실제로 메시지를 보내기 전까지는 사이드바 목록에
+                // 빈 대화가 쌓이지 않는다.
                 function getOrCreateActiveConversation() {
                     let conv = getActiveConversation();
                     if (conv) return conv;
@@ -811,20 +548,20 @@ async def agent_page():
                     return t.length > 28 ? t.slice(0, 28) + '…' : t;
                 }
 
-                const EXAMPLE_PROMPTS = [
-                    {
-                        title: "800 mm Inline 전극 검사기 검색",
-                        text: "폭 800 mm 이상의 전극을 Inline으로 검사하고 0~500 μm 범위를 측정할 수 있는 장비를 찾아줘."
-                    },
-                    {
-                        title: "3D Profile 및 표면 결함 검사 장비",
-                        text: "전극의 두께가 아니라 코팅 표면의 3D Profile과 Defect를 검사할 수 있는 장비를 찾아줘."
-                    },
-                    {
-                        title: "정밀 측정 검사기 비교 (0~200 μm, ±1 μm)",
-                        text: "측정 범위는 0~200 μm 이상이고, 측정 정확도는 ±1 μm 이하인 전극 검사 장비를 찾아줘."
-                    }
+                const EXAMPLE_QUESTIONS = [
+                    '두께 측정 장비 찾기',
+                    '표면 결함 검사기 찾기',
+                    'Inline 검사기 찾기',
+                    'OCT 기반 장비 찾기',
+                    '3D Profile 검사기 찾기',
                 ];
+                const EXAMPLE_QUESTION_TEXT = {
+                    '두께 측정 장비 찾기': '전극 두께를 측정할 수 있는 검사기를 찾아줘.',
+                    '표면 결함 검사기 찾기': '전극 표면 결함(스크래치, 이물)을 검사할 수 있는 검사기를 찾아줘.',
+                    'Inline 검사기 찾기': 'Inline으로 실시간 검사할 수 있는 전극 검사기를 찾아줘.',
+                    'OCT 기반 장비 찾기': 'OCT 기반으로 측정하는 전극 검사기를 찾아줘.',
+                    '3D Profile 검사기 찾기': '전극의 3D 프로파일(형상)을 측정할 수 있는 검사기를 찾아줘.',
+                };
 
                 function escapeHtml(text) {
                     const div = document.createElement('div');
@@ -841,7 +578,7 @@ async def agent_page():
                     const full = Object.assign({ id: genId(), timestamp: new Date().toISOString() }, msg);
                     conv.messages.push(full);
                     conv.updatedAt = full.timestamp;
-                    if (msg.role === 'user' && (conv.title === '새로운 대화' || !conv.title)) {
+                    if (msg.role === 'user' && conv.title === '새로운 대화') {
                         conv.title = truncateTitle(msg.content && msg.content.text);
                     }
                     saveConversations();
@@ -849,10 +586,74 @@ async def agent_page():
                 }
 
                 // ================================================================
-                // Markdown Lightweight Renderer (State B)
+                // 렌더링 — 메시지 type별 Component(순수 함수, HTML 문자열 반환)
                 // ================================================================
+                // 값이 없으면 null을 반환한다(문자열 '미정'이 아니라) — 호출부가 행 자체를
+                // 렌더링하지 않고 건너뛸 수 있게 하기 위함이다(요청서: 값 없는 일반 항목은
+                // "미정"으로 표시하지 말고 아예 숨긴다. Hard Requirement 비교 영역만 예외).
+                function fmtRange(range) {
+                    if (!range || range.min === null || range.min === undefined || range.max === null || range.max === undefined) return null;
+                    return `${range.min} ~ ${range.max} ${range.unit || ''}`.trim();
+                }
+
+                function fmtReqValue(rv, withPlusMinus) {
+                    if (!rv || rv.value === null || rv.value === undefined) return null;
+                    const opLabel = {'<=': '이하', '>=': '이상', '<': '미만', '>': '초과'}[rv.operator] || '';
+                    const prefix = withPlusMinus ? '±' : '';
+                    return `${prefix}${rv.value} ${rv.unit || ''} ${opLabel}`.trim();
+                }
+
+                const STATUS_BADGE = {
+                    USER_DEFINED: '<span class="badge badge-userdefined">USER_DEFINED</span>',
+                    VERIFIED: '<span class="badge badge-verified">VERIFIED</span>',
+                    INFERRED: '<span class="badge badge-inferred">INFERRED</span>',
+                    UNKNOWN: '<span class="badge badge-unknown">UNKNOWN</span>',
+                };
+
+                function sourceDetailHtml(source) {
+                    if (!source || !source.document) return '';
+                    const parts = [escapeHtml(source.document)];
+                    if (source.chunk_id !== null && source.chunk_id !== undefined) parts.push('chunk_' + escapeHtml(source.chunk_id));
+                    if (source.section) parts.push(escapeHtml(source.section));
+                    return `<details class="source-detail"><summary></summary><div class="source-body">${parts.join(' · ')}</div></details>`;
+                }
+
+                // 값 + 단위 + status 배지 + (VERIFIED면) 근거 문서/chunk. 요청서 13절.
+                // 값이 없으면 null을 반환한다 — 호출부(EquipmentCard)가 그 행을 아예
+                // 렌더링하지 않는다("미정"으로 표시하지 않는다. Hard Requirement 비교
+                // 영역은 이 함수를 쓰지 않고 항상 PASS/FAIL/UNKNOWN을 명시한다).
+                function fmtSourcedCell(sn) {
+                    if (!sn || sn.value === null || sn.value === undefined) {
+                        return null;
+                    }
+                    const badge = STATUS_BADGE[sn.status] || '';
+                    const valueText = escapeHtml(sn.value) + (sn.unit ? ' ' + escapeHtml(sn.unit) : '');
+                    let html = `<span class="value">${valueText}</span> ${badge}`;
+                    if (sn.status === 'VERIFIED' && sn.source && sn.source.document) {
+                        html += sourceDetailHtml(sn.source);
+                    }
+                    return html;
+                }
+
+                function fmtSourcedRangeCell(sr) {
+                    if (!sr || sr.min === null || sr.min === undefined || sr.max === null || sr.max === undefined) {
+                        return null;
+                    }
+                    const badge = STATUS_BADGE[sr.status] || '';
+                    const valueText = `${escapeHtml(sr.min)} ~ ${escapeHtml(sr.max)} ${escapeHtml(sr.unit || '')}`.trim();
+                    let html = `<span class="value">${valueText}</span> ${badge}`;
+                    if (sr.status === 'VERIFIED' && sr.source && sr.source.document) {
+                        html += sourceDetailHtml(sr.source);
+                    }
+                    return html;
+                }
+
+                // ----- 경량 Markdown 렌더러 (요청서 8절) -----
+                // 제목/소제목/bullet/번호 목록/표/강조/코드블록만 지원하는 최소 구현이다.
+                // escapeHtml()로 먼저 이스케이프한 뒤 그 결과 위에서 안전한 태그만
+                // 치환하므로(원본 <, >, &, ", ' 는 이미 엔티티로 바뀐 상태), 사용자/AI
+                // 텍스트에 실제 HTML 태그가 섞여 있어도 그대로 렌더링되지 않는다.
                 function renderMarkdownLite(rawText) {
-                    if (!rawText) return '';
                     const escaped = escapeHtml(rawText);
                     const lines = escaped.split('\\n');
                     const htmlParts = [];
@@ -876,13 +677,11 @@ async def agent_page():
                     function inline(s) {
                         return s
                             .replace(/`([^`]+)`/g, '<code>$1</code>')
-                            .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
-                            .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" class="reference-action">$1</a>');
+                            .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
                     }
 
                     for (let i = 0; i < lines.length; i++) {
                         const line = lines[i];
-
                         if (line.trim().startsWith('```')) {
                             if (codeBuffer === null) { flushList(); flushTable(); codeBuffer = []; }
                             else { htmlParts.push(`<pre class="md-code"><code>${codeBuffer.join('\\n')}</code></pre>`); codeBuffer = null; }
@@ -890,16 +689,10 @@ async def agent_page():
                         }
                         if (codeBuffer !== null) { codeBuffer.push(line); continue; }
 
-                        if (/^---+$/.test(line.trim())) {
-                            flushList(); flushTable();
-                            htmlParts.push('<hr class="md-hr">');
-                            continue;
-                        }
-
-                        const headerMatch = line.match(/^(#{1,4})\\s+(.*)$/);
+                        const headerMatch = line.match(/^(#{1,3})\\s+(.*)$/);
                         if (headerMatch) {
                             flushList(); flushTable();
-                            const level = headerMatch[1].length;
+                            const level = headerMatch[1].length + 2;
                             htmlParts.push(`<h${level} class="md-heading">${inline(headerMatch[2])}</h${level}>`);
                             continue;
                         }
@@ -908,7 +701,7 @@ async def agent_page():
                         if (tableRowMatch) {
                             const cells = tableRowMatch[1].split('|').map(c => c.trim());
                             if (cells.every(c => /^:?-{2,}:?$/.test(c))) {
-                                continue;
+                                continue; // 구분행(|---|---|)은 헤더 확정 후 건너뛴다.
                             }
                             if (!tableBuffer) { tableBuffer = { header: cells, rows: [] }; }
                             else { tableBuffer.rows.push(cells); }
@@ -941,40 +734,23 @@ async def agent_page():
                     return htmlParts.join('');
                 }
 
-                // ================================================================
-                // Format Helpers for Equipment Spec
-                // ================================================================
-                function fmtRange(range) {
-                    if (!range || range.min === null || range.min === undefined || range.max === null || range.max === undefined) return null;
-                    return `${range.min} ~ ${range.max} ${range.unit || ''}`.trim();
+                function renderTextMessage(content) {
+                    return `<div class="msg-text md-body">${renderMarkdownLite(content.text)}</div>`;
                 }
 
-                function fmtReqValue(rv, withPlusMinus) {
-                    if (!rv || rv.value === null || rv.value === undefined) return null;
-                    const opLabel = {'<=': '이하', '>=': '이상', '<': '미만', '>': '초과'}[rv.operator] || '';
-                    const prefix = withPlusMinus ? '±' : '';
-                    return `${prefix}${rv.value} ${rv.unit || ''} ${opLabel}`.trim();
+                function renderErrorMessage(content) {
+                    return `<span class="msg-text">⚠️ ${escapeHtml(content.text)}</span>`;
                 }
 
-                function fmtSourcedCell(sn) {
-                    if (!sn || sn.value === null || sn.value === undefined) return null;
-                    return `${escapeHtml(sn.value)} ${escapeHtml(sn.unit || '')}`.trim();
-                }
-
-                function fmtSourcedRangeCell(sr) {
-                    if (!sr || sr.min === null || sr.min === undefined || sr.max === null || sr.max === undefined) return null;
-                    return `${escapeHtml(sr.min)} ~ ${escapeHtml(sr.max)} ${escapeHtml(sr.unit || '')}`.trim();
-                }
-
-                // ================================================================
-                // Renderers for Components
-                // ================================================================
+                // ----- RequirementSummaryCard (요청서 6절) -----
+                // 정책: 사용자가 실제로 입력했거나 대화 중 확정된 값만 보여준다 — 값이
+                // 없는 항목은 "미정"으로 채워 넣지 않고 행 자체를 렌더링하지 않는다
+                // (실사용자 보고: "측정 원리 미정" 같은 줄이 반복되어 정보 밀도가 낮았다).
                 function renderRequirementSummaryCard(content) {
                     const req = content.requirement || {};
                     const target = req.target || {};
                     const speed = req.measurement_speed && req.measurement_speed.value != null
                         ? `${req.measurement_speed.value} ${req.measurement_speed.unit || ''} 이상`.trim() : null;
-                    
                     const rows = [
                         ['검사 대상', target.material || null],
                         ['검사 방식', req.inline_offline || null],
@@ -986,242 +762,220 @@ async def agent_page():
                         ['요구 정확도', fmtReqValue(req.accuracy, true)],
                         ['요구 검사 속도', speed],
                     ];
-
                     const rowsHtml = rows
                         .filter(([, value]) => value !== null && value !== undefined && value !== '')
-                        .map(([label, value]) => `
-                            <div class="spec-row">
-                                <span class="spec-label">${escapeHtml(label)}</span>
-                                <span class="spec-value">${escapeHtml(value)}</span>
-                            </div>
-                        `).join('');
-
+                        .map(([label, value]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span></div>`)
+                        .join('');
                     return `
-                        <div style="margin-bottom: 16px;">
-                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">📋 분석된 요구사항 조건</div>
-                            <div class="spec-grid">${rowsHtml || '<div class="spec-row"><span class="spec-label">조건</span><span class="spec-value">확정 조건 없음</span></div>'}</div>
-                            <!-- 회귀 테스트용 hidden 식별 태그 유지: req.measurement_range req.accuracy -->
+                        <div class="card">
+                            <div class="card-header">📋 AI가 이해한 요구사항</div>
+                            <div class="card-body">${rowsHtml || '<span class="value muted">아직 확정된 조건이 없습니다.</span>'}</div>
                         </div>
                     `;
                 }
 
-                // State C: 검색 진행 상태 Card
+                // ----- SearchProgressCard (요청서 10절) -----
+                // 가짜 진행률이 아니라 실제 API 호출 하나(/generate-spec)의 in-flight
+                // 여부에 그대로 연결된다 — 'running'이면 전부 pending, 'done'이면 전부
+                // done으로 한 번에 바뀐다(백엔드가 이 4단계를 한 호출 안에서 순서대로
+                // 수행하는 것은 사실이며, 이 카드는 그 사실을 정직하게 보여줄 뿐 임의의
+                // 시간 간격으로 채워지는 연출이 아니다).
                 function renderSearchProgressCard(content) {
-                    const status = content.status || 'running';
-                    const isDone = status === 'done';
-
-                    const steps = [
-                        { text: '질문 내용 및 검사 조건 분석', done: true },
-                        { text: '관련 전극 검사 장비 및 사양서 검색', done: isDone },
-                        { text: '후보 장비 비교 및 Hard Requirement 검증', done: isDone },
-                        { text: '최종 사양 및 추천 결과 생성', done: isDone }
-                    ];
-
-                    const stepsHtml = steps.map((s, idx) => {
-                        const stepDone = s.done;
-                        const stepRunning = !stepDone && idx === steps.findIndex(x => !x.done);
-                        const cls = stepDone ? 'done' : (stepRunning ? 'running' : 'pending');
-                        const icon = stepDone ? '✓' : (stepRunning ? '◌' : '•');
-                        return `
-                            <li class="progress-step ${cls}">
-                                <div class="progress-step-icon">${icon}</div>
-                                <span>${escapeHtml(s.text)}${stepRunning ? ' 중...' : (stepDone ? ' 완료' : '')}</span>
-                            </li>
-                        `;
-                    }).join('');
-
+                    const steps = ['Requirement Parsing 완료', '관련 사양서 검색', '후보 장비 생성', 'Hard Requirement 검증'];
+                    const done = content.status === 'done';
+                    const itemsHtml = steps.map(s => `<li class="${done ? 'done' : 'pending'}">${escapeHtml(s)}</li>`).join('');
+                    // 실제 AI와 대화하는 느낌을 주기 위한 typing indicator(요청서 11절) —
+                    // 단순 spinner 대신 애니메이션 점 3개를 붙인다. 그 아래 단계 목록은
+                    // 여전히 실제 API 호출의 in-flight 여부를 정직하게 반영한다(가짜
+                    // 진행률 아님).
+                    const runningDots = done ? '' : '<span class="typing-dots"><span></span><span></span><span></span></span>';
                     return `
-                        <div class="progress-card">
-                            <div class="progress-header">
-                                <span>${isDone ? '✓ 검사 및 사양 분석 완료' : '🔍 전극 검사 조건 분석 및 정보 검색 중'}</span>
-                            </div>
-                            <ul class="progress-steps">${stepsHtml}</ul>
+                        <div class="card">
+                            <div class="card-header">${done ? '✅ 검색 완료' : '전극검사기 AI가 장비 정보를 분석하고 있습니다'}${runningDots}</div>
+                            <div class="card-body"><ul class="progress-list">${itemsHtml}</ul></div>
                         </div>
                     `;
                 }
 
-                // References Section Renderer
-                function renderReferencesSection(sources) {
-                    if (!sources || sources.length === 0) return '';
-                    const uniqueSources = Array.from(new Set(sources));
-                    const itemsHtml = uniqueSources.map(src => `
-                        <div class="reference-item">
-                            <div class="reference-name">📄 <span>${escapeHtml(src)}</span></div>
-                            <span class="reference-action">문서 보기 &gt;</span>
-                        </div>
-                    `).join('');
-
-                    return `
-                        <div class="references-section">
-                            <div class="references-title">참고 문서 / References</div>
-                            <div class="reference-list">${itemsHtml}</div>
-                        </div>
-                    `;
+                // ----- EquipmentCard (요청서 11절) -----
+                // 정책(요청서 문제5/6): "추천 순위(ranking)"와 "요구조건 충족 여부
+                // (hard requirement compliance)"를 분리해서 보여준다. UNKNOWN이 하나라도
+                // 있으면(FAIL이 없어도) "가장 적합한 장비"처럼 단정하지 않고 "확인 필요"로
+                // 낮춰서 표현한다 — 검색된 후보 중 상대적으로 나은 순위일 뿐, 요구조건을
+                // 전부 확인했다는 뜻이 아니기 때문이다.
+                function equipmentBanner(hasFail, hasUnknown, hasRecords) {
+                    if (hasFail) return '<div class="banner banner-fail">⚠️ 모든 Hard Requirement를 만족하는 장비를 찾지 못했습니다 — 참고 후보 장비입니다.</div>';
+                    if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 조건 일부 확인 필요 — 확인된 조건은 만족하지만, 사양서에서 확인되지 않은 조건이 있어 모든 요구조건을 충족한다고 단정할 수 없습니다.</div>';
+                    if (hasRecords) return '<div class="banner banner-pass">✅ Hard Requirement 조건을 모두 충족합니다.</div>';
+                    return '';
                 }
 
-                // Related Questions Section Renderer
-                function renderRelatedQuestionsSection(questions) {
-                    const qList = questions && questions.length > 0 ? questions : [
-                        "이 장비의 최소 측정 범위와 분해능은 어떻게 되나요?",
-                        "800 mm 이상의 폭에서도 Inline 검사가 가능한가요?",
-                        "동일 조건에서 추천 가능한 다른 검사 장비도 비교해줘."
-                    ];
+                function equipmentHeaderPrefix(hasFail, hasUnknown, hasRecords) {
+                    if (hasFail) return '🥈 참고 후보';
+                    if (!hasFail && !hasUnknown && hasRecords) return '🥇 추천 장비';
+                    return '🥈 추천 후보';
+                }
 
-                    const itemsHtml = qList.map(q => `
-                        <button type="button" class="related-btn" data-question="${escapeHtml(q)}">
-                            <span>💡 ${escapeHtml(q)}</span>
-                            <span style="color:var(--text-muted); font-size:12px;">전송 &gt;</span>
-                        </button>
-                    `).join('');
+                // Hard Requirement 결과를 "확인된 조건(PASS)/미충족 조건(FAIL)/확인 필요
+                // (UNKNOWN)"으로 묶어 카드 안에 간단히 요약한다 — 아래 별도 comparison_result
+                // 카드(각 항목의 상세 근거/배지)를 대체하지 않고 보완한다.
+                function confirmationSummaryHtml(hardRequirementReport) {
+                    const records = hardRequirementReport || [];
+                    if (records.length === 0) return '';
+                    const confirmed = records.filter(r => r.result === 'PASS').map(r => escapeHtml(r.item));
+                    const failed = records.filter(r => r.result === 'FAIL').map(r => escapeHtml(r.item));
+                    const unresolved = records.filter(r => r.result === 'UNKNOWN').map(r => escapeHtml(r.item));
+                    const blocks = [];
+                    if (confirmed.length) blocks.push(`<div class="confirm-block confirm-pass"><strong>확인된 조건</strong><br>${confirmed.map(x => '✓ ' + x).join('<br>')}</div>`);
+                    if (failed.length) blocks.push(`<div class="confirm-block confirm-fail"><strong>미충족 조건</strong><br>${failed.map(x => '✗ ' + x).join('<br>')}</div>`);
+                    if (unresolved.length) blocks.push(`<div class="confirm-block confirm-unknown"><strong>확인 필요</strong><br>${unresolved.map(x => '? ' + x).join('<br>')}</div>`);
+                    return blocks.join('');
+                }
 
+                function renderDownloadArea(content, msgId) {
+                    if (content.downloadUrl) {
+                        return `<a class="download-btn" href="${escapeHtml(content.downloadUrl)}" download>마크다운 사양서 다운로드</a>`;
+                    }
+                    return `<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">📄 마크다운 사양서 생성</button>`;
+                }
+
+                // ----- 참고 문서(요청서 10절) — EquipmentCard 하단에 별도 영역으로 표시 -----
+                function renderSourcesBlock(primarySources, retrievedSourcesCount) {
+                    if (!primarySources || primarySources.length === 0) return '';
+                    const uniqueSources = Array.from(new Set(primarySources));
+                    const items = uniqueSources.map(s => '📄 ' + escapeHtml(s)).join('<br>');
                     return `
-                        <div class="related-section">
-                            <div class="related-title">추가 질문 제안 / Related question</div>
-                            <div class="related-list">${itemsHtml}</div>
+                        <div class="sources-block">
+                            <div class="sources-title">참고 문서 (chunk ${escapeHtml(retrievedSourcesCount)}개)</div>
+                            <div class="sources-list">${items}</div>
                         </div>
                     `;
                 }
 
                 function renderEquipmentCard(content, msgId) {
-                    const spec = content.specification || {};
+                    const spec = content.specification;
                     const eq = spec.equipment || {};
                     const target = spec.inspection_target || {};
                     const mp = spec.measurement_performance || {};
                     const dd = spec.defect_detection || {};
                     const ip = spec.inspection_performance || {};
-                    const hardRecords = content.hardRequirementReport || [];
                     const primarySources = (spec.primary_sources && spec.primary_sources.length > 0) ? spec.primary_sources : (spec.sources || []);
 
-                    // Compliance 요약 항목 (버너)
-                    const confirmed = hardRecords.filter(r => r.result === 'PASS').map(r => r.item);
-                    const failed = hardRecords.filter(r => r.result === 'FAIL').map(r => r.item);
-                    const unresolved = hardRecords.filter(r => r.result === 'UNKNOWN').map(r => r.item);
+                    const noResults = content.retrievedSourcesCount === 0
+                        ? '<div class="banner banner-unknown">⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다(검색된 chunk 0개). 아래 값은 사용자가 입력한 요구사항 외에는 근거가 없습니다.</div>'
+                        : '';
 
-                    let summaryHtml = '';
-                    if (hardRecords.length > 0) {
-                        const items = [];
-                        if (confirmed.length) items.push(`<div class="compliance-item pass"><span class="compliance-item-icon">✓</span> <span>확인 조건 충족 (${confirmed.length}건)</span></div>`);
-                        if (failed.length) items.push(`<div class="compliance-item fail"><span class="compliance-item-icon">✗</span> <span>미충족 조건 (${failed.length}건)</span></div>`);
-                        if (unresolved.length) items.push(`<div class="compliance-item unknown"><span class="compliance-item-icon">△</span> <span>추가 확인 필요 (${unresolved.length}건)</span></div>`);
-                        summaryHtml = `<div class="compliance-summary-grid">${items.join('')}</div>`;
-                    }
-
+                    // 검사 폭/속도는 target.width_mm(요구값 echo)이 아니라 후보 문서에서
+                    // 실제로 확인된 equipment_max_width_mm/line_speed_mm_s를 보여준다 —
+                    // 다른 행(정확도/최소 검출 결함 크기 등)과 동일하게 "요구값을 그냥
+                    // 되돌려 보여주면서 마치 확인된 것처럼 보이는" 문제를 피하기 위함이다
+                    // (실사용자 보고 버그: Width/Speed hard requirement가 FAIL인데도
+                    // 카드에는 요구값이 그대로 표시되어 통과한 것처럼 보였다).
+                    //
+                    // 정책: 실제 장비 사양이 존재하는 항목만 보여준다 — None/빈 문자열/
+                    // "미정" 등은 행 자체를 감춘다(Hard Requirement 비교 영역만 예외로
+                    // 항상 PASS/FAIL/UNKNOWN을 명시한다).
                     const inspectionItemsText = (spec.inspection_items || []).join(', ');
-                    const specRows = [
-                        ['검사 장비명', eq.name || '추천 검사 시스템'],
-                        ['측정 항목', inspectionItemsText || 'Thickness / Profile / Defect'],
-                        ['측정 범위', fmtSourcedRangeCell(mp.measurement_range_full) || '0~500 μm'],
-                        ['측정 정확도', fmtSourcedCell(mp.equipment_accuracy_um) || '±1 μm 이하'],
-                        ['분해능', fmtSourcedCell(mp.resolution_um) || '0.1 μm'],
-                        ['최소 결함 크기', fmtSourcedCell(dd.equipment_minimum_defect_size_um || dd.minimum_defect_size_um) || '10 μm'],
-                        ['대응 가능 폭', fmtSourcedCell(target.equipment_max_width_mm) || '800 mm 이상'],
-                        ['검사 속도', fmtSourcedCell(ip.line_speed_mm_s) || '60 m/min'],
-                        ['검사 방식', eq.inline_offline || 'Inline'],
+                    const rows = [
+                        ['측정 범위', fmtSourcedRangeCell(mp.measurement_range_full)],
+                        ['정확도', fmtSourcedCell(mp.equipment_accuracy_um)],
+                        ['분해능', fmtSourcedCell(mp.resolution_um)],
+                        ['최소 검출 결함 크기', fmtSourcedCell(dd.equipment_minimum_defect_size_um || dd.minimum_defect_size_um)],
+                        ['대응 가능 폭', fmtSourcedCell(target.equipment_max_width_mm)],
+                        ['검사 속도', fmtSourcedCell(ip.line_speed_mm_s)],
+                        ['검사 방식', eq.inline_offline ? `<span class="value">${escapeHtml(eq.inline_offline)}</span>` : null],
+                        ['검사 항목', inspectionItemsText ? `<span class="value">${escapeHtml(inspectionItemsText)}</span>` : null],
                     ];
-
-                    const rowsHtml = specRows
-                        .filter(([, val]) => val !== null && val !== '')
-                        .map(([lbl, val]) => `
-                            <div class="spec-row">
-                                <span class="spec-label">${escapeHtml(lbl)}</span>
-                                <span class="spec-value">${escapeHtml(val)}</span>
-                            </div>
-                        `).join('');
-
-                    const downloadBtn = content.downloadUrl
-                        ? `<a class="download-btn" href="${escapeHtml(content.downloadUrl)}" download>📄 마크다운 사양서 다운로드</a>`
-                        : `<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}">📄 마크다운 사양서 생성</button>`;
+                    const rowsHtml = rows
+                        .filter(([, valueHtml]) => valueHtml !== null && valueHtml !== undefined)
+                        .map(([label, valueHtml]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span>${valueHtml}</div>`)
+                        .join('');
 
                     return `
-                        <div class="equipment-card">
-                            <div class="equipment-card-header">
-                                <span>🔋 추천 장비: ${escapeHtml(eq.name || '전극 검사 시스템')}</span>
-                                <span style="font-size:12px; font-weight:normal; color:var(--text-secondary);">Specification Summary</span>
-                            </div>
-                            <div class="equipment-card-body">
-                                ${summaryHtml}
-                                <div style="font-weight: 700; font-size: 14px; margin: 12px 0 8px; color: var(--text-primary);">상세 사양</div>
-                                <div class="spec-grid">${rowsHtml}</div>
-                                <div style="margin-top: 14px;">${downloadBtn}</div>
+                        <div class="card">
+                            <div class="card-header">${equipmentHeaderPrefix(content.hasFail, content.hasUnknown, content.hasRecords)} — ${escapeHtml(eq.name || 'N/A')}</div>
+                            <div class="card-body">
+                                ${equipmentBanner(content.hasFail, content.hasUnknown, content.hasRecords)}
+                                ${noResults}
+                                ${confirmationSummaryHtml(content.hardRequirementReport)}
+                                ${rowsHtml}
+                                ${renderSourcesBlock(primarySources, content.retrievedSourcesCount)}
+                                ${renderDownloadArea(content, msgId)}
                             </div>
                         </div>
-                        ${renderReferencesSection(primarySources)}
                     `;
+                }
+
+                // ----- RequirementComparison (요청서 12/13절) -----
+                // 정책: UNKNOWN을 PASS로 표시하지 않는다 — Backend(agent.candidate_matcher/
+                // agent.spec_validator)가 이미 PASS/FAIL/UNKNOWN을 코드로 확정해 보내주므로
+                // 여기서는 그 값을 그대로(재판단 없이) 배지로만 옮긴다.
+                const RESULT_BADGE = {
+                    PASS: '<span class="badge badge-pass">PASS</span>',
+                    FAIL: '<span class="badge badge-fail">FAIL</span>',
+                    UNKNOWN: '<span class="badge badge-unknown">UNKNOWN</span>',
+                    'N/A': '<span class="badge badge-unknown" style="background:#e0e0e0; color:#555;">N/A</span>',
+                };
+
+                // Backend(agent.spec_validator/agent.candidate_matcher)가 만드는 reason
+                // 문구는 "... → PASS"처럼 결과를 문장 끝에 텍스트로도 붙여준다(사람이 읽는
+                // 근거 설명 자체에 필요) — 그런데 이 카드는 바로 옆에 같은 결과를 badge로도
+                // 보여주므로 그대로 두면 "PASS ... PASS"처럼 중복돼 보인다. 여기서는 화면
+                // 표시용으로만 그 꼬리를 잘라내고, reason 문자열 자체(다른 곳에서 재사용될
+                // 수 있는 원본 데이터)는 건드리지 않는다.
+                function stripTrailingResultArrow(reason) {
+                    return (reason || '').replace(/\s*(→|->)\s*(PASS|FAIL|UNKNOWN)\s*$/i, '');
                 }
 
                 function renderComparisonCard(content) {
                     const records = content.hardRequirementReport || [];
-                    if (records.length === 0) return '';
-
-                    const resultBadge = {
-                        PASS: '<span style="color:#166534; font-weight:700;">✓ PASS</span>',
-                        FAIL: '<span style="color:#991b1b; font-weight:700;">✗ FAIL</span>',
-                        UNKNOWN: '<span style="color:#92400e; font-weight:700;">△ UNKNOWN</span>'
-                    };
-
-                    const itemsHtml = records.map(r => `
-                        <div class="spec-row" style="margin-bottom:6px;">
-                            <span class="spec-label" style="font-weight:600;">${escapeHtml(r.item)}</span>
-                            <span class="spec-value">${escapeHtml(r.reason)} ${resultBadge[r.result] || r.result}</span>
-                        </div>
-                    `).join('');
-
+                    if (records.length === 0) {
+                        return `
+                            <div class="card">
+                                <div class="card-header">Hard Requirement 검증</div>
+                                <div class="card-body"><span class="value muted">평가할 조건이 지정되지 않았습니다.</span></div>
+                            </div>
+                        `;
+                    }
+                    const itemsHtml = records.map(r => {
+                        const badge = RESULT_BADGE[r.result] || RESULT_BADGE.UNKNOWN;
+                        const src = (r.result !== 'UNKNOWN' && r.source && r.source.document) ? sourceDetailHtml(r.source) : '';
+                        const reasonText = escapeHtml(stripTrailingResultArrow(r.reason));
+                        return `<li><span class="item-name">${escapeHtml(r.item)}</span><span class="reason">${reasonText} ${badge}${src}</span></li>`;
+                    }).join('');
                     return `
-                        <div style="margin-top: 16px;">
-                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">요구조건 충족 여부 검증 (Hard Requirement)</div>
-                            <div>${itemsHtml}</div>
-                        </div>
-                    `;
-                }
-
-                function renderErrorCard(content) {
-                    return `
-                        <div class="error-card">
-                            <span>⚠️ ${escapeHtml(content.text || '답변을 생성하는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.')}</span>
-                            <button type="button" class="retry-btn" id="retryBtn">🔄 다시 시도</button>
+                        <div class="card">
+                            <div class="card-header">사용자 요구조건 검증 (Hard Requirement)</div>
+                            <div class="card-body"><ul class="hard-req-list">${itemsHtml}</ul></div>
                         </div>
                     `;
                 }
 
                 function renderMessageContent(msg) {
                     switch (msg.type) {
-                        case 'text':
-                            return `<div class="md-body">${renderMarkdownLite(msg.content.text)}</div>`;
-                        case 'requirement_summary':
-                            return renderRequirementSummaryCard(msg.content);
-                        case 'search_status':
-                            return renderSearchProgressCard(msg.content);
-                        case 'equipment_result':
-                            return renderEquipmentCard(msg.content, msg.id);
-                        case 'comparison_result':
-                            return renderComparisonCard(msg.content);
-                        case 'error':
-                            return renderErrorCard(msg.content);
-                        default:
-                            return `<div class="md-body">${renderMarkdownLite(msg.content && msg.content.text)}</div>`;
+                        case 'text': return renderTextMessage(msg.content);
+                        case 'requirement_summary': return renderRequirementSummaryCard(msg.content);
+                        case 'search_status': return renderSearchProgressCard(msg.content);
+                        case 'equipment_result': return renderEquipmentCard(msg.content, msg.id);
+                        case 'comparison_result': return renderComparisonCard(msg.content);
+                        case 'error': return renderErrorMessage(msg.content);
+                        default: return '';
                     }
                 }
 
-                // Welcome Screen Render
+                function renderExampleChips() {
+                    const chips = EXAMPLE_QUESTIONS.map(q => `<button type="button" class="chip" data-question="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('');
+                    return `<div class="chip-row">${chips}</div>`;
+                }
+
                 function makeWelcomeBlock() {
                     const wrap = document.createElement('div');
                     wrap.className = 'welcome-block';
-
-                    const promptChips = EXAMPLE_PROMPTS.map(p => `
-                        <button type="button" class="chip-item" data-prompt="${escapeHtml(p.text)}">
-                            <span>${escapeHtml(p.title)}</span>
-                            <span class="chip-arrow">→</span>
-                        </button>
-                    `).join('');
-
                     wrap.innerHTML = `
                         <div class="welcome-icon">🔋</div>
                         <h2>안녕하세요. 전극검사기 AI입니다.</h2>
-                        <p>찾고 있는 전극 검사 조건이나<br>궁금한 내용을 입력해주세요.</p>
-                        <div class="chip-container">
-                            <div class="chip-label">추천 질의 예시</div>
-                            ${promptChips}
-                        </div>
+                        <p>찾고 있는 전극 검사 장비의 조건이나 궁금한 내용을 입력해주세요.</p>
+                        ${renderExampleChips()}
                     `;
                     return wrap;
                 }
@@ -1230,6 +984,7 @@ async def agent_page():
                     const container = document.getElementById('messages');
                     const conv = getActiveConversation();
                     const messages = conv ? conv.messages : [];
+                    const wasAtBottom = (container.scrollTop + container.clientHeight) >= (container.scrollHeight - 40);
 
                     container.innerHTML = '';
                     if (messages.length === 0) {
@@ -1237,68 +992,39 @@ async def agent_page():
                         container.appendChild(makeWelcomeBlock());
                     } else {
                         container.classList.remove('is-empty');
-                        const inner = document.createElement('div');
-                        inner.className = 'messages-inner';
-
                         messages.forEach(msg => {
                             const isUser = msg.role === 'user';
                             const row = document.createElement('div');
                             row.className = 'msg-row ' + (isUser ? 'user' : 'ai');
-
-                            if (isUser) {
-                                const bubble = document.createElement('div');
-                                bubble.className = 'bubble-user';
-                                bubble.textContent = msg.content && msg.content.text;
-                                row.appendChild(bubble);
-                            } else {
-                                const docContainer = document.createElement('div');
-                                docContainer.className = 'ai-doc-container';
-                                docContainer.innerHTML = renderMessageContent(msg);
-
-                                // 관련 질문이 포함된 경우 추가
-                                if (msg.type === 'equipment_result' || (msg.type === 'text' && !messages.some(m => m.type === 'equipment_result'))) {
-                                    docContainer.innerHTML += renderRelatedQuestionsSection(msg.content && msg.content.relatedQuestions);
-                                }
-
-                                row.appendChild(docContainer);
-                            }
-                            inner.appendChild(row);
+                            const bubble = document.createElement('div');
+                            bubble.className = 'bubble ' + (isUser ? 'user' : (msg.type === 'error' ? 'ai error' : 'ai'));
+                            // .bubble은 텍스트 메시지의 줄바꿈(\\n)을 살리려고 white-space:
+                            // pre-wrap을 쓴다 — 그런데 카드 컴포넌트들은 들여쓰기된 템플릿
+                            // 리터럴을 반환하므로, trim() 없이 그대로 넣으면 앞뒤 공백/개행이
+                            // 그대로 렌더링되어 카드 위에 빈 공백이 보이는 문제가 있다.
+                            bubble.innerHTML = renderMessageContent(msg).trim();
+                            row.appendChild(bubble);
+                            container.appendChild(row);
                         });
-                        container.appendChild(inner);
                     }
-
-                    container.scrollTop = container.scrollHeight;
-                    wireEvents();
+                    if (wasAtBottom || messages.length <= 1) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                    wireExampleChips();
+                    wireCardActions();
                     renderConvList();
                 }
 
-                function wireEvents() {
-                    // 예시 칩 클릭 이벤트
-                    document.querySelectorAll('.chip-item').forEach(btn => {
-                        btn.onclick = () => handleUserMessage(btn.dataset.prompt);
-                    });
-
-                    // 마크다운 생성 버튼
+                function wireCardActions() {
                     document.querySelectorAll('.build-markdown-btn').forEach(btn => {
-                        btn.onclick = () => buildMarkdownForMessage(btn.dataset.msgId);
+                        btn.addEventListener('click', () => buildMarkdownForMessage(btn.dataset.msgId));
                     });
-
-                    // 관련 질문 클릭 이벤트
-                    document.querySelectorAll('.related-btn').forEach(btn => {
-                        btn.onclick = () => handleUserMessage(btn.dataset.question);
-                    });
-
-                    // Retry 버튼
-                    const retryBtn = document.getElementById('retryBtn');
-                    if (retryBtn) {
-                        retryBtn.onclick = () => {
-                            if (state.lastFailedText) {
-                                handleUserMessage(state.lastFailedText);
-                            }
-                        };
-                    }
                 }
 
+                // 요청서 흐름의 마지막 단계(최종 사양서 다운로드) — EquipmentCard에 심은
+                // 버튼에서 호출된다. 그 검색을 만든 시점의 requirement/validation을 그대로
+                // 함께 보내(각 메시지 content에 스냅샷으로 저장해둠) 기존 build-markdown
+                // API(agent/routes.py, renderers/markdown_renderer.py)를 그대로 재사용한다.
                 async function buildMarkdownForMessage(msgId) {
                     const conv = getActiveConversation();
                     const msg = conv && conv.messages.find(m => m.id === msgId);
@@ -1313,13 +1039,22 @@ async def agent_page():
                         saveConversations();
                         renderAll();
                     } catch (err) {
-                        addMessage({ role: 'assistant', type: 'error', content: { text: '마크다운 사양서 생성 실패: ' + err.message } });
+                        addMessage({ role: 'assistant', type: 'error', content: { text: '마크다운 사양서 생성 중 오류: ' + err.message } });
                         renderAll();
                     }
                 }
 
+                function wireExampleChips() {
+                    document.querySelectorAll('.chip').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const question = btn.dataset.question;
+                            handleUserMessage(EXAMPLE_QUESTION_TEXT[question] || question);
+                        });
+                    });
+                }
+
                 // ================================================================
-                // 대화 목록 사이드바
+                // 대화 목록 사이드바 — 검색/날짜별 그룹핑/선택
                 // ================================================================
                 function formatGroupLabel(dateObj) {
                     const now = new Date();
@@ -1359,39 +1094,94 @@ async def agent_page():
                         <div class="conv-group">
                             <div class="conv-group-label">${escapeHtml(g.label)}</div>
                             ${g.items.map(c => `
-                                <div class="conv-item ${c.id === state.activeConversationId ? 'active' : ''}" data-conv-id="${escapeHtml(c.id)}">
-                                    <span class="conv-item-title" title="${escapeHtml(c.title || '새로운 대화')}">${escapeHtml(c.title || '새로운 대화')}</span>
-                                    <button type="button" class="conv-item-delete" data-delete-id="${escapeHtml(c.id)}" title="대화 삭제">✕</button>
-                                </div>
+                                <button type="button" class="conv-item ${c.id === state.activeConversationId ? 'active' : ''}" data-conv-id="${escapeHtml(c.id)}" title="${escapeHtml(c.title || '새로운 대화')}">
+                                    ${escapeHtml(c.title || '새로운 대화')}
+                                </button>
                             `).join('')}
                         </div>
                     `).join('');
 
-                    container.querySelectorAll('.conv-item').forEach(el => {
-                        el.onclick = (e) => {
-                            if (e.target.classList.contains('conv-item-delete')) return;
-                            state.activeConversationId = el.dataset.convId;
+                    container.querySelectorAll('.conv-item').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            state.activeConversationId = btn.dataset.convId;
                             renderAll();
-                        };
-                    });
-
-                    container.querySelectorAll('.conv-item-delete').forEach(btn => {
-                        btn.onclick = (e) => {
-                            e.stopPropagation();
-                            const id = btn.dataset.deleteId;
-                            state.conversations = state.conversations.filter(c => c.id !== id);
-                            if (state.activeConversationId === id) {
-                                state.activeConversationId = null;
-                            }
-                            saveConversations();
-                            renderAll();
-                        };
+                        });
                     });
                 }
 
                 // ================================================================
-                // API Calling & Handling
+                // 메시지 처리 — 요청서 5/7/8/9/14/15절
                 // ================================================================
+                function isExplanationQuery(text) {
+                    return /왜|이유|설명해|근거가|어째서/.test(text);
+                }
+
+                // 요청서 14절: 근거 없는 내용을 새로 생성하지 않는다 — LLM을 호출하지
+                // 않고, 이미 검증된 lastSearchResult(hard_requirement_report)만 문구로
+                // 옮긴다.
+                // 정책(요청서 문제6): "ranking"(검색된 후보 중 상대적으로 나음)과 "hard
+                // requirement compliance"(요구조건을 실제로 다 확인했는지)를 표현을
+                // 분리한다 — UNKNOWN이 하나라도 있으면 "추천된 이유"(=전부 만족한다는
+                // 인상을 주는 표현) 대신 "확인된 조건을 가장 많이 만족하는 후보"라고만
+                // 말하고, 확인되지 않은 조건과 추가 확인이 필요하다는 점을 명시한다.
+                function buildExplanationMessage(conv) {
+                    const result = conv.lastSearchResult;
+                    if (!result) return '아직 추천된 장비가 없습니다. 먼저 요구사항을 말씀해 주세요.';
+                    const spec = result.specification;
+                    const records = result.hardRequirementReport || [];
+                    const name = (spec.equipment && spec.equipment.name) || '이 장비';
+                    const passItems = records.filter(r => r.result === 'PASS').map(r => r.item);
+                    const failItems = records.filter(r => r.result === 'FAIL').map(r => r.item);
+                    const unknownItems = records.filter(r => r.result === 'UNKNOWN').map(r => r.item);
+
+                    if (records.length === 0) {
+                        return `${name}에 대해 평가된 Hard Requirement 항목이 없습니다(요구사항에 확인 가능한 조건이 지정되지 않았습니다).`;
+                    }
+
+                    const hasFail = failItems.length > 0;
+                    const hasUnknown = unknownItems.length > 0;
+
+                    if (!hasFail && !hasUnknown) {
+                        return `${name}가 추천된 이유는 다음과 같습니다.\\n\\n` + passItems.map(x => `✓ ${x} 조건 만족`).join('\\n');
+                    }
+
+                    const parts = [`현재 검색된 후보 중 확인된 요구조건을 가장 많이 만족하는 후보(${name})입니다.`];
+                    if (passItems.length) parts.push('확인된 조건:\\n' + passItems.map(x => `✓ ${x}`).join('\\n'));
+                    if (failItems.length) parts.push('충족하지 못한 조건:\\n' + failItems.map(x => `✗ ${x}`).join('\\n'));
+                    if (unknownItems.length) parts.push('확인되지 않은 조건:\\n' + unknownItems.map(x => `? ${x}`).join('\\n'));
+                    if (hasUnknown) parts.push('따라서 최종 도입 전에는 확인되지 않은 조건을 장비 제조사 또는 추가 사양서로 반드시 확인해야 합니다.');
+                    return parts.join('\\n\\n');
+                }
+
+                // 요청서 문제1: 후속 메시지가 반영된 뒤 보여줄 문구는 절대 내부 필드명
+                // (accuracy, raw_text, required_accuracy_um 등)을 그대로 노출하지 않는다 —
+                // 서버(agent/routes.py._summarize_requirement_changes)가 이미 사람이 읽는
+                // label/action(added·changed·removed)으로 정리해 보내주므로, 여기서는
+                // 그 label만 문구로 옮긴다.
+                function buildRequirementChangeMessage(changedSummary) {
+                    const added = changedSummary.filter(c => c.action === 'added').map(c => c.label);
+                    const changed = changedSummary.filter(c => c.action === 'changed').map(c => c.label);
+                    const removed = changedSummary.filter(c => c.action === 'removed').map(c => c.label);
+
+                    if (added.length === 0 && changed.length === 0 && removed.length === 1) {
+                        return `요구 ${removed[0]} 조건을 삭제했습니다.\\n\\n기존 조건을 기준으로 다시 검색하겠습니다.`;
+                    }
+
+                    const lines = ['요구사항을 수정했습니다.', ''];
+                    if (added.length) lines.push('추가된 조건:', ...added.map(l => `- ${l}`), '');
+                    if (changed.length) lines.push('변경된 조건:', ...changed.map(l => `- ${l}`), '');
+                    if (removed.length) lines.push('삭제된 조건:', ...removed.map(l => `- ${l}`), '');
+                    lines.push('나머지 조건은 그대로 유지됩니다. 새로운 조건을 기준으로 다시 검색하겠습니다.');
+                    return lines.join('\\n');
+                }
+
+                function buildFollowupQuestionText(validation) {
+                    const questions = validation.questions || [];
+                    if (!questions.length) return '';
+                    const numbered = questions.map((q, i) => `${i + 1}. ${q}`).join('\\n');
+                    return `더 적합한 장비를 찾기 위해 몇 가지 조건을 추가로 알려주시면 좋습니다(꼭 전부 답하지 않아도 지금 조건으로 검색은 계속 진행됩니다).\\n\\n${numbered}`;
+                }
+
                 async function postJSON(url, payload) {
                     const res = await fetch(url, {
                         method: 'POST',
@@ -1407,88 +1197,30 @@ async def agent_page():
                     const progressMsg = addMessage({ role: 'assistant', type: 'search_status', content: { status: 'running' } });
                     renderAll();
 
-                    try {
-                        const data = await postJSON('/api/agent/generate-spec', { requirement: requirement });
-                        progressMsg.content = { status: 'done' };
+                    const data = await postJSON('/api/agent/generate-spec', { requirement: requirement });
 
-                        const hardRecords = data.hard_requirement_report || [];
-                        const retrievedSourcesCount = (data.retrieved_sources || []).length;
+                    progressMsg.content = { status: 'done' };
 
-                        conv.lastSearchResult = {
-                            specification: data.specification,
-                            validation: data.validation,
+                    const hardRecords = data.hard_requirement_report || [];
+                    const hasFail = hardRecords.some(r => r.result === 'FAIL');
+                    const hasUnknown = hardRecords.some(r => r.result === 'UNKNOWN');
+                    const retrievedSourcesCount = (data.retrieved_sources || []).length;
+
+                    conv.lastSearchResult = {
+                        specification: data.specification,
+                        validation: data.validation,
+                        hardRequirementReport: hardRecords,
+                        retrievedSourcesCount: retrievedSourcesCount,
+                    };
+                    conv.currentCandidates = hardRecords;
+
+                    addMessage({
+                        role: 'assistant', type: 'equipment_result',
+                        content: {
+                            specification: data.specification, retrievedSourcesCount: retrievedSourcesCount,
+                            hasFail: hasFail, hasUnknown: hasUnknown, hasRecords: hardRecords.length > 0,
                             hardRequirementReport: hardRecords,
-                            retrievedSourcesCount: retrievedSourcesCount,
-                        };
-                        conv.currentCandidates = hardRecords;
-
-                        addMessage({
-                            role: 'assistant', type: 'equipment_result',
-                            content: {
-                                specification: data.specification,
-                                retrievedSourcesCount: retrievedSourcesCount,
-                                hardRequirementReport: hardRecords,
-                                requirement: requirement,
-                                validation: data.validation,
-                            },
-                        });
-                        addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
-                    } catch (err) {
-                        progressMsg.content = { status: 'done' };
-                        throw err;
-                    }
-                }
-
-                async function handleUserMessage(rawText) {
-                    const text = (rawText || '').trim();
-                    if (!text) return;
-
-                    state.lastFailedText = text;
-                    addMessage({ role: 'user', type: 'text', content: { text: text } });
-                    renderAll();
-
-                    const conv = getActiveConversation();
-                    setInputDisabled(true);
-
-                    try {
-                        if (!conv.currentRequirement) {
-                            const data = await postJSON('/api/agent/analyze-requirement', { user_text: text });
-                            conv.currentRequirement = data.requirement;
-                            addMessage({ role: 'assistant', type: 'requirement_summary', content: { requirement: data.requirement, validation: data.validation } });
-                            renderAll();
-                            await runSearch(conv, conv.currentRequirement);
-                        } else {
-                            const data = await postJSON('/api/agent/update-requirement', { current_requirement: conv.currentRequirement, message: text });
-                            conv.currentRequirement = data.requirement;
-                            addMessage({ role: 'assistant', type: 'requirement_summary', content: { requirement: data.requirement, validation: data.validation } });
-                            renderAll();
-                            await runSearch(conv, conv.currentRequirement);
-                        }
-                        state.lastFailedText = null;
-                        renderAll();
-                    } catch (err) {
-                        addMessage({ role: 'assistant', type: 'error', content: { text: '답변을 생성하는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. (' + err.message + ')' } });
-                        renderAll();
-                    } finally {
-                        setInputDisabled(false);
-                    }
-                }
-
-                function setInputDisabled(disabled) {
-                    document.getElementById('chatInput').disabled = disabled;
-                    document.getElementById('sendBtn').disabled = disabled;
-                }
-
-                // ================================================================
-                // Event Wiring
-                // ================================================================
-                const chatForm = document.getElementById('chatForm');
-                const chatInput = document.getElementBy    return HTMLResponse(content=render_page("전극검사기 AI", body_html))
-
-
-# ==========================================
-# 4. 사양서 파일 다운로드 API
-# ==========================================own 호출 시 이 검색을 만든 시점 그대로 재사용하기 위한 스냅샷.
+                            // build-markdown 호출 시 이 검색을 만든 시점 그대로 재사용하기 위한 스냅샷.
                             requirement: requirement, validation: data.validation,
                         },
                     });
