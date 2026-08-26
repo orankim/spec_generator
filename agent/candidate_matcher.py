@@ -68,9 +68,23 @@ _SPEED_LABEL_HINTS = ("speed",)
 # 판정할 근거가 부족하다 — 근거 없이 FAIL을 만들어내는 것을 피한다).
 # "defect"는 Scratch/Contamination/Pit/Void 등 특정 이름이 없는 일반 결함 목록도
 # surface_defect로 인정하기 위한 포괄 키워드다.
+#
+# 세부 canonical item(scratch/contamination/particle/pinhole/void/
+# coating_non_uniformity/edge_crack)은 각각 자기 자신의 키워드로만 판정한다 —
+# requirement.inspection_items에 세부 항목이 여러 개 있으면(예: "스크래치와 오염")
+# 이 loop가 항목별로 독립적인 CandidateFieldMatch를 만들므로, 후보 장비가 그중
+# 하나만 지원해도 나머지는 별도로 FAIL/UNKNOWN이 남는다(요청서 문제2: 상위
+# 카테고리 하나로 뭉쳐서 판정하면 안 됨).
 _INSPECTION_ITEM_DEFECT_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "surface_defect": ("scratch", "crack", "pinhole", "pin hole", "particle", "contamination", "pit", "void", "defect"),
     "edge_defect": ("edge",),
+    "scratch": ("scratch",),
+    "contamination": ("contamination", "contaminant"),
+    "particle": ("particle",),
+    "pinhole": ("pinhole", "pin hole"),
+    "void": ("void",),
+    "coating_non_uniformity": ("coating non-uniformity", "coating non uniformity", "coating nonuniformity"),
+    "edge_crack": ("edge crack",),
 }
 # profile_3d는 Defect Types 목록이 아니라 Equipment Type/Measurement Principle
 # 서술 텍스트(agent.categorical_match.match_inspection_item_capability)로 판정한다 —
@@ -80,6 +94,13 @@ _INSPECTION_ITEM_LABELS = {
     "edge_defect": "Edge Defect Detection",
     "profile_3d": "3D Profile Detection",
     "thickness": "Thickness Measurement",
+    "scratch": "Scratch Detection",
+    "contamination": "Contamination Detection",
+    "particle": "Particle Detection",
+    "pinhole": "Pin Hole Detection",
+    "void": "Void Detection",
+    "coating_non_uniformity": "Coating Non-uniformity Detection",
+    "edge_crack": "Edge Crack Detection",
 }
 
 
@@ -712,6 +733,19 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
         hard_requirements_pass = fail_count == 0 and unknown_count == 0
         match_score = 100.0 * pass_count / len(matches) if matches else 0.0
 
+        # 3단계 상태(요청서 문제5) — PASS/PARTIAL/FAIL을 명시적으로 구분해 둔다.
+        # PARTIAL(충족은 했지만 일부 확인 불가)이 FAIL(실제로 하나라도 불충족)보다
+        # 항상 우선해야 하는데, 예전에는 hard_requirements_pass(=PASS 여부)만 boolean
+        # 으로 남기고 PARTIAL/FAIL을 구분하지 않아 select_best_candidate()의 tie-break
+        # (-pass_count, fail_count)에서 pass_count가 높은 FAIL 후보가 PARTIAL 후보보다
+        # 앞설 수 있었다(실측됨).
+        if fail_count == 0 and unknown_count == 0:
+            status = "PASS"
+        elif fail_count == 0:
+            status = "PARTIAL"
+        else:
+            status = "FAIL"
+
         candidates.append(
             CandidateEquipment(
                 candidate_id=f"cand-{idx}",
@@ -724,20 +758,38 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                 unknown_count=unknown_count,
                 fail_count=fail_count,
                 pass_count=pass_count,
+                status=status,
             )
         )
 
     return candidates
 
 
+_STATUS_RANK = {"PASS": 0, "PARTIAL": 1, "FAIL": 2}
+
+
 def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[CandidateEquipment]:
     """
-    PASS 후보(hard_requirements_pass=True)를 우선 선정하고, 그중에서도 pass_count가
-    높은 후보를 고른다. PASS한 후보가 하나도 없으면(전부 FAIL/UNKNOWN) 그래도
-    상대적으로 가장 나은 후보를 반환한다 — 반환된 후보가 hard_requirements_pass=False일
-    수 있으므로, 호출부는 이 값을 반드시 확인하고 사용자에게 투명하게 보여줘야 한다
-    (LLM이 조용히 부적합한 후보를 골라 감추는 상황을 막기 위함).
+    상태 3단계(PASS > PARTIAL > FAIL, 요청서 문제5)를 최우선 기준으로 후보를
+    줄세운다 — PASS 후보가 하나라도 있으면 PARTIAL/FAIL 후보는 절대 최종
+    추천으로 반환되지 않는다. 같은 상태 안에서는 (a) 충족한 Hard Requirement 수
+    (pass_count, 많을수록 우선) (b) UNKNOWN 수(unknown_count, 적을수록 우선)
+    (c) FAIL 수(fail_count, 적을수록 우선) 순으로 tie-break한다.
+
+    "요구 조건 대비 성능 여유"/"RAG similarity score" tie-break은 아직 반영하지
+    않았다 — 전자는 필드별 수치 마진을 계산하는 별도 자료구조가, 후자는
+    retrieve_for_requirement()의 거리 점수를 CandidateEquipment까지 끌고 오는
+    배관(plumbing)이 필요해 이번 범위에서는 보류했다(위 세 기준으로 대부분의
+    실질적 동점 상황은 이미 해소된다).
+
+    PASS한 후보가 하나도 없으면(전부 PARTIAL/FAIL) 그래도 상대적으로 가장 나은
+    후보를 반환한다 — 반환된 후보의 status가 PASS가 아닐 수 있으므로, 호출부는
+    이 값을 반드시 확인하고 사용자에게 투명하게 보여줘야 한다(LLM이 조용히
+    부적합한 후보를 골라 감추는 상황을 막기 위함).
     """
     if not candidates:
         return None
-    return sorted(candidates, key=lambda c: (not c.hard_requirements_pass, -c.pass_count, c.fail_count))[0]
+    return sorted(
+        candidates,
+        key=lambda c: (_STATUS_RANK[c.status], -c.pass_count, c.unknown_count, c.fail_count),
+    )[0]
