@@ -71,9 +71,19 @@ def _source_summary(sn: Optional[SourcedNumber]) -> Optional[str]:
         parts.append(f"slide {ref.slide}")
     if ref.page is not None:
         parts.append(f"p.{ref.page}")
-    if ref.section:
-        parts.append(ref.section)
-    return ", ".join(parts) if parts else (ref.source_type or None)
+    if ref.section and ref.section != ref.document:
+        sec = ref.section
+        if ref.document and sec.startswith(ref.document):
+            sec = sec[len(ref.document):].lstrip(" >:-")
+        if sec:
+            parts.append(sec)
+    seen = set()
+    unique_parts = []
+    for p in parts:
+        if p and p not in seen:
+            seen.add(p)
+            unique_parts.append(p)
+    return ", ".join(unique_parts) if unique_parts else (ref.source_type or None)
 
 
 def _num_row(label: str, field_path: str, sn: Optional[SourcedNumber]) -> RenderRow:

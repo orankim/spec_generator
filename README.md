@@ -1,7 +1,5 @@
 # ⚙️ 전극 검사기 사양서 자동 생성 AI Agent
 
-UI 참고주소 : https://www.figma.com/design/QRNWDbhr13LFWet7fjMW6f/260623_ChatBot_Templet?node-id=0-1&t=uLadrg4OEaRCoV7w-1
-
 로컬 LLM(Ollama)과 RAG(검색 증강 생성)를 활용해, 자연어(또는 조건 선택)로 전극 검사기 요구사항을 입력하면 사내 사양 데이터(표준 Markdown 기반 `SPEC-001.md` ~ `SPEC-050.md`)를 검색하고, 후보 장비의 hard requirement(전극 폭/측정 범위/정확도/검사 속도/최소 결함 크기/검사 모드/측정 방식/측정 원리/검사 항목) 충족 여부를 **Python 코드로 결정론적으로 판정**한 뒤, 근거(source)를 추적할 수 있는 표준 Specification을 생성해 Markdown 문서로 출력해 주는 폐쇄망 전용 웹 애플리케이션입니다.
 
 사용자에게 노출되는 기능은 **전극 검사기 AI**(`/agent`) 하나뿐입니다.

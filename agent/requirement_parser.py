@@ -123,15 +123,8 @@ _FINE_ITEM_CATEGORY: Dict[str, str] = {
     "contamination": "surface_defect",
     "particle": "surface_defect",
     "pinhole": "surface_defect",
-    "coating_defect": "surface_defect",
     "coating_non_uniformity": "coating",
-    # edge_crack은 여기 넣지 않는다: 이 corpus에서 "Edge Defect"와 "Edge Crack"은
-    # (surface_defect와 scratch/contamination의 관계와 달리) Defect Types 목록에
-    # 나란히 등장하는 서로 다른 개별 항목이다(예: SPEC-027 "Defect Types: Edge
-    # Defect, Edge Crack"). 여기 넣으면 "Edge Defect와 Edge Crack을 모두 검사"처럼
-    # 사용자가 둘 다 명시했을 때 edge_defect가 covered_families에 걸려
-    # inspection_items에서 빠지고 categories로만 밀려나 Hard Requirement 판정
-    # 대상에서 사라지는 문제가 생긴다(문제2와 동일한 종류의 데이터 손실).
+    "coating_defect": "coating",
 }
 
 
@@ -154,6 +147,10 @@ def _extract_inspection_items_and_categories(text: str) -> Tuple[List[str], List
 
     if any(kw in text for kw in _THICKNESS_KEYWORDS):
         items.append("thickness")
+        if "코팅 두께" in text_lower or "coating thickness" in text_lower or "코팅두께" in text_lower:
+            covered_families.add("coating")
+            if "coating" not in categories:
+                categories.append("coating")
 
     for item, keywords in _FINE_DEFECT_ITEM_KEYWORDS.items():
         if any(kw.lower() in text_lower for kw in keywords):

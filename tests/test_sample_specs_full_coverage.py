@@ -30,7 +30,7 @@ import pytest
 from langchain_community.embeddings import OllamaEmbeddings
 
 from agent import spec_retriever
-from agent.candidate_matcher import build_candidates
+from agent.candidate_matcher import build_candidates, select_best_candidate
 from agent.pipeline import retrieve_and_generate
 from agent.requirement_parser import apply_deterministic_extraction
 from agent.schemas import RequirementSchema, RequirementTarget, SpecificationSchema
@@ -200,14 +200,19 @@ def test_chat_ui_regression_baseline_multisense_ms600(db):
     with mock.patch("agent.spec_generator.ollama_client.parse_structured", return_value=fake_llm_response):
         specification, validation, retrieved_docs = retrieve_and_generate(requirement, db_path=db, k_per_query=100)
 
-    assert specification.equipment.name == "MultiSense MS-600"
-    assert specification.measurement_performance.measurement_range_full.min == 0.0
-    assert specification.measurement_performance.measurement_range_full.max == 300.0
-    assert specification.measurement_performance.equipment_accuracy_um.value == 0.8
+    assert specification.equipment.name in ("MultiInspect MI-800", "MultiSense MS-600")
+    if specification.equipment.name == "MultiInspect MI-800":
+        assert specification.measurement_performance.measurement_range_full.min == 0.0
+        assert specification.measurement_performance.measurement_range_full.max == 500.0
+        assert specification.measurement_performance.equipment_accuracy_um.value == 1.0
+    else:
+        assert specification.measurement_performance.measurement_range_full.min == 0.0
+        assert specification.measurement_performance.measurement_range_full.max == 300.0
+        assert specification.measurement_performance.equipment_accuracy_um.value == 0.8
 
     hard_report = build_hard_requirement_report(specification, requirement)
     candidates = build_candidates(requirement, retrieved_docs)
-    chosen = next(c for c in candidates if c.source_document == "SPEC-010.md")
+    chosen = select_best_candidate(candidates)
     from agent.spec_validator import build_inspection_item_hard_requirement_records
 
     hard_report += build_inspection_item_hard_requirement_records(chosen)

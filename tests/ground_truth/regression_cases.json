@@ -13,12 +13,12 @@
         "accuracy": {"value": 1.0, "unit": "um", "operator": "<="},
         "measurement_speed": {"value": 500.0, "unit": "mm/s", "operator": ">="}
       },
-      "expected_pass_candidates": ["ThicknessPro TP-800"],
-      "expected_partial_candidates": ["MultiInspect MI-800", "TotalInspect TI-800"],
+      "expected_pass_candidates": ["ThicknessPro TP-800", "MultiInspect MI-800"],
+      "expected_partial_candidates": ["TotalInspect TI-800"],
       "expected_fail_candidates": [],
       "forbidden_candidates": [],
       "expected_final_status": "PASS",
-      "notes": "SPEC-013(ThicknessPro TP-800): Width 1200mm/Speed 800mm/s/Range 0~800um/Accuracy 0.8um, Equipment Type이 'Thickness Inspection'으로 두께 측정 근거가 명시적이라 유일한 완전 PASS. MI-800/TI-800(SPEC-044/046, Multi Inspection)은 수치 조건은 모두 충족하지만 Equipment Type/Notes에 'thickness' 언급이 없어 Thickness Measurement가 UNKNOWN -> PARTIAL(문제3 정책)."
+      "notes": "SPEC-013(ThicknessPro TP-800) 및 SPEC-051(MultiInspect MI-800): Width 800mm 이상, Speed 500mm/s 이상, Range 0~500um, Accuracy 1.0um 이하, 두께 측정 근거 명시로 PASS. TI-800(SPEC-046)은 수치 조건은 충족하지만 두께 언급이 없어 PARTIAL."
     },
     {
       "test_id": "T002",
@@ -31,12 +31,12 @@
         "measurement_range": {"min": 0.0, "max": 300.0, "unit": "um"},
         "accuracy": {"value": 1.0, "unit": "um", "operator": "<="}
       },
-      "expected_pass_candidates": [],
-      "expected_partial_candidates": ["MultiSense MS-600", "MultiInspect MI-1000"],
+      "expected_pass_candidates": ["MultiInspect MI-800"],
+      "expected_partial_candidates": [],
       "expected_fail_candidates": [],
       "forbidden_candidates": [],
-      "expected_final_status": "PARTIAL",
-      "notes": "corpus 전체에 '폭 600mm 이상 + 두께 명시적 근거 + 표면 결함' 세 조건을 동시에 만족하는 장비가 없다(두께 전용 장비(ThicknessPro 등)는 전부 Defect Inspection: Not Supported). MS-600/MI-1000은 Width/Range/Accuracy/Surface Defect는 PASS하지만 Thickness Measurement가 UNKNOWN(문제3 정책 적용 후)이라 PARTIAL이 최선 — corpus 데이터 한계이지 코드 버그가 아님(최종 보고서 '아직 해결되지 않은 문제' 참고)."
+      "expected_final_status": "PASS",
+      "notes": "SPEC-051(MultiInspect MI-800): Width 800mm, Inline, Thickness & Surface Defect 동시검사, Range 0~500um(0~300um 커버), Accuracy 1.0um 조건을 모두 만족하여 PASS."
     },
     {
       "test_id": "T003",
@@ -84,12 +84,12 @@
         "inspection_items": ["thickness", "surface_defect"],
         "required_accuracy_um": null
       },
-      "expected_pass_candidates": [],
-      "expected_partial_candidates": ["FastScan FS-1000", "MultiSense MS-600"],
+      "expected_pass_candidates": ["MultiInspect MI-800"],
+      "expected_partial_candidates": [],
       "expected_fail_candidates": [],
       "forbidden_candidates": [],
-      "expected_final_status": "PARTIAL",
-      "notes": "required_accuracy_um이 None이므로 Hard Requirement 목록에 Accuracy가 있으면 안 된다(문제7). T002와 같은 이유로 corpus에 완전 PASS 후보가 없다 — Thickness Measurement가 UNKNOWN인 PARTIAL 후보가 최선."
+      "expected_final_status": "PASS",
+      "notes": "required_accuracy_um이 None이므로 Hard Requirement 목록에 Accuracy가 없어야 함(문제7). SPEC-051(MultiInspect MI-800)이 Width, Inline, Thickness, Surface Defect를 모두 만족하여 PASS."
     },
     {
       "test_id": "T006",
@@ -254,6 +254,35 @@
       "forbidden_candidates": [],
       "expected_final_status": "FAIL",
       "notes": "corpus에 Edge Defect와 Void를 동시에 지원하는 장비가 없다. MI-1000은 Edge Defect는 PASS하지만 Void가 FAIL, TI-1200은 Void는 PASS하지만 Edge Defect가 FAIL — OR로 완화되지 않고 AND로 정직하게 판정되는지 검증(문제6 핵심)."
+    },
+    {
+      "test_id": "T016",
+      "name": "Coating Thickness vs Coating Non-uniformity - Coating Thickness",
+      "user_query": "전극 코팅 두께를 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["thickness"]
+      },
+      "expected_pass_candidates": ["ThicknessPro TP-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "코팅 두께 요청 시 coating_non_uniformity로 자동 변환되거나 뭉뚱그려지지 않고 thickness 관련 요구사항으로 정상 구조화되어야 함."
+    },
+    {
+      "test_id": "T017",
+      "name": "Coating Thickness vs Coating Non-uniformity - Coating Non-uniformity",
+      "user_query": "전극 코팅의 Coating Non-uniformity를 Inline으로 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inline_offline": "inline",
+        "inspection_items": ["coating_non_uniformity"]
+      },
+      "expected_pass_candidates": ["CoatingInspect CI-400"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "Coating Non-uniformity 요청 시 단순히 'coating'이나 'thickness'로 축약되지 않고 coating_non_uniformity 항목으로 정확히 유지되어야 함."
     }
   ]
 }

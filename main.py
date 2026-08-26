@@ -841,7 +841,8 @@ async def agent_page():
                 // ----- 참고 문서(요청서 10절) — EquipmentCard 하단에 별도 영역으로 표시 -----
                 function renderSourcesBlock(primarySources, retrievedSourcesCount) {
                     if (!primarySources || primarySources.length === 0) return '';
-                    const items = primarySources.map(s => '📄 ' + escapeHtml(s)).join('<br>');
+                    const uniqueSources = Array.from(new Set(primarySources));
+                    const items = uniqueSources.map(s => '📄 ' + escapeHtml(s)).join('<br>');
                     return `
                         <div class="sources-block">
                             <div class="sources-title">참고 문서 (chunk ${escapeHtml(retrievedSourcesCount)}개)</div>
