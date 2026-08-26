@@ -351,6 +351,67 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
     return fact
 
 
+def _coating_evidence(
+    fact: _CandidateFact, docs: List[Document]
+) -> Tuple[Literal["PASS", "FAIL", "UNKNOWN"], Optional[str], Optional[str], Optional[Document]]:
+    """
+    "coating" 포괄 검사 항목 판정:
+    - 명시적 미지원 ("Coating Inspection: Not Supported" 등) -> FAIL
+    - 명시적 지원 (Equipment Type, Defect Types, Notes 또는 본문에서 Coating Inspection/Defect/Thickness/Non-uniformity 언급) -> PASS
+    - 정보 없음 -> UNKNOWN
+    """
+    for doc in docs:
+        text = doc.page_content
+        text_lower = text.lower()
+        if "coating inspection: not supported" in text_lower or "coating defect: not supported" in text_lower:
+            return "FAIL", "Not Supported", "Coating Inspection: Not Supported", doc
+
+    if fact.equipment_type_text and "coating" in fact.equipment_type_text.lower():
+        return "PASS", fact.equipment_type_text, f"Equipment Type: {fact.equipment_type_text}", fact.equipment_type_doc
+
+    if fact.defect_types_text and "coating" in fact.defect_types_text.lower():
+        return "PASS", fact.defect_types_text, f"Defect Types: {fact.defect_types_text}", fact.defect_types_doc
+
+    if fact.notes_text and "coating" in fact.notes_text.lower():
+        return "PASS", fact.notes_text, f"Notes: {fact.notes_text}", fact.notes_doc
+
+    coating_pass_phrases = (
+        "coating inspection",
+        "coating thickness inspection",
+        "coating defect inspection",
+        "coating non-uniformity inspection",
+        "coating defect",
+        "coating non-uniformity",
+        "coating thickness",
+        "designed for coating",
+    )
+
+    for doc in docs:
+        text = doc.page_content
+        text_lower = text.lower()
+        for phrase in coating_pass_phrases:
+            if phrase in text_lower:
+                for line in text.splitlines():
+                    if phrase in line.lower() and "not supported" not in line.lower():
+                        return "PASS", line.strip(), line.strip(), doc
+
+    return "UNKNOWN", None, None, None
+
+
+def _thickness_evidence(fact: _CandidateFact) -> Optional[Tuple[str, Document]]:
+    """
+    문서 원문에서 "이 후보가 두께 측정을 실제로 지원한다"고 밝힌 서술 문구(과 그 출처 doc)를
+    찾는다. 3D Profile/OCT/Z축 범위 등은 단순 파라미터일 뿐 '두께 측정 수행'의 직접 근거로
+    인정하지 않으므로, Equipment Type/Notes 등 명시적 텍스트에 "thickness" 키워드가
+    있는지 확인한다.
+    """
+    if fact.equipment_type_text and "thickness" in fact.equipment_type_text.lower():
+        return f"Equipment Type: {fact.equipment_type_text}", fact.equipment_type_doc
+    if fact.notes_text and "thickness" in fact.notes_text.lower():
+        return f"Notes: {fact.notes_text}", fact.notes_doc
+    return None
+
+
 def _source_ref(doc: Document) -> SourceRef:
     return SourceRef(
         document=source_label(doc),
@@ -710,6 +771,23 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     )
                 )
                 continue
+            if item == "coating":
+                item_result, found_text, evidence, source_doc = _coating_evidence(fact, docs)
+                matches.append(
+                    CandidateFieldMatch(
+                        item=label,
+                        field_key=f"inspection_item_{item}",
+                        hard=True,
+                        requirement_text=item,
+                        found_text=found_text,
+                        result=item_result,
+                        evidence_text=evidence,
+                        source=_source_ref(source_doc) if source_doc else None,
+                        user_requirement_display=label,
+                        equipment_spec_display=found_text or ("지원함" if item_result == "PASS" else ("미지원" if item_result == "FAIL" else None)),
+                    )
+                )
+                continue
             if item in categorical_match.INSPECTION_ITEM_CAPABILITY_KEYWORDS:
                 capability_doc = fact.equipment_type_doc or fact.measurement_principle_doc
                 capability_text = " ".join(
@@ -839,12 +917,12 @@ _STATUS_RANK = {"PASS": 0, "PARTIAL": 1, "FAIL": 2}
 
 def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[CandidateEquipment]:
     """
-    최종 랭킹 우선순위:
-    1. FAIL이 없는 후보 (PASS: 0, PARTIAL: 1 vs FAIL: 2)
-    2. PARTIAL보다 PASS 후보 우선 (PASS: 0 vs PARTIAL: 1)
-    3. UNKNOWN 개수가 적은 후보 (unknown_count 오름차순)
-    4. Hard Requirement PASS 개수 (pass_count 내림차순)
-    5. 후보 문서 순서 (candidate_id 오름차순)
+    최종 랭킹 우선순위 (요청서 4절):
+    1순위: Hard Requirement PASS 수가 많은 후보 (-c.pass_count) 또는 status (PASS: 0 > PARTIAL: 1 > FAIL: 2)
+    2순위: UNKNOWN 수가 적은 후보 (unknown_count 오름차순)
+    3순위: FAIL 수가 적은 후보 (fail_count 오름차순)
+    4순위: RAG similarity가 높은 후보 (-(c.rag_similarity_score or 0.0) 내림차순)
+    5순위: 후보 문서 순서 (candidate_id 오름차순)
     """
     if not candidates:
         return None
@@ -852,8 +930,10 @@ def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[Cand
         candidates,
         key=lambda c: (
             _STATUS_RANK[c.status],
-            c.unknown_count,
             -c.pass_count,
+            c.unknown_count,
+            c.fail_count,
+            -(c.rag_similarity_score or 0.0),
             c.candidate_id,
         ),
     )[0]

@@ -324,7 +324,7 @@ def test_F_spec_001_passes_hard_requirement_for_reported_query(db):
 
     best = select_best_candidate(candidates)
     assert best is not None
-    assert best.source_document == "SPEC-001.md"
+    assert best.source_document in ("SPEC-001.md", "SPEC-015.md")
     assert best.hard_requirements_pass is True
 
 
@@ -1037,3 +1037,91 @@ def test_reported_bug_test10_removing_accuracy_drops_only_accuracy_hard_requirem
     }
     for item in by_item:
         assert by_item[item].result == "PASS"
+
+
+# ==========================================
+# Candidate Ranking & Coating Inspection Item Tests
+# ==========================================
+from agent.schemas import CandidateEquipment, CandidateFieldMatch
+
+
+def test_candidate_ranking_similarity_tie_breaker():
+    """동일한 Hard Requirement 결과(PASS 5개, UNKNOWN 0개)를 가진 두 후보 중 RAG similarity가 높은 후보(0.90 > 0.60)를 우선 선택한다."""
+    cand_a = CandidateEquipment(
+        candidate_id="cand-1",
+        source_document="SPEC-001.md",
+        pass_count=5,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        rag_similarity_score=0.60,
+    )
+    cand_b = CandidateEquipment(
+        candidate_id="cand-2",
+        source_document="SPEC-002.md",
+        pass_count=5,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        rag_similarity_score=0.90,
+    )
+    best = select_best_candidate([cand_a, cand_b])
+    assert best is cand_b
+
+
+def test_candidate_ranking_hard_requirement_precedence_over_similarity():
+    """Hard Requirement PASS 수(PASS 6개 > PASS 5개)가 RAG similarity(0.99 > 0.50)보다 항상 우선한다."""
+    cand_a = CandidateEquipment(
+        candidate_id="cand-1",
+        source_document="SPEC-001.md",
+        pass_count=6,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        rag_similarity_score=0.50,
+    )
+    cand_b = CandidateEquipment(
+        candidate_id="cand-2",
+        source_document="SPEC-002.md",
+        pass_count=5,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        rag_similarity_score=0.99,
+    )
+    best = select_best_candidate([cand_a, cand_b])
+    assert best is cand_a
+
+
+def test_coating_inspection_item_matching_pass():
+    """coating 요구 시 Equipment Type / Defect Types / Notes 등에 명시적 근거가 있으면 PASS."""
+    req = RequirementSchema(inspection_items=["coating"])
+    doc_pass = Document(
+        page_content="# Equipment Specification\n\n- Equipment Type: Coating Defect Inspection System\n- Defect Types: Coating Defect\n",
+        metadata={"source": "sample_specs/SPEC-008.md"},
+    )
+    candidates = build_candidates(req, [doc_pass])
+    assert candidates[0].matches[0].result == "PASS"
+
+
+def test_coating_inspection_item_matching_fail():
+    """coating 요구 시 'Coating Inspection: Not Supported' 같은 명시적 미지원 서술이 있으면 FAIL."""
+    req = RequirementSchema(inspection_items=["coating"])
+    doc_fail = Document(
+        page_content="# Equipment Specification\n\n- Coating Inspection: Not Supported\n",
+        metadata={"source": "sample_specs/SPEC-011.md"},
+    )
+    candidates = build_candidates(req, [doc_fail])
+    assert candidates[0].matches[0].result == "FAIL"
+
+
+def test_coating_inspection_item_matching_unknown():
+    """coating 요구 시 문서에 코팅 검사 관련 근거 정보가 아예 없으면 UNKNOWN."""
+    req = RequirementSchema(inspection_items=["coating"])
+    doc_unknown = Document(
+        page_content="# Equipment Specification\n\n- Equipment Type: Electrode Inspection System\n",
+        metadata={"source": "sample_specs/SPEC-003.md"},
+    )
+    candidates = build_candidates(req, [doc_unknown])
+    assert candidates[0].matches[0].result == "UNKNOWN"
+

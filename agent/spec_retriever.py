@@ -228,15 +228,17 @@ def retrieve_for_requirement(
     seen = set()
     results: List[Document] = []
     for query in queries:
-        hits = vector_store.similarity_search(query, k=k_per_query)
-        for doc in hits:
+        hits_with_score = vector_store.similarity_search_with_score(query, k=k_per_query)
+        for doc, dist in hits_with_score:
+            score = 1.0 / (1.0 + dist)
+            doc.metadata["score"] = score
             key = (doc.metadata.get("source"), doc.page_content[:80])
             if key in seen:
                 continue
             seen.add(key)
             results.append(doc)
         if _RAG_DEBUG:
-            print(f"[RAG DEBUG] query: {query!r} -> {len(hits)}개 hit (db_path={resolved_db_path})")
+            print(f"[RAG DEBUG] query: {query!r} -> {len(hits_with_score)}개 hit (db_path={resolved_db_path})")
 
     for doc in _range_boost_docs(requirement, vector_store):
         key = (doc.metadata.get("source"), doc.page_content[:80])
