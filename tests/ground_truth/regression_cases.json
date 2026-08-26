@@ -283,6 +283,152 @@
       "forbidden_candidates": [],
       "expected_final_status": "PASS",
       "notes": "Coating Non-uniformity 요청 시 단순히 'coating'이나 'thickness'로 축약되지 않고 coating_non_uniformity 항목으로 정확히 유지되어야 함."
+    },
+    {
+      "test_id": "T018",
+      "name": "Width FAIL — 불충족 요구조건",
+      "user_query": "폭 2000 mm 이상의 전극을 Inline으로 검사할 수 있는 두께 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 2000.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness"]
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["WideThickness WT-1000"],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "2000mm 폭 요구 조건을 만족하는 장비가 없으므로 PASS 후보가 없어야 함."
+    },
+    {
+      "test_id": "T019",
+      "name": "Speed FAIL — 불충족 요구조건",
+      "user_query": "전극을 2000 mm/s 이상의 속도로 Inline 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inline_offline": "inline",
+        "measurement_speed": {"value": 2000.0, "unit": "mm/s", "operator": ">="}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["ThicknessPro TP-800"],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "2000 mm/s 이상의 속도를 만족하는 장비가 없으므로 FAIL 처리되어야 함."
+    },
+    {
+      "test_id": "T020",
+      "name": "Range FAIL — 불충족 요구조건",
+      "user_query": "0~5000 μm 범위를 측정할 수 있는 전극 검사기를 찾아줘.",
+      "expected_requirement": {
+        "measurement_range": {"min": 0.0, "max": 5000.0, "unit": "um"}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["ThicknessPro TP-800"],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "0~5000um 측정 범위를 만족하는 장비가 없으므로 FAIL 처리되어야 함."
+    },
+    {
+      "test_id": "T021",
+      "name": "Accuracy 미요구 — N/A 평가",
+      "user_query": "폭 600 mm 이상의 전극을 Inline으로 검사하면서 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 600.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness", "surface_defect"],
+        "required_accuracy_um": null
+      },
+      "expected_pass_candidates": ["MultiInspect MI-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "사용자가 Accuracy를 요구하지 않은 경우 required_accuracy_um = None 이어야 하며, Hard Requirement 평가 항목으로 추가되지 않아야 함."
+    },
+    {
+      "test_id": "T022",
+      "name": "Unknown Accuracy 판정",
+      "user_query": "정확도 ±1 μm 이하로 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "required_accuracy_um": 1.0
+      },
+      "expected_pass_candidates": ["PrecisionGauge PG-100"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "장비 문서에 Accuracy 정보가 없는 경우 정직하게 UNKNOWN으로 평가되어야 함."
+    },
+    {
+      "test_id": "T023",
+      "name": "복수 검사 항목 AND 조건 (Scratch + Void)",
+      "user_query": "전극의 Scratch와 Void를 모두 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["scratch", "void"]
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["OptiScan ES-200"],
+      "forbidden_candidates": [],
+      "expected_final_status": "FAIL",
+      "notes": "Scratch와 Void 모두를 지원해야 전체 PASS가 되며, 검색된 후보 장비가 둘 중 하나만 지원하는 경우 정직하게 FAIL로 판정되어 전체 PASS가 될 수 없음 (AND 조건 검증)."
+    },
+    {
+      "test_id": "T024",
+      "name": "Edge Crack 독립성 유지",
+      "user_query": "전극의 Edge Crack을 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["edge_crack"]
+      },
+      "expected_pass_candidates": ["EdgeVision EV-600"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "Edge Crack이 surface_defect나 edge_defect로 자동변환되지 않고 edge_crack 독립 항목으로 파싱되어야 함."
+    },
+    {
+      "test_id": "T025",
+      "name": "Coating Non-uniformity 독립성 유지",
+      "user_query": "전극 코팅의 Coating Non-uniformity를 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["coating_non_uniformity"]
+      },
+      "expected_pass_candidates": ["CoatingInspect CI-400"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "Coating Non-uniformity가 generic coating으로 축약되지 않고 독립 항목으로 파싱되어야 함."
+    },
+    {
+      "test_id": "T026",
+      "name": "Thickness False Positive 방지",
+      "user_query": "전극 표면을 3D Profile 방식으로 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["profile_3d"]
+      },
+      "expected_pass_candidates": ["ProfileScan PS-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "Z축 측정 범위가 존재한다는 이유만으로 thickness 검사 항목이 자동 PASS로 판정되면 안 됨."
+    },
+    {
+      "test_id": "T027",
+      "name": "User Requirement와 Equipment Fact 분리",
+      "user_query": "최소 3 μm 크기의 결함을 검출할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "minimum_defect_size_um": 3.0
+      },
+      "expected_pass_candidates": ["VisionInspect VI-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "장비 문서에 Minimum Detectable Defect 정보가 없으면 사용자의 요구값(3um)을 장비 사양으로 복사하여 VERIFIED 처리하면 안 됨."
     }
   ]
 }

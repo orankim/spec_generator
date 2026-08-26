@@ -207,6 +207,22 @@ async def generate_spec_api(req: GenerateSpecRequest):
                 for d in retrieved_docs
             ],
             "hard_requirement_report": [r.model_dump() for r in hard_requirement_report],
+            "chosen_candidate": chosen_candidate.model_dump() if chosen_candidate else None,
+            "recommendation_reasons": chosen_candidate.recommendation_reasons if chosen_candidate else [],
+            "unconfirmed_items": chosen_candidate.unconfirmed_items if chosen_candidate else [],
+            "comparison_table": [
+                {
+                    "requirement": m.item,
+                    "user_requirement": m.user_requirement_display or (f"{m.operator or ''} {m.requirement_value} {m.requirement_unit or ''}".strip() if m.requirement_value is not None else (m.requirement_text or "None")),
+                    "equipment_spec": m.equipment_spec_display or (f"{m.found_value} {m.found_unit or ''}".strip() if m.found_value is not None else (m.found_text or "UNKNOWN")),
+                    "status": m.result,
+                    "source": m.source.document if m.source else None,
+                    "section": m.source.section if m.source else None,
+                    "evidence": m.evidence_text or None,
+                    "margin": m.margin_display or None,
+                }
+                for m in (chosen_candidate.matches if chosen_candidate else [])
+            ],
         }
     except ollama_client.OllamaError as e:
         logger.exception("사양서 생성 중 Ollama 오류")

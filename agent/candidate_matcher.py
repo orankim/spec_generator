@@ -436,11 +436,12 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
             try:
                 ok, _reasons = units.evaluate_hard_requirements(required_range=required_range, candidate_range=candidate_range)
             except units.UnitError:
-                # 후보 문서의 범위 단위가 요구 범위와 차원이 달라(예: 시간 vs 길이)
-                # 아예 비교할 수 없는 경우 — FAIL로 단정하지 않고 정보 없음과
-                # 동일하게 UNKNOWN으로 취급한다(_range_boost_docs와 동일한 방어 패턴).
                 ok, candidate_range = False, None
             result = "PASS" if ok else ("UNKNOWN" if candidate_range is None else "FAIL")
+            req_disp = f"{required_range[0]:g}~{required_range[1]:g} {required_range[2]}"
+            spec_disp = f"{candidate_range[0]:g}~{candidate_range[1]:g} {candidate_range[2]}" if candidate_range else None
+            margin_val = (candidate_range[1] - required_range[1]) if (result == "PASS" and candidate_range) else None
+            margin_disp = f"+{margin_val:g} {required_range[2]}" if (margin_val is not None and margin_val > 0) else (f"{margin_val:g} {required_range[2]}" if margin_val is not None else None)
             matches.append(
                 CandidateFieldMatch(
                     item="Measurement Range",
@@ -455,6 +456,10 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.range_text,
                     source=_source_ref(fact.range_doc) if fact.range_doc else None,
+                    margin=margin_val,
+                    margin_display=margin_disp,
+                    user_requirement_display=req_disp,
+                    equipment_spec_display=spec_disp,
                 )
             )
 
@@ -466,10 +471,12 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     required_accuracy=required_accuracy, candidate_accuracy=candidate_accuracy
                 )
             except units.UnitError:
-                # 후보 문서의 정확도 단위가 요구 조건과 차원이 달라(예: % vs um)
-                # 비교 자체가 불가능한 경우 — FAIL로 단정하지 않고 UNKNOWN으로 취급한다.
                 ok, candidate_accuracy = False, None
             result = "PASS" if ok else ("UNKNOWN" if candidate_accuracy is None else "FAIL")
+            req_disp = f"{operator} {req_value:g} {req_unit}"
+            spec_disp = f"±{candidate_accuracy[0]:g} {candidate_accuracy[1]}" if candidate_accuracy else None
+            margin_val = (req_value - candidate_accuracy[0]) if (result == "PASS" and candidate_accuracy) else None
+            margin_disp = f"+{margin_val:g} {req_unit}" if (margin_val is not None and margin_val > 0) else (f"{margin_val:g} {req_unit}" if margin_val is not None else None)
             matches.append(
                 CandidateFieldMatch(
                     item="Accuracy",
@@ -483,6 +490,10 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.accuracy_text,
                     source=_source_ref(fact.accuracy_doc) if fact.accuracy_doc else None,
+                    margin=margin_val,
+                    margin_display=margin_disp,
+                    user_requirement_display=req_disp,
+                    equipment_spec_display=spec_disp,
                 )
             )
 
@@ -490,16 +501,16 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
             candidate_defect_size = fact.defect_size
             req_value, req_unit, operator = required_defect_size
             try:
-                # evaluate_hard_requirements의 required_accuracy/candidate_accuracy 파라미터는
-                # "(value, unit, operator) vs (value, unit)를 operator 방향으로 비교"하는 범용
-                # 로직이라 accuracy 전용이 아니다 — 결함 크기도 동일한 형태(값이 작을수록
-                # 우수, operator="<=")이므로 그대로 재사용해 비교 로직을 중복 구현하지 않는다.
                 ok, _reasons = units.evaluate_hard_requirements(
                     required_accuracy=required_defect_size, candidate_accuracy=candidate_defect_size
                 )
             except units.UnitError:
                 ok, candidate_defect_size = False, None
             result = "PASS" if ok else ("UNKNOWN" if candidate_defect_size is None else "FAIL")
+            req_disp = f"{operator} {req_value:g} {req_unit}"
+            spec_disp = f"{candidate_defect_size[0]:g} {candidate_defect_size[1]}" if candidate_defect_size else None
+            margin_val = (req_value - candidate_defect_size[0]) if (result == "PASS" and candidate_defect_size) else None
+            margin_disp = f"+{margin_val:g} {req_unit}" if (margin_val is not None and margin_val > 0) else (f"{margin_val:g} {req_unit}" if margin_val is not None else None)
             matches.append(
                 CandidateFieldMatch(
                     item="Minimum Defect Size",
@@ -513,6 +524,10 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.defect_size_text,
                     source=_source_ref(fact.defect_size_doc) if fact.defect_size_doc else None,
+                    margin=margin_val,
+                    margin_display=margin_disp,
+                    user_requirement_display=req_disp,
+                    equipment_spec_display=spec_disp,
                 )
             )
 
@@ -520,15 +535,16 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
             req_value, req_unit, operator = required_width
             candidate_width = (fact.width_mm, "mm") if fact.width_mm is not None else None
             try:
-                # "장비가 요구 폭 이상을 처리할 수 있는가"도 값 하나짜리 hard requirement라
-                # evaluate_hard_requirements의 required_accuracy/candidate_accuracy 파라미터를
-                # 그대로 재사용한다(비교 로직 중복 구현 방지 — Accuracy/Minimum Defect Size와 동일).
                 ok, _reasons = units.evaluate_hard_requirements(
                     required_accuracy=required_width, candidate_accuracy=candidate_width
                 )
             except units.UnitError:
                 ok, candidate_width = False, None
             result = "PASS" if ok else ("UNKNOWN" if candidate_width is None else "FAIL")
+            req_disp = f">= {req_value:g} {req_unit}"
+            spec_disp = f"{candidate_width[0]:g} {candidate_width[1]}" if candidate_width else None
+            margin_val = (candidate_width[0] - req_value) if (result == "PASS" and candidate_width) else None
+            margin_disp = f"+{margin_val:g} {req_unit}" if (margin_val is not None and margin_val > 0) else (f"{margin_val:g} {req_unit}" if margin_val is not None else None)
             matches.append(
                 CandidateFieldMatch(
                     item="Width",
@@ -542,6 +558,10 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.width_mm_text,
                     source=_source_ref(fact.width_mm_doc) if fact.width_mm_doc else None,
+                    margin=margin_val,
+                    margin_display=margin_disp,
+                    user_requirement_display=req_disp,
+                    equipment_spec_display=spec_disp,
                 )
             )
 
@@ -555,6 +575,10 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
             except units.UnitError:
                 ok, candidate_speed = False, None
             result = "PASS" if ok else ("UNKNOWN" if candidate_speed is None else "FAIL")
+            req_disp = f">= {req_value:g} {req_unit}"
+            spec_disp = f"{candidate_speed[0]:g} {candidate_speed[1]}" if candidate_speed else None
+            margin_val = (candidate_speed[0] - req_value) if (result == "PASS" and candidate_speed) else None
+            margin_disp = f"+{margin_val:g} {req_unit}" if (margin_val is not None and margin_val > 0) else (f"{margin_val:g} {req_unit}" if margin_val is not None else None)
             matches.append(
                 CandidateFieldMatch(
                     item="Speed",
@@ -568,14 +592,13 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=result,
                     evidence_text=fact.speed_text,
                     source=_source_ref(fact.speed_doc) if fact.speed_doc else None,
+                    margin=margin_val,
+                    margin_display=margin_disp,
+                    user_requirement_display=req_disp,
+                    equipment_spec_display=spec_disp,
                 )
             )
 
-        # Inspection Mode(Inline/Offline)/Measurement Type(Contact/Non-contact)/
-        # Measurement Principle — 숫자가 아니라 범주형 값이므로 agent.categorical_match로
-        # 정규화한 문자열을 그대로(==) 비교한다. 사용자가 해당 조건을 요구하지 않았으면
-        # (requirement.X is None) 애초에 평가 목록에 넣지 않는다 — Range/Accuracy와
-        # 동일한 원칙("요구하지 않은 조건을 임의로 채점하지 않는다").
         if requirement.inline_offline is not None:
             candidate_mode = fact.inspection_mode
             if candidate_mode is None:
@@ -594,6 +617,8 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=mode_result,
                     evidence_text=fact.inspection_mode_text,
                     source=_source_ref(fact.inspection_mode_doc) if fact.inspection_mode_doc else None,
+                    user_requirement_display=requirement.inline_offline.capitalize(),
+                    equipment_spec_display=candidate_mode.capitalize() if candidate_mode else None,
                 )
             )
 
@@ -615,12 +640,12 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=method_result,
                     evidence_text=fact.measurement_method_text,
                     source=_source_ref(fact.measurement_method_doc) if fact.measurement_method_doc else None,
+                    user_requirement_display=requirement.measurement_method.replace("_", "-").capitalize(),
+                    equipment_spec_display=candidate_method.replace("_", "-").capitalize() if candidate_method else None,
                 )
             )
 
         if requirement.measurement_principle is not None:
-            # RequirementParser가 이미 canonical 라벨로 채우지만, 조건 선택 UI 등
-            # 다른 경로로 자유 문자열이 들어올 수 있으므로 여기서도 한 번 더 정규화한다.
             required_principle = (
                 categorical_match.extract_measurement_principle(requirement.measurement_principle)
                 or requirement.measurement_principle
@@ -642,22 +667,14 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=principle_result,
                     evidence_text=fact.measurement_principle_text,
                     source=_source_ref(fact.measurement_principle_doc) if fact.measurement_principle_doc else None,
+                    user_requirement_display=required_principle,
+                    equipment_spec_display=candidate_principle if candidate_principle else None,
                 )
             )
 
-        # 검사 항목(inspection_items) 중 결함 종류로 검증 가능한 항목(surface_defect/
-        # edge_defect)이 실제로 이 후보 문서에서 검출 가능하다고 확인되는지 판정한다.
-        # "여러 검사 항목을 동시에 요구했는데 후보 장비가 그중 하나만 지원하는 경우"를
-        # PASS로 잘못 보여주지 않기 위함(실사용자 보고: Edge Defect + Surface Defect를
-        # 동시에 요구했을 때 Edge Defect를 지원하지 않는 장비도 구분 없이 PASS 취급됨).
         for item in requirement.inspection_items:
+            label = _INSPECTION_ITEM_LABELS.get(item, item.replace("_", " ").title())
             if item == "thickness":
-                # "Thickness Measurement: Not Supported" 같은 명시적 반증이 있으면 FAIL.
-                # 그 외에는 Equipment Type/Notes에 두께 측정을 실제로 수행한다는 명시적
-                # 서술 근거가 있을 때만 PASS로 판정한다 — Measurement Range (Z)/Z
-                # Resolution/3D Profile 같은 필드가 존재한다는 사실만으로는 두께 측정
-                # 지원 근거로 인정하지 않는다(요청서 문제3: 3D Profile 전용 장비의
-                # Z축 범위를 두께 측정 지원으로 착각해 PASS 처리되던 버그가 있었다).
                 if fact.thickness_not_supported:
                     item_result = "FAIL"
                     found_text = "Not Supported"
@@ -671,9 +688,6 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                         item_result = "PASS"
                         evidence_text, evidence_doc = hit
                         if fact.range is not None:
-                            # 실측 범위가 있으면 그 수치를 화면에 보여주되(더 구체적),
-                            # 판정 근거(evidence)에는 두께 지원을 뒷받침한 서술 문구도
-                            # 함께 남겨 "왜 PASS인지" 추적 가능하게 한다.
                             found_text = fact.range_text
                             evidence = f"{fact.range_text} (근거: {evidence_text})"
                             source_doc = fact.range_doc
@@ -683,7 +697,7 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                             source_doc = evidence_doc
                 matches.append(
                     CandidateFieldMatch(
-                        item=_INSPECTION_ITEM_LABELS.get(item, item),
+                        item=label,
                         field_key=f"inspection_item_{item}",
                         hard=True,
                         requirement_text=item,
@@ -691,15 +705,12 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                         result=item_result,
                         evidence_text=evidence,
                         source=_source_ref(source_doc) if source_doc else None,
+                        user_requirement_display=label,
+                        equipment_spec_display=found_text or ("지원함" if item_result == "PASS" else ("미지원" if item_result == "FAIL" else None)),
                     )
                 )
                 continue
             if item in categorical_match.INSPECTION_ITEM_CAPABILITY_KEYWORDS:
-                # profile_3d 등 — Defect Types 목록이 아니라 Equipment Type/
-                # Measurement Principle 서술 텍스트에서 positive/negative 키워드로
-                # 판정한다(agent.categorical_match.match_inspection_item_capability —
-                # "3D Profile"/"profile_3d"/"3d_profile" 등 표기가 달라도 "3d" 부분
-                # 문자열로 정규화되어 동일하게 매칭된다).
                 capability_doc = fact.equipment_type_doc or fact.measurement_principle_doc
                 capability_text = " ".join(
                     t for t in (fact.equipment_type_text, fact.measurement_principle_text) if t
@@ -713,7 +724,7 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     item_result, found_text, capability_doc = "UNKNOWN", None, None
                 matches.append(
                     CandidateFieldMatch(
-                        item=_INSPECTION_ITEM_LABELS.get(item, item),
+                        item=label,
                         field_key=f"inspection_item_{item}",
                         hard=True,
                         requirement_text=item,
@@ -721,23 +732,21 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                         result=item_result,
                         evidence_text=capability_text or None,
                         source=_source_ref(capability_doc) if capability_doc else None,
+                        user_requirement_display=label,
+                        equipment_spec_display=found_text or ("지원함" if item_result == "PASS" else ("미지원" if item_result == "FAIL" else None)),
                     )
                 )
                 continue
             keywords = _INSPECTION_ITEM_DEFECT_KEYWORDS.get(item)
             if keywords is None:
-                # coating 등 아직 전용 판정 로직이 없는 검사 항목도 조용히 빠뜨리지
-                # 않는다 — "사용자가 요구한 항목인데 검증 결과 목록에서 아예 사라짐"은
-                # (실제 판정 없이 UNKNOWN조차 안 남는 것은) 허용하지 않는다(실사용자
-                # 보고: 지원되는 요구조건이 검증 결과에서 누락되면 안 됨). 판정 근거가
-                # 없다는 사실 자체를 정직하게 UNKNOWN으로 남긴다.
                 matches.append(
                     CandidateFieldMatch(
-                        item=_INSPECTION_ITEM_LABELS.get(item, item.replace("_", " ").title()),
+                        item=label,
                         field_key=f"inspection_item_{item}",
                         hard=True,
                         requirement_text=item,
                         result="UNKNOWN",
+                        user_requirement_display=label,
                     )
                 )
                 continue
@@ -759,7 +768,7 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                 source_doc = None
             matches.append(
                 CandidateFieldMatch(
-                    item=_INSPECTION_ITEM_LABELS.get(item, item),
+                    item=label,
                     field_key=f"inspection_item_{item}",
                     hard=True,
                     requirement_text=item,
@@ -767,26 +776,34 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                     result=item_result,
                     evidence_text=evidence,
                     source=_source_ref(source_doc) if source_doc else None,
+                    user_requirement_display=label,
+                    equipment_spec_display=found_text or ("지원함" if item_result == "PASS" else ("미지원" if item_result == "FAIL" else None)),
                 )
             )
 
         pass_count = sum(1 for m in matches if m.result == "PASS")
         fail_count = sum(1 for m in matches if m.result == "FAIL")
         unknown_count = sum(1 for m in matches if m.result == "UNKNOWN")
-        # FAIL이 없어도 UNKNOWN만 있는(=아무것도 확인되지 않은) 후보를 "충족"으로
-        # 표시하면 안 된다 — 검사할 hard requirement가 아예 없는 경우(matches=[])는
-        # 여전히 공허하게(vacuously) True다. 이 조건이 없으면 근거가 전혀 없는
-        # 후보가 "확인됨(PASS)"으로 표시되고, 실제 FAIL 증거가 있는 후보보다
-        # select_best_candidate()에서 우선 선택되는 문제가 있었다(실측됨).
         hard_requirements_pass = fail_count == 0 and unknown_count == 0
         match_score = 100.0 * pass_count / len(matches) if matches else 0.0
 
-        # 3단계 상태(요청서 문제5) — PASS/PARTIAL/FAIL을 명시적으로 구분해 둔다.
-        # PARTIAL(충족은 했지만 일부 확인 불가)이 FAIL(실제로 하나라도 불충족)보다
-        # 항상 우선해야 하는데, 예전에는 hard_requirements_pass(=PASS 여부)만 boolean
-        # 으로 남기고 PARTIAL/FAIL을 구분하지 않아 select_best_candidate()의 tie-break
-        # (-pass_count, fail_count)에서 pass_count가 높은 FAIL 후보가 PARTIAL 후보보다
-        # 앞설 수 있었다(실측됨).
+        total_margin = sum(m.margin for m in matches if m.margin is not None)
+        doc_scores = [doc.metadata.get("score") for doc in docs if doc.metadata.get("score") is not None]
+        rag_sim_score = float(sum(doc_scores) / len(doc_scores)) if doc_scores else None
+
+        recommendation_reasons = []
+        unconfirmed_items = []
+        for m in matches:
+            if m.result == "PASS":
+                if m.margin_display:
+                    recommendation_reasons.append(f"✓ {m.item}: 요구 {m.user_requirement_display}, 장비 {m.equipment_spec_display} ({m.margin_display})")
+                elif m.user_requirement_display and m.equipment_spec_display:
+                    recommendation_reasons.append(f"✓ {m.item}: 요구 {m.user_requirement_display}, 장비 {m.equipment_spec_display}")
+                else:
+                    recommendation_reasons.append(f"✓ {m.item}: {m.user_requirement_display or m.item} 지원 확인")
+            elif m.result == "UNKNOWN":
+                unconfirmed_items.append(f"? {m.item}: 장비 사양서에서 확인하지 못함")
+
         if fail_count == 0 and unknown_count == 0:
             status = "PASS"
         elif fail_count == 0:
@@ -806,6 +823,10 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                 unknown_count=unknown_count,
                 fail_count=fail_count,
                 pass_count=pass_count,
+                total_margin=total_margin,
+                rag_similarity_score=rag_sim_score,
+                recommendation_reasons=recommendation_reasons,
+                unconfirmed_items=unconfirmed_items,
                 status=status,
             )
         )
@@ -818,26 +839,21 @@ _STATUS_RANK = {"PASS": 0, "PARTIAL": 1, "FAIL": 2}
 
 def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[CandidateEquipment]:
     """
-    상태 3단계(PASS > PARTIAL > FAIL, 요청서 문제5)를 최우선 기준으로 후보를
-    줄세운다 — PASS 후보가 하나라도 있으면 PARTIAL/FAIL 후보는 절대 최종
-    추천으로 반환되지 않는다. 같은 상태 안에서는 (a) 충족한 Hard Requirement 수
-    (pass_count, 많을수록 우선) (b) UNKNOWN 수(unknown_count, 적을수록 우선)
-    (c) FAIL 수(fail_count, 적을수록 우선) 순으로 tie-break한다.
-
-    "요구 조건 대비 성능 여유"/"RAG similarity score" tie-break은 아직 반영하지
-    않았다 — 전자는 필드별 수치 마진을 계산하는 별도 자료구조가, 후자는
-    retrieve_for_requirement()의 거리 점수를 CandidateEquipment까지 끌고 오는
-    배관(plumbing)이 필요해 이번 범위에서는 보류했다(위 세 기준으로 대부분의
-    실질적 동점 상황은 이미 해소된다).
-
-    PASS한 후보가 하나도 없으면(전부 PARTIAL/FAIL) 그래도 상대적으로 가장 나은
-    후보를 반환한다 — 반환된 후보의 status가 PASS가 아닐 수 있으므로, 호출부는
-    이 값을 반드시 확인하고 사용자에게 투명하게 보여줘야 한다(LLM이 조용히
-    부적합한 후보를 골라 감추는 상황을 막기 위함).
+    최종 랭킹 우선순위:
+    1. FAIL이 없는 후보 (PASS: 0, PARTIAL: 1 vs FAIL: 2)
+    2. PARTIAL보다 PASS 후보 우선 (PASS: 0 vs PARTIAL: 1)
+    3. UNKNOWN 개수가 적은 후보 (unknown_count 오름차순)
+    4. Hard Requirement PASS 개수 (pass_count 내림차순)
+    5. 후보 문서 순서 (candidate_id 오름차순)
     """
     if not candidates:
         return None
     return sorted(
         candidates,
-        key=lambda c: (_STATUS_RANK[c.status], -c.pass_count, c.unknown_count, c.fail_count),
+        key=lambda c: (
+            _STATUS_RANK[c.status],
+            c.unknown_count,
+            -c.pass_count,
+            c.candidate_id,
+        ),
     )[0]

@@ -804,13 +804,14 @@ async def agent_page():
                 // 낮춰서 표현한다 — 검색된 후보 중 상대적으로 나은 순위일 뿐, 요구조건을
                 // 전부 확인했다는 뜻이 아니기 때문이다.
                 function equipmentBanner(hasFail, hasUnknown, hasRecords) {
-                    if (hasFail) return '<div class="banner banner-fail">⚠️ 조건을 모두 충족하는 장비를 찾지 못했습니다 — 가장 유사한 후보입니다.</div>';
+                    if (hasFail) return '<div class="banner banner-fail">⚠️ 모든 Hard Requirement를 만족하는 장비를 찾지 못했습니다 — 참고 후보 장비입니다.</div>';
                     if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 조건 일부 확인 필요 — 확인된 조건은 만족하지만, 사양서에서 확인되지 않은 조건이 있어 모든 요구조건을 충족한다고 단정할 수 없습니다.</div>';
                     if (hasRecords) return '<div class="banner banner-pass">✅ Hard Requirement 조건을 모두 충족합니다.</div>';
                     return '';
                 }
 
                 function equipmentHeaderPrefix(hasFail, hasUnknown, hasRecords) {
+                    if (hasFail) return '🥈 참고 후보';
                     if (!hasFail && !hasUnknown && hasRecords) return '🥇 추천 장비';
                     return '🥈 추천 후보';
                 }
@@ -913,6 +914,7 @@ async def agent_page():
                     PASS: '<span class="badge badge-pass">PASS</span>',
                     FAIL: '<span class="badge badge-fail">FAIL</span>',
                     UNKNOWN: '<span class="badge badge-unknown">UNKNOWN</span>',
+                    'N/A': '<span class="badge badge-unknown" style="background:#e0e0e0; color:#555;">N/A</span>',
                 };
 
                 // Backend(agent.spec_validator/agent.candidate_matcher)가 만드는 reason

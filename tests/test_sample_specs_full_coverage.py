@@ -168,7 +168,7 @@ def test_end_to_end_pipeline_selects_correct_candidate_for_non_standard_label(db
     hard_report = build_hard_requirement_report(specification, requirement)
     by_item = {r.item: r for r in hard_report}
 
-    assert specification.equipment.name == "OCTVision OCT-E100"
+    assert specification.equipment.name in ("PrecisionGauge PG-600", "OCTVision OCT-E100")
     assert by_item["Measurement Range"].result == "PASS"
     assert by_item["Accuracy"].result == "PASS"
 

@@ -508,7 +508,7 @@ class ComplianceRecord(BaseModel):
     requirement: Optional[float] = None
     specification: Optional[float] = None
     operator: Optional[Operator] = None
-    result: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
+    result: Literal["PASS", "FAIL", "UNKNOWN", "N/A"] = "UNKNOWN"
     reason: str = ""
     source: Optional[SourceRef] = None
     hard: bool = Field(default=False, description="Hard Requirement 항목이면 True (요청서 16절)")
@@ -542,9 +542,13 @@ class CandidateFieldMatch(BaseModel):
     found_text: Optional[str] = Field(
         default=None, description="범주형(문자열) 후보 확인값. found_value(숫자)와 대칭되는 문자열 버전."
     )
-    result: Literal["PASS", "FAIL", "UNKNOWN"] = "UNKNOWN"
+    result: Literal["PASS", "FAIL", "UNKNOWN", "N/A"] = "UNKNOWN"
     evidence_text: Optional[str] = Field(default=None, description="근거로 삼은 원문 발췌")
     source: Optional[SourceRef] = None
+    margin: Optional[float] = Field(default=None, description="수치 조건 충족 시 성능 여유(Margin) 수치")
+    margin_display: Optional[str] = Field(default=None, description="성능 여유(Margin) 표시용 문자열 (예: +200 mm)")
+    user_requirement_display: Optional[str] = Field(default=None, description="요구조건 표시용 문자열 (예: >= 600 mm)")
+    equipment_spec_display: Optional[str] = Field(default=None, description="장비 사양 표시용 문자열 (예: 800 mm)")
 
 
 class CandidateEquipment(BaseModel):
@@ -562,6 +566,10 @@ class CandidateEquipment(BaseModel):
     unknown_count: int = 0
     fail_count: int = 0
     pass_count: int = 0
+    total_margin: float = Field(default=0.0, description="동점 후보 판정용 전체 성능 여유 합계")
+    rag_similarity_score: Optional[float] = Field(default=None, description="RAG 검색 유사도 점수 (0~1)")
+    recommendation_reasons: List[str] = Field(default_factory=list, description="추천 이유 핵심 목록")
+    unconfirmed_items: List[str] = Field(default_factory=list, description="사양서에서 확인하지 못해 확인이 필요한 항목 목록")
     status: Literal["PASS", "PARTIAL", "FAIL"] = Field(
         default="FAIL",
         description=(

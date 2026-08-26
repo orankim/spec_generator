@@ -85,24 +85,11 @@ def parse_requirement_text(
 # (surface_defect 등)만 걸러낸다.
 # ==========================================
 _INSPECTION_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
-    # 구체적 결함 이름 없이 포괄적으로만 언급된 경우에 쓰는 상위 카테고리 키워드
-    # (구체적 이름은 아래 _FINE_DEFECT_ITEM_KEYWORDS가 별도로 다룬다 — 문제2).
-    # 바레(qualifier 없는) "결함"/"defect"는 넣지 않는다 — 이 corpus의 Defect
-    # Types 표기는 "Edge Defect"/"Coating Defect"처럼 다른 canonical item의
-    # 이름에도 "Defect"가 포함되어 있어, 바레 키워드로는 "Edge Defect와 Edge
-    # Crack을 검출"처럼 edge_defect만 요구한 문장에서도 surface_defect가 잘못
-    # 함께 잡히는 문제가 실제로 발견됐다(T009 회귀 테스트로 확인). "표면"/
-    # "surface" 한정어가 있을 때만 surface_defect로 인정한다.
     "surface_defect": ("표면 결함", "표면결함", "surface defect", "surface_defect"),
     "profile_3d": ("3d", "프로파일", "profile", "형상", "높이"),
     "coating": ("코팅", "coating", "도포", "loading"),
-    "edge_defect": ("엣지", "edge", "가장자리", "버", "burr"),
+    "edge_defect": ("에지 결함", "에지결함", "엣지 결함", "엣지결함", "edge defect", "edge_defect", "가장자리 결함", "버", "burr"),
 }
-# 세부 결함 이름(canonical item) — 사용자가 구체적인 결함 종류를 언급하면 상위
-# 카테고리(surface_defect 등) 하나로 뭉개지 않고 그 세부 항목을 그대로 담는다
-# (실사용자 보고 문제2: "스크래치와 오염" -> inspection_items=["scratch",
-# "contamination"]이어야 하는데 surface_defect 하나로 합쳐져 후보 장비가 둘 중
-# 하나만 지원해도 PASS로 잘못 판정될 위험이 있었다).
 _FINE_DEFECT_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "scratch": ("스크래치", "긁힘", "scratch"),
     "contamination": ("오염", "이물", "contamination", "contaminant"),
@@ -112,12 +99,9 @@ _FINE_DEFECT_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "coating_non_uniformity": (
         "코팅 불균일", "코팅불균일", "coating non-uniformity", "coating nonuniformity", "coating non uniformity",
     ),
-    "edge_crack": ("엣지 크랙", "엣지크랙", "edge crack"),
+    "edge_crack": ("엣지 크랙", "엣지크랙", "edge crack", "에지 크랙", "에지크랙"),
     "coating_defect": ("코팅 결함", "코팅결함", "coating defect"),
 }
-# 세부 항목이 속하는 상위 카테고리 — RequirementSchema.inspection_categories(검색
-# 확장 전용)에만 쓰고, 세부 항목이 이미 있으면 그 상위 카테고리를 inspection_items
-# (Hard Requirement 판정 대상)에는 넣지 않는다.
 _FINE_ITEM_CATEGORY: Dict[str, str] = {
     "scratch": "surface_defect",
     "contamination": "surface_defect",
