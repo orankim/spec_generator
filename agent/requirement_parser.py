@@ -20,8 +20,11 @@ PARSE_PROMPT = """당신은 전극 검사기(인라인 계측 설비) 요구사�
 반드시 지켜야 할 규칙:
 - 사용자가 명시적으로 말하지 않은 값은 절대로 추측하지 마세요. 반드시 null(또는 빈 배열)로 남기세요.
   예: 사용자가 정확도를 언급하지 않았다면 required_accuracy_um은 null이어야 합니다.
-- inspection_items에는 사용자가 실제로 언급한 검사 항목만 담으세요.
-  (thickness, surface_defect, profile_3d, coating, edge_defect 등 중 해당하는 것만)
+- inspection_items에는 사용자가 실제로 언급한 검사 항목만 담으세요. 사용자가 구체적인
+  결함 이름(스크래치, 오염/이물, 파티클, 핀홀, 보이드, 코팅 불균일, 엣지 크랙 등)을
+  말했다면 상위 개념(surface_defect 등)으로 뭉뚱그리지 말고 그 구체적인 이름을 그대로
+  담으세요. 가능한 값: thickness, surface_defect, profile_3d, coating, edge_defect,
+  scratch, contamination, particle, pinhole, void, coating_non_uniformity, edge_crack.
 - measurement_method는 "비접촉/무접촉"이면 non_contact, "접촉식"이면 contact, 언급이 없으면 null로 두세요.
 - measurement_principle은 레이저/OCT/간섭계/비전 중 사용자가 명시한 것만 채우고, 아니면 null로 두세요.
 - "0~200 μm", "0-200um", "0 to 200 mm" 처럼 측정 범위가 언급되면 measurement_range에
@@ -48,6 +51,19 @@ def parse_requirement_text(
     # LLM 파싱 직후) 걸러낸다. 후속 질문 답변 라운드(existing_requirement 경로)에서는
     # 사용자가 직접 입력/수정한 inspection_items를 건드리면 안 되므로 다시 적용하지 않는다.
     requirement.inspection_items = _filter_hallucinated_items(requirement.inspection_items, user_text)
+    # 세부 결함 이름(스크래치/오염 등)이 raw_text에 있는데 LLM이 상위 카테고리
+    # (surface_defect 등)로 뭉뚱그렸거나 아예 놓쳤을 수 있으므로, 결정론적 추출로
+    # 보강한다(문제2) — 세부 항목이 있으면 그 항목이 속한 상위 카테고리는
+    # inspection_items에서 빼고 inspection_categories(검색 확장 전용)로 옮긴다.
+    fine_items, categories = _extract_inspection_items_and_categories(user_text)
+    for item in fine_items:
+        if item not in requirement.inspection_items:
+            requirement.inspection_items.append(item)
+    for category in categories:
+        if category in requirement.inspection_items:
+            requirement.inspection_items.remove(category)
+        if category not in requirement.inspection_categories:
+            requirement.inspection_categories.append(category)
     # trust_llm_guess=False: 소형 LLM이 raw_text에 없는 값을 환각으로 채우는 경우가
     # 실제로 보고되었다(예: "전극 표면" -> material="양극", "1~500 μm" -> "0~500000",
     # 정확도를 언급하지 않았는데 accuracy=1.0 생성). LLM 결과를 신뢰하지 않고,
@@ -68,23 +84,93 @@ def parse_requirement_text(
 # thickness는 이 필터에서 제외하고, 텍스트 근거 없이 추가되기 쉬운 나머지 항목
 # (surface_defect 등)만 걸러낸다.
 # ==========================================
-_ALWAYS_TRUSTED_ITEMS = {"thickness"}
 _INSPECTION_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
-    "surface_defect": (
-        "표면 결함", "표면결함", "결함", "이물", "크랙", "핀홀", "긁힘", "스크래치",
-        "defect", "scratch", "crack", "pinhole",
-    ),
+    # 구체적 결함 이름 없이 포괄적으로만 언급된 경우에 쓰는 상위 카테고리 키워드
+    # (구체적 이름은 아래 _FINE_DEFECT_ITEM_KEYWORDS가 별도로 다룬다 — 문제2).
+    "surface_defect": ("표면 결함", "표면결함", "결함", "defect"),
     "profile_3d": ("3d", "프로파일", "profile", "형상", "높이"),
     "coating": ("코팅", "coating", "도포", "loading"),
     "edge_defect": ("엣지", "edge", "가장자리", "버", "burr"),
 }
+# 세부 결함 이름(canonical item) — 사용자가 구체적인 결함 종류를 언급하면 상위
+# 카테고리(surface_defect 등) 하나로 뭉개지 않고 그 세부 항목을 그대로 담는다
+# (실사용자 보고 문제2: "스크래치와 오염" -> inspection_items=["scratch",
+# "contamination"]이어야 하는데 surface_defect 하나로 합쳐져 후보 장비가 둘 중
+# 하나만 지원해도 PASS로 잘못 판정될 위험이 있었다).
+_FINE_DEFECT_ITEM_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "scratch": ("스크래치", "긁힘", "scratch"),
+    "contamination": ("오염", "이물", "contamination", "contaminant"),
+    "particle": ("파티클", "입자", "particle"),
+    "pinhole": ("핀홀", "핀 홀", "pin hole", "pinhole"),
+    "void": ("보이드", "공극", "void"),
+    "coating_non_uniformity": (
+        "코팅 불균일", "코팅불균일", "coating non-uniformity", "coating nonuniformity", "coating non uniformity",
+    ),
+    "edge_crack": ("엣지 크랙", "엣지크랙", "edge crack"),
+}
+# 세부 항목이 속하는 상위 카테고리 — RequirementSchema.inspection_categories(검색
+# 확장 전용)에만 쓰고, 세부 항목이 이미 있으면 그 상위 카테고리를 inspection_items
+# (Hard Requirement 판정 대상)에는 넣지 않는다.
+_FINE_ITEM_CATEGORY: Dict[str, str] = {
+    "scratch": "surface_defect",
+    "contamination": "surface_defect",
+    "particle": "surface_defect",
+    "pinhole": "surface_defect",
+    "edge_crack": "edge_defect",
+}
+
+
+def _extract_inspection_items_and_categories(text: str) -> Tuple[List[str], List[str]]:
+    """
+    raw_text에서 검사 항목을 결정론적으로 뽑는다. (items, categories)를 반환한다.
+    세부 결함 이름이 있으면 그 세부 canonical item을 items에 담고, 그 세부
+    항목이 속한 상위 카테고리는 categories에만 넣는다(items에는 넣지 않음 —
+    문제2). thickness는 raw_text에 "두께"/"thickness" 키워드가 있을 때만
+    담는다(과거에는 무조건 신뢰했으나, "3D Profile 검사기를 찾아줘"처럼 다른
+    항목이 명시적으로 언급된 문장에서도 thickness가 끼어드는 문제3의 근본
+    원인이었다 — 이 함수 자체는 이제 근거 없이 thickness를 추가하지 않는다.
+    "아무 항목도 언급되지 않은 모호한 문장"에서 thickness를 기본값으로 쓰는
+    정책은 _filter_hallucinated_items()에서 별도로 처리한다).
+    """
+    text_lower = text.lower()
+    items: List[str] = []
+    categories: List[str] = []
+    covered_families: set = set()
+
+    if any(kw in text for kw in _THICKNESS_KEYWORDS):
+        items.append("thickness")
+
+    for item, keywords in _FINE_DEFECT_ITEM_KEYWORDS.items():
+        if any(kw.lower() in text_lower for kw in keywords):
+            items.append(item)
+            family = _FINE_ITEM_CATEGORY.get(item)
+            if family:
+                covered_families.add(family)
+                if family not in categories:
+                    categories.append(family)
+
+    for item, keywords in _INSPECTION_ITEM_KEYWORDS.items():
+        if item in covered_families:
+            continue
+        if any(kw.lower() in text_lower for kw in keywords):
+            items.append(item)
+
+    return items, categories
 
 
 def _filter_hallucinated_items(items: list, raw_text: str) -> list:
     """
     raw_text에 해당 검사 항목을 가리키는 키워드가 전혀 없으면 그 항목을 제거한다.
-    키워드 목록이 없는(알 수 없는) 항목이나 _ALWAYS_TRUSTED_ITEMS는 안전하게 그대로
-    유지한다(과도한 필터링으로 정당한 항목까지 지우지 않기 위함).
+    키워드 목록이 없는(알 수 없는) 항목은 안전하게 그대로 유지한다(과도한
+    필터링으로 정당한 항목까지 지우지 않기 위함).
+
+    thickness는 특별 취급한다: 리터럴 키워드("두께"/"thickness")가 있으면 당연히
+    유지하고, 없더라도 raw_text에 다른 구체적 검사 항목 근거가 "전혀" 없을 때는
+    이 앱의 기본 검사 항목으로 보고 유지한다(실사용자 사례: "0~200 μm 측정
+    범위와 ±1 μm 이하 정확도가 필요한 전극 검사기를 찾아줘."처럼 항목을 특정하지
+    않은 질문). 하지만 raw_text에 다른 항목이 명시적으로 언급됐다면(예: "3D
+    Profile 검사기") 그 근거 없이 thickness를 끼워 넣지 않는다(문제3: "3D
+    Profile"이 thickness로 잘못 파싱되는 버그의 원인이었다).
 
     안전장치: 필터링 결과 inspection_items가 통째로 비어버리면(raw_text가 짧은
     placeholder이거나 키워드 사전에 없는 표현만 쓰인 경우 등) 필터링 자체를
@@ -92,12 +178,17 @@ def _filter_hallucinated_items(items: list, raw_text: str) -> list:
     "일부 오탐 유지"보다 더 나쁜 실패이기 때문이다.
     """
     text_lower = (raw_text or "").lower()
+    all_item_keywords: Dict[str, Tuple[str, ...]] = {**_FINE_DEFECT_ITEM_KEYWORDS, **_INSPECTION_ITEM_KEYWORDS}
+    has_other_item_evidence = any(
+        any(kw.lower() in text_lower for kw in keywords) for keywords in all_item_keywords.values()
+    )
     filtered = []
     for item in items:
-        if item in _ALWAYS_TRUSTED_ITEMS:
-            filtered.append(item)
+        if item == "thickness":
+            if any(kw in raw_text for kw in _THICKNESS_KEYWORDS) or not has_other_item_evidence:
+                filtered.append(item)
             continue
-        keywords = _INSPECTION_ITEM_KEYWORDS.get(item)
+        keywords = all_item_keywords.get(item)
         if keywords is None or any(kw.lower() in text_lower for kw in keywords):
             filtered.append(item)
     if items and not filtered:
@@ -129,7 +220,16 @@ def requirement_from_selection(selection: Dict[str, Any]) -> RequirementSchema:
 # ==========================================
 _ACCURACY_KEYWORDS: Tuple[str, ...] = ("정확도", "accuracy")
 _RESOLUTION_KEYWORDS: Tuple[str, ...] = ("분해능", "resolution")
-_DEFECT_KEYWORDS: Tuple[str, ...] = ("결함 크기", "결함크기", "defect size", "결함")
+# "3 μm 이하 크기의 스크래치와 오염을 검출할 수 있는..."처럼 "결함"이라는 단어
+# 자체는 없이 "~크기의 <결함이름>"으로만 표현되는 경우가 실제로 관찰되었다
+# (문제4) — "결함 크기"류 키워드만으로는 이런 문장에서 최소 검출 결함 크기를
+# 놓친다. "크기"/"크기의"/"이하 크기"를 추가해 값+단위가 바로 옆에 있는지로
+# 판단한다("크기"라는 단어 자체는 흔하지만, 이 필드 전용 window 탐색에서만
+# 쓰이므로 다른 필드(정확도/폭 등)와 충돌하지 않는다).
+_DEFECT_KEYWORDS: Tuple[str, ...] = (
+    "결함 크기", "결함크기", "defect size", "결함",
+    "크기의", "크기 이하", "이하 크기", "이하의 크기", "크기",
+)
 _RANGE_KEYWORDS: Tuple[str, ...] = ("측정 범위", "측정범위", "measurement range", "범위", "최대")
 _SPEED_KEYWORDS: Tuple[str, ...] = ("검사 속도", "검사속도", "속도", "speed")
 
@@ -450,20 +550,6 @@ def _detect_removed_fields(text: str) -> set:
     return removed
 
 
-def _extract_inspection_items_from_text(text: str) -> List[str]:
-    """conversational patch 전용 검사 항목 추출 — LLM 없이 categorical_match와 동일한
-    원칙(키워드 근거 없으면 채우지 않는다)으로, 이미 parse_requirement_text의
-    hallucination 필터가 쓰는 _INSPECTION_ITEM_KEYWORDS를 그대로 재사용한다."""
-    text_lower = text.lower()
-    found: List[str] = []
-    if any(kw in text for kw in _THICKNESS_KEYWORDS):
-        found.append("thickness")
-    for item, keywords in _INSPECTION_ITEM_KEYWORDS.items():
-        if any(kw.lower() in text_lower for kw in keywords):
-            found.append(item)
-    return found
-
-
 def apply_conversational_patch(requirement: RequirementSchema, message_text: str) -> RequirementSchema:
     """
     대화 중 새로 들어온 메시지(message_text)만 근거로 기존 requirement를 "패치"한다
@@ -566,10 +652,18 @@ def apply_conversational_patch(requirement: RequirementSchema, message_text: str
             requirement.measurement_principle = measurement_principle
 
     # 검사 항목은 교체가 아니라 "추가"가 기본이다 — "표면 결함도 봐줘" 같은 후속
-    # 메시지가 이전에 확정된 다른 항목(thickness 등)을 지우면 안 된다.
-    for item in _extract_inspection_items_from_text(text):
+    # 메시지가 이전에 확정된 다른 항목(thickness 등)을 지우면 안 된다. 세부
+    # 결함 이름이 있으면 그 세부 항목을 추가하고, 상위 카테고리는 검색 확장
+    # 전용 inspection_categories로만 보낸다(문제2, parse_requirement_text와 동일 원칙).
+    fine_items, categories = _extract_inspection_items_and_categories(text)
+    for item in fine_items:
         if item not in requirement.inspection_items:
             requirement.inspection_items.append(item)
+    for category in categories:
+        if category in requirement.inspection_items:
+            requirement.inspection_items.remove(category)
+        if category not in requirement.inspection_categories:
+            requirement.inspection_categories.append(category)
 
     requirement.raw_text = ((requirement.raw_text or "") + "\n" + message_text).strip()
     requirement.sync_legacy_fields()

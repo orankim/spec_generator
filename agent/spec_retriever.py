@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import os
 from glob import glob
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_core.documents import Document
 from pptx import Presentation
 
+from . import categorical_match
 from .chroma_store import SimpleChromaStore
 from .paths import DEFAULT_CHROMA_DB_PATH, resolve_db_path
 from .schemas import RequirementSchema
@@ -39,6 +40,16 @@ _ITEM_QUERY_HINTS = {
     "profile_3d": "3D 형상 프로파일 높이 측정",
     "coating": "코팅 두께 도포량 loading weight",
     "edge_defect": "엣지 결함 가장자리 버 burr",
+    # 세부 결함 canonical item(요청서 문제2) — 상위 카테고리(surface_defect/
+    # edge_defect)와 별개로 검색 질의를 만들어야 그 세부 항목만 요구된 경우에도
+    # 관련 문서가 top-k에서 밀려나지 않는다.
+    "scratch": "스크래치 긁힘 표면 결함 검출",
+    "contamination": "오염 이물 표면 결함 검출",
+    "particle": "파티클 입자 표면 결함 검출",
+    "pinhole": "핀홀 표면 결함 검출",
+    "void": "보이드 공극 내부 결함",
+    "coating_non_uniformity": "코팅 불균일 코팅 두께 편차",
+    "edge_crack": "엣지 크랙 가장자리 크랙 균열",
 }
 
 
@@ -89,6 +100,60 @@ def _build_queries(requirement: RequirementSchema) -> List[str]:
         queries.append("전극 검사 설비 사양")
 
     return queries
+
+
+# 세부 결함 이름 등 특정 검사 항목이 실제로 이 chunk에 언급되어 있는지 확인하는
+# boost 전용 키워드다. agent.candidate_matcher._INSPECTION_ITEM_DEFECT_KEYWORDS와
+# 취지는 같지만(같은 개념), candidate_matcher가 이미 이 모듈(spec_retriever)의
+# source_label을 import하므로 반대 방향 import는 순환 import가 된다 — 그래서
+# "이 chunk를 검색 결과에 포함시킬지"만 결정하는 최소 사본을 독립적으로 둔다
+# (정확한 PASS/FAIL 판정은 여전히 candidate_matcher가 전담).
+_ITEM_BOOST_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "scratch": ("scratch",),
+    "contamination": ("contamination", "contaminant"),
+    "particle": ("particle",),
+    "pinhole": ("pinhole", "pin hole"),
+    "void": ("void",),
+    "coating_non_uniformity": ("coating non-uniformity", "coating nonuniformity", "coating non uniformity"),
+    "edge_crack": ("edge crack",),
+}
+
+
+def _inspection_item_boost_docs(requirement: RequirementSchema, vector_store: SimpleChromaStore) -> List[Document]:
+    """
+    요구 검사 항목 중 세부 결함 이름(scratch/contamination/particle/pinhole/void/
+    coating_non_uniformity/edge_crack)을 실제로 언급하는 chunk를, 의미 검색
+    순위와 무관하게 컬렉션 전체에서 찾아온다 — _range_boost_docs와 동일한 원칙
+    (구조적으로 확인 가능한 조건은 순위 기반 검색만 믿지 않는다). 이런 세부
+    결함 이름은 상위 카테고리("결함")보다 문서 내 등장 빈도가 낮아 의미 검색
+    top-k 밖으로 밀려나기 쉽다(실측: "3 μm 이하 크기의 스크래치와 오염" 질의에서
+    VisionInspect VI-1000이 top-5 semantic search에서 누락됨).
+    """
+    keywords: List[str] = []
+    for item in requirement.inspection_items:
+        keywords.extend(_ITEM_BOOST_KEYWORDS.get(item, ()))
+        # profile_3d 등 "Equipment Type/Measurement Principle 서술 텍스트"로 판정하는
+        # 항목(agent.categorical_match.INSPECTION_ITEM_CAPABILITY_KEYWORDS)도 같은
+        # 이유로 discovery가 밀려날 수 있다 — positive 키워드를 그대로 재사용해
+        # boost 대상에 포함시킨다(중복 정의 방지).
+        capability_spec = categorical_match.INSPECTION_ITEM_CAPABILITY_KEYWORDS.get(item)
+        if capability_spec:
+            positive_keywords, _negative_keywords = capability_spec
+            keywords.extend(positive_keywords)
+    if not keywords:
+        return []
+    try:
+        all_docs = vector_store.get(include=["documents", "metadatas"])
+    except Exception:
+        return []
+    matched: List[Document] = []
+    for text, meta in zip(all_docs.get("documents", []) or [], all_docs.get("metadatas", []) or []):
+        if not text:
+            continue
+        text_lower = text.lower()
+        if any(kw in text_lower for kw in keywords):
+            matched.append(Document(page_content=text, metadata=meta or {}))
+    return matched
 
 
 def _range_boost_docs(requirement: RequirementSchema, vector_store: SimpleChromaStore) -> List[Document]:
@@ -182,15 +247,36 @@ def retrieve_for_requirement(
         if _RAG_DEBUG:
             print(f"[RAG DEBUG] range_boost -> 추가됨: {source_label(doc)!r}")
 
-    matched_filenames = {doc.metadata.get("filename") for doc in results if doc.metadata.get("filename")}
-    for doc in _pull_identity_chunks(vector_store, matched_filenames):
+    for doc in _inspection_item_boost_docs(requirement, vector_store):
         key = (doc.metadata.get("source"), doc.page_content[:80])
         if key in seen:
             continue
         seen.add(key)
         results.append(doc)
         if _RAG_DEBUG:
-            print(f"[RAG DEBUG] identity_chunk -> 추가됨: {source_label(doc)!r}")
+            print(f"[RAG DEBUG] inspection_item_boost -> 추가됨: {source_label(doc)!r}")
+
+    # 후보 확정 후 전체 문서 로드 (실사용자 보고 버그): 초기 top-k 의미 검색이
+    # 문서 자체는 찾아내면서도(=이 문서가 후보라는 것은 확정됨) 그 문서의 특정
+    # chunk(예: "## Inspection Target"의 Maximum Electrode Width, "Measurement
+    # Performance"의 Measurement Speed)는 우연히 top-k 밖으로 밀려나는 경우가
+    # 실제로 있었다 — candidate_matcher._extract_candidate_fact는 여기 넘겨준
+    # chunk만 볼 수 있으므로, 문서에 값이 있는데도 UNKNOWN으로 잘못 판정되는
+    # 원인이 됐다(예: SPEC-013 Width, SPEC-039 Speed). RAG 검색(top-k)의 역할은
+    # "어떤 문서가 후보인가"를 정하는 데까지만이고, 일단 후보로 확정되면 그
+    # 문서 전체(모든 chunk)를 deterministic field extraction의 입력으로 삼는다
+    # (요청서 구조: RAG 검색 → 후보 선정 → 후보 전체 문서 로드 → deterministic
+    # extraction → Hard Requirement 검증). _pull_identity_chunks(chunk_id=0만)의
+    # 상위 호환이므로 그 함수는 더 이상 쓰지 않는다.
+    matched_filenames = {doc.metadata.get("filename") for doc in results if doc.metadata.get("filename")}
+    for doc in _pull_full_candidate_documents(vector_store, matched_filenames):
+        key = (doc.metadata.get("source"), doc.page_content[:80])
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(doc)
+        if _RAG_DEBUG:
+            print(f"[RAG DEBUG] full_candidate_doc -> 추가됨: {source_label(doc)!r}")
 
     if _RAG_DEBUG:
         try:
@@ -209,34 +295,27 @@ def retrieve_for_requirement(
     return results
 
 
-def _pull_identity_chunks(vector_store: SimpleChromaStore, filenames: set) -> List[Document]:
+def _pull_full_candidate_documents(vector_store: SimpleChromaStore, filenames: set) -> List[Document]:
     """
-    검색 결과에 이미 포함된 문서들의 "식별 정보" chunk(markdown 소스는 chunk_id=0 —
-    build_rag_ollama.parse_markdown_file()의 관례상 "# Equipment Specification" 바로
-    다음 "## General" 절이 항상 첫 chunk다)를 명시적으로 함께 끌어온다.
-
-    의미 검색은 수치 성능 표(Measurement Performance 등)에 강하게 반응하는 반면,
-    정작 Manufacturer/Model이 적힌 General 절은 top-k 밖으로 밀려나기 쉽다 — 그러면
-    문서 자체는 검색됐는데도 spec_generator._fallback_equipment_identity()가 근거로
-    쓸 chunk가 없어 equipment.name을 못 채우는 상황이 생긴다. PPTX 소스(chunk_id
-    메타데이터 없음)에 대해서는 조건에 맞는 chunk가 없어 조용히 빈 결과를 반환한다.
+    확정된 후보 문서(파일)마다 컬렉션에 있는 모든 chunk를 조건 없이 통째로
+    가져온다(의미 검색 순위와 무관) — Manufacturer/Model이 적힌 "## General"
+    chunk부터 Width/Speed가 적힌 "## Inspection Target"/"## Measurement
+    Performance" chunk까지 전부 포함되므로, 이전에 chunk_id=0(식별 정보)만
+    가져오던 것의 상위 호환이다. PPTX 소스(filename 메타데이터 없음)에 대해서는
+    filenames 집합 자체에 들어오지 않아(retrieve_for_requirement에서 filter됨)
+    조용히 건너뛴다.
     """
-    identity_docs: List[Document] = []
+    full_docs: List[Document] = []
     for filename in filenames:
         if not filename:
             continue
         try:
-            # chromadb는 where에 키가 2개 이상이면 명시적 $and가 필요하다(단일 dict에
-            # 여러 키를 그냥 나열하면 "Expected where to have exactly one operator" 오류).
-            raw = vector_store.get(
-                where={"$and": [{"filename": filename}, {"chunk_id": 0}]},
-                include=["documents", "metadatas"],
-            )
+            raw = vector_store.get(where={"filename": filename}, include=["documents", "metadatas"])
         except Exception:
             continue
         for text, meta in zip(raw.get("documents", []) or [], raw.get("metadatas", []) or []):
-            identity_docs.append(Document(page_content=text, metadata=meta or {}))
-    return identity_docs
+            full_docs.append(Document(page_content=text, metadata=meta or {}))
+    return full_docs
 
 
 def source_label(doc: Document) -> str:

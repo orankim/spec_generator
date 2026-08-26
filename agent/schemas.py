@@ -153,6 +153,17 @@ class RequirementSchema(BaseModel):
         default_factory=list,
         description="예: thickness, surface_defect, profile_3d, coating, edge, other",
     )
+    # 세부 결함 이름(scratch/contamination/pinhole/particle/void/coating_non_uniformity/
+    # edge_crack 등)이 언급되면 inspection_items에는 그 세부 canonical item을 그대로
+    # 담고, 상위 카테고리(surface_defect/edge_defect)는 이 필드에만 넣는다 — RAG 검색
+    # 질의 확장(agent.spec_retriever._ITEM_QUERY_HINTS)에는 쓸 수 있지만, Hard
+    # Requirement PASS 판정에서 세부 요구사항을 대체하거나 삭제하는 데는 쓰지 않는다
+    # (실사용자 보고: "스크래치와 오염"을 surface_defect 하나로 뭉개면 후보 장비가
+    # 둘 중 하나만 지원해도 PASS로 잘못 판정될 위험이 있다).
+    inspection_categories: List[str] = Field(
+        default_factory=list,
+        description="inspection_items의 상위 카테고리(검색 확장 전용, Hard Requirement에는 쓰지 않음)",
+    )
 
     # Equipment
     equipment_type: Optional[str] = None
@@ -551,3 +562,12 @@ class CandidateEquipment(BaseModel):
     unknown_count: int = 0
     fail_count: int = 0
     pass_count: int = 0
+    status: Literal["PASS", "PARTIAL", "FAIL"] = Field(
+        default="FAIL",
+        description=(
+            "PASS: fail_count==0 and unknown_count==0. "
+            "PARTIAL: fail_count==0 and unknown_count>0(충족은 했지만 일부 확인 불가). "
+            "FAIL: fail_count>0. select_best_candidate()가 이 순서로 후보를 우선순위화한다 — "
+            "PASS 후보가 하나라도 있으면 PARTIAL/FAIL 후보를 최종 추천하지 않는다."
+        ),
+    )
