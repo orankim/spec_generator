@@ -1,0 +1,259 @@
+{
+  "_comment": "SPEC-001~050(sample_specs/) 실제 문서 내용을 근거로 작성한 Ground Truth. 값은 추측이 아니라 sample_specs/*.md 원문(및 tests/ground_truth_data.py)을 직접 읽어 확인했다. candidate 이름은 'Manufacturer Model' 표기(예: 'ThicknessPro TP-800')를 쓴다.",
+  "cases": [
+    {
+      "test_id": "T001",
+      "name": "Width + Speed + Range + Accuracy + Thickness",
+      "user_query": "폭 800 mm 이상의 전극을 500 mm/s 이상의 속도로 Inline 검사할 수 있고, 0~500 μm 범위를 ±1 μm 이하 정확도로 측정할 수 있는 두께 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness"],
+        "measurement_range": {"min": 0.0, "max": 500.0, "unit": "um"},
+        "accuracy": {"value": 1.0, "unit": "um", "operator": "<="},
+        "measurement_speed": {"value": 500.0, "unit": "mm/s", "operator": ">="}
+      },
+      "expected_pass_candidates": ["ThicknessPro TP-800"],
+      "expected_partial_candidates": ["MultiInspect MI-800", "TotalInspect TI-800"],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-013(ThicknessPro TP-800): Width 1200mm/Speed 800mm/s/Range 0~800um/Accuracy 0.8um, Equipment Type이 'Thickness Inspection'으로 두께 측정 근거가 명시적이라 유일한 완전 PASS. MI-800/TI-800(SPEC-044/046, Multi Inspection)은 수치 조건은 모두 충족하지만 Equipment Type/Notes에 'thickness' 언급이 없어 Thickness Measurement가 UNKNOWN -> PARTIAL(문제3 정책)."
+    },
+    {
+      "test_id": "T002",
+      "name": "Thickness + Surface Defect 복합 검사",
+      "user_query": "폭 600 mm 이상의 전극을 Inline으로 검사하면서 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘. 측정 범위는 0~300 μm이고 정확도는 ±1 μm 이하여야 해.",
+      "expected_requirement": {
+        "target.width_mm": 600.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness", "surface_defect"],
+        "measurement_range": {"min": 0.0, "max": 300.0, "unit": "um"},
+        "accuracy": {"value": 1.0, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": ["MultiSense MS-600", "MultiInspect MI-1000"],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체에 '폭 600mm 이상 + 두께 명시적 근거 + 표면 결함' 세 조건을 동시에 만족하는 장비가 없다(두께 전용 장비(ThicknessPro 등)는 전부 Defect Inspection: Not Supported). MS-600/MI-1000은 Width/Range/Accuracy/Surface Defect는 PASS하지만 Thickness Measurement가 UNKNOWN(문제3 정책 적용 후)이라 PARTIAL이 최선 — corpus 데이터 한계이지 코드 버그가 아님(최종 보고서 '아직 해결되지 않은 문제' 참고)."
+    },
+    {
+      "test_id": "T003",
+      "name": "Scratch + Contamination + Minimum Detectable Defect",
+      "user_query": "폭 800 mm 이상의 전극 표면에서 3 μm 이하 크기의 스크래치와 오염을 검출할 수 있는 Inline 비전 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "inline_offline": "inline",
+        "measurement_principle": "Vision",
+        "inspection_items": ["scratch", "contamination"],
+        "inspection_categories": ["surface_defect"],
+        "minimum_defect_size": {"value": 3.0, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": ["VisionInspect VI-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["MultiSense MS-600"],
+      "forbidden_candidates": ["MultiSense MS-600"],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-021(VisionInspect VI-1000): Width 1000mm, Vision, Defect Types에 Scratch/Contamination 모두 있고 Minimum Detectable Defect 3um로 정확히 경계 충족. MS-600은 Defect Types에 Scratch는 있지만 Contamination이 없어 FAIL해야 한다(surface_defect 하나로 뭉개면 안 된다는 문제2 정책의 직접 검증)."
+    },
+    {
+      "test_id": "T004",
+      "name": "3D Profile 단독",
+      "user_query": "폭 1000 mm 이상의 전극을 500 mm/s 이상의 속도로 Inline 검사할 수 있는 3D Profile 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 1000.0,
+        "inline_offline": "inline",
+        "inspection_items": ["profile_3d"],
+        "measurement_speed": {"value": 500.0, "unit": "mm/s", "operator": ">="}
+      },
+      "expected_pass_candidates": ["FastScan FS-1000", "ProfileScan PS-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-009(FS-1000)/SPEC-039(PS-1000) 둘 다 Width>=1000, Speed>=500을 만족하고 profile_3d(Equipment Type에 '3D' 서술)로 PASS. inspection_items에 thickness가 섞여 들어가면 안 된다(문제3/4)."
+    },
+    {
+      "test_id": "T005",
+      "name": "Accuracy 미입력",
+      "user_query": "폭 600 mm 이상의 전극을 Inline으로 검사할 수 있고, 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘. 정확도는 지정하지 않을게.",
+      "expected_requirement": {
+        "target.width_mm": 600.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness", "surface_defect"],
+        "required_accuracy_um": null
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": ["FastScan FS-1000", "MultiSense MS-600"],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "required_accuracy_um이 None이므로 Hard Requirement 목록에 Accuracy가 있으면 안 된다(문제7). T002와 같은 이유로 corpus에 완전 PASS 후보가 없다 — Thickness Measurement가 UNKNOWN인 PARTIAL 후보가 최선."
+    },
+    {
+      "test_id": "T006",
+      "name": "Offline 검사",
+      "user_query": "폭 300 mm 이상의 전극을 Offline으로 검사할 수 있고 0~100 μm 범위를 ±0.1 μm 이하 정확도로 측정하는 두께 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 300.0,
+        "inline_offline": "offline",
+        "inspection_items": ["thickness"],
+        "measurement_range": {"min": 0.0, "max": 100.0, "unit": "um"},
+        "accuracy": {"value": 0.1, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": ["PrecisionGauge PG-100"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["PrecisionGauge PG-300"],
+      "forbidden_candidates": ["PrecisionGauge PG-300"],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-014(PG-100): Offline/Width 300/Range 0~100/Accuracy 0.1, Equipment Type 'Thickness Inspection'으로 완전 PASS. PG-300(SPEC-015)은 Accuracy 0.3um > 요구 0.1um라 FAIL."
+    },
+    {
+      "test_id": "T007",
+      "name": "Void 검사",
+      "user_query": "폭 800 mm 이상의 전극에서 보이드(Void)를 검출할 수 있는 Inline 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "inline_offline": "inline",
+        "inspection_items": ["void"]
+      },
+      "expected_pass_candidates": ["VoidScan VS-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-036(VoidScan VS-800): Width 800/Inline/Defect Types 'Void' 단독 명시로 완전 PASS."
+    },
+    {
+      "test_id": "T008",
+      "name": "Coating Non-uniformity 검사",
+      "user_query": "폭 500 mm 이상의 전극에서 코팅 불균일(Coating Non-uniformity)을 검출할 수 있는 Inline 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 500.0,
+        "inline_offline": "inline",
+        "inspection_items": ["coating_non_uniformity"]
+      },
+      "expected_pass_candidates": ["FilmInspect FI-500"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-035(FilmInspect FI-500): Width 500/Inline/Defect Types에 'Coating Non-uniformity' 명시로 완전 PASS."
+    },
+    {
+      "test_id": "T009",
+      "name": "Edge Defect + Edge Crack 동시 검사",
+      "user_query": "폭 600 mm 이상의 전극 Edge에서 Edge Defect와 Edge Crack을 모두 검출할 수 있는 Inline 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 600.0,
+        "inline_offline": "inline",
+        "inspection_items": ["edge_defect", "edge_crack"]
+      },
+      "expected_pass_candidates": ["EdgeVision EV-600"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-027(EdgeVision EV-600): Width 600/Inline/Defect Types 'Edge Defect, Edge Crack' 모두 명시로 완전 PASS. edge_defect가 edge_crack의 상위 카테고리로 뭉개져 사라지지 않는지 검증(이번 회귀 테스트 작성 중 발견해 수정한 버그)."
+    },
+    {
+      "test_id": "T010",
+      "name": "Minimum Detectable Defect 비교(PASS/FAIL)",
+      "user_query": "폭 800 mm 이상의 전극에서 스크래치를 5 μm 이하 크기까지 검출할 수 있는 Inline 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "inline_offline": "inline",
+        "inspection_items": ["scratch"],
+        "minimum_defect_size": {"value": 5.0, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": ["VisionInspect VI-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["MultiSense MS-600"],
+      "forbidden_candidates": ["MultiSense MS-600"],
+      "expected_final_status": "PASS",
+      "notes": "VI-1000(Minimum Detectable Defect 3um <= 5um) PASS, MS-600(15um > 5um) FAIL — 최소 검출 결함 크기 비교가 실제로 방향(<=)대로 동작하는지 검증."
+    },
+    {
+      "test_id": "T011",
+      "name": "Measurement Principle synonym (Machine Vision -> Vision)",
+      "user_query": "폭 600 mm 이상의 전극을 Machine Vision 방식으로 검사할 수 있는 Inline 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 600.0,
+        "inline_offline": "inline",
+        "measurement_principle": "Vision"
+      },
+      "expected_pass_candidates": ["VisionInspect VI-600"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-020(VI-600): Measurement Principle 'Machine Vision'이 canonical 'Vision'으로 정규화되어 일치 판정되는지 검증."
+    },
+    {
+      "test_id": "T012",
+      "name": "Width 조건 FAIL 검증",
+      "user_query": "폭 2000 mm 이상의 전극을 Inline으로 검사할 수 있는 두께 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 2000.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness"]
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["WideThickness WT-1000"],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체에서 Maximum Electrode Width가 2000mm 이상인 장비가 없다(최대 1500mm, SPEC-018). WideThickness WT-1000(1500mm)은 Width가 명시적으로 FAIL해야 한다. 다만 최종 추천은 PARTIAL이다 — HybridScan HS-1000(SPEC-050)처럼 Width 데이터 자체가 없는(UNKNOWN) 장비가 PASS>PARTIAL>FAIL 정책상 명시적 FAIL 장비보다 항상 우선하기 때문(정보가 없는 것이 명백히 불충족보다 나쁘지 않다는 원칙) — corpus 데이터 완결성의 한계이지 판정 로직의 버그가 아니다."
+    },
+    {
+      "test_id": "T013",
+      "name": "Speed 조건 FAIL 검증",
+      "user_query": "폭 800 mm 이상의 전극을 2000 mm/s 이상의 속도로 Inline 검사할 수 있는 두께 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness"],
+        "measurement_speed": {"value": 2000.0, "unit": "mm/s", "operator": ">="}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["ThicknessPro TP-800"],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체 최고 속도(FastThickness FT-400, 1200mm/s)도 2000mm/s에 못 미친다. ThicknessPro TP-800(800mm/s)은 Width는 PASS하지만 Speed가 명시적으로 FAIL해야 한다. 최종 추천은 T012와 같은 이유로 PARTIAL(Speed 데이터가 없는 장비가 명시적 FAIL 장비보다 랭킹상 우선)."
+    },
+    {
+      "test_id": "T014",
+      "name": "Measurement Range 조건 FAIL 검증",
+      "user_query": "폭 800 mm 이상의 전극을 0~5000 μm 범위로 측정할 수 있는 두께 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "inspection_items": ["thickness"],
+        "measurement_range": {"min": 0.0, "max": 5000.0, "unit": "um"}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["ThicknessPro TP-800"],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체에서 실측 범위 상한이 5000um에 도달하는 장비가 없다(최대 SPEC-039의 0~1000um). ThicknessPro TP-800(0~800um)은 Range가 명시적으로 FAIL해야 한다. 최종 추천은 T012와 같은 이유로 PARTIAL."
+    },
+    {
+      "test_id": "T015",
+      "name": "복수 Inspection Item AND 조건 검증 (Edge Defect + Void)",
+      "user_query": "폭 1000 mm 이상의 전극에서 Edge Defect와 Void를 모두 검사할 수 있는 Inline 검사기를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 1000.0,
+        "inline_offline": "inline",
+        "inspection_items": ["edge_defect", "void"]
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": ["MultiInspect MI-1000", "TotalInspect TI-1200"],
+      "forbidden_candidates": [],
+      "expected_final_status": "FAIL",
+      "notes": "corpus에 Edge Defect와 Void를 동시에 지원하는 장비가 없다. MI-1000은 Edge Defect는 PASS하지만 Void가 FAIL, TI-1200은 Void는 PASS하지만 Edge Defect가 FAIL — OR로 완화되지 않고 AND로 정직하게 판정되는지 검증(문제6 핵심)."
+    }
+  ]
+}
