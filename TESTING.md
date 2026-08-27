@@ -27,10 +27,18 @@ Level 1~5는 "로직이 옳은가"를 검증하고, Level 6은 "그 로직이 �
 사용자에게 올바르게 도달하는가"를 검증한다 — 예를 들어 Level 3이
 `hard_requirement_report`의 `UNKNOWN` 판정 자체가 옳다는 걸 보장해도, 그 값이
 화면에서 `"0 ~ 300 μmVERIFIED"`처럼 깨져 보이거나 "모든 조건 충족"이라는
-모순된 문구와 함께 뜨는 문제는 Level 6에서만 잡힌다(실제로 이번 작업에서
-비슷한 실제 버그 세 건 — 마크다운 재시도 버튼 소실, 추가 질문 제안 중복 전송,
-모바일 화면에서 전송 버튼이 뷰포트 밖으로 밀려나는 문제 — 를 이 계층에서
-발견해 함께 고쳤다).
+모순된 문구와 함께 뜨는 문제는 Level 6에서만 잡힌다. 실제로 이 계층에서 발견해
+함께 고친 실제 버그들:
+
+- 마크다운 사양서 생성 실패 후 재시도 버튼이 영구히 사라지는 문제
+- 추가 질문 제안을 빠르게 여러 번 클릭하면 동일 질문이 중복 전송되는 문제
+- 모바일 화면(375px 등)에서 전송 버튼이 뷰포트 밖으로 밀려나는 문제
+- 모바일 Overlay Drawer 도입 과정에서 발견된 3건 — 열림 상태에서 폭이 0으로
+  붕괴, Backdrop/Drawer 패널이 아이콘 레일 위 햄버거 버튼 클릭을 가로챔,
+  Drawer를 연 직후 포커스 이동이 Playwright의 클릭 시뮬레이션 특유의 타이밍과
+  충돌
+- `#sendBtn`/`.download-btn`/`.badge-pass`/`.badge-verified`/`.card-row .label`의
+  WCAG AA 명도 대비 미달(아래 Color System 섹션 참고)
 
 ## E2E 테스트 구조
 
@@ -48,8 +56,9 @@ tests/e2e/
     test_unknown_and_hardreq_ui.py # UNKNOWN 표시, PASS/FAIL/UNKNOWN 배지, 논리 일관성
     test_scroll_and_responsive.py  # 자동 스크롤, 4개 뷰포트 반응형
     test_error_handling.py         # 네트워크/API 오류 6종
-    test_accessibility.py          # axe-core 스캔 + 키보드/이름 접근성
+    test_accessibility.py          # axe-core 스캔 + 키보드/이름 접근성 + WCAG AA 명도 대비 실측
     test_dead_ui.py                # 주요 클릭 요소의 "클릭 → 실제 동작" 종합 점검
+    test_mobile_drawer.py          # 모바일(640px 이하) Overlay Drawer: 열림/닫힘/Backdrop/Escape/Focus 관리
 ```
 
 ### 설계 원칙
@@ -133,24 +142,36 @@ E2E 테스트가 실패하면 pytest의 표준 assert 메시지에 다음이 포
 5. `tests/e2e/test-results/<테스트이름>-trace.zip` — DOM 스냅샷·네트워크·콘솔
    로그가 모두 담긴 Playwright trace(성공한 테스트는 저장하지 않는다)
 
+## Color System / Text 토큰 (WCAG AA 개선)
+
+기존 브랜드 컬러(Primary-600 #2D9BB2 등)는 로고/링크/활성 아이콘 역할로 그대로
+유지하면서, 흰 텍스트가 올라가는 버튼과 opacity 기반 회색 텍스트만 아래 토큰으로
+교체해 WCAG AA(4.5:1) 대비를 확보했다.
+
+| Token | 값 | 역할 | 비고 |
+|---|---|---|---|
+| `--primary-600` | #2D9BB2 | 로고/링크/활성 아이콘/Focus Border | 브랜드 컬러 — 변경 없음 |
+| `--primary-500` | #3EC2CF | Sidebar 선택 강조 | 변경 없음 |
+| `--primary-100` | #D9FCF4 | Quick Start/강조 Background | 변경 없음 |
+| `--primary-action` | #237C90 (신규) | 흰 텍스트/아이콘이 올라가는 버튼(전송/마크다운 생성) | 흰색 대비 4.82:1 |
+| `--text-primary` | #1F1F1F (=grey-900) | 배지 등 진한 텍스트 | Primary-100 배경 대비 15:1 |
+| `--text-secondary` | #595959 (신규) | 설명/사이드바 보조 텍스트/카드 라벨 | 흰 배경 7.0:1, grey-50 배경 6.2:1 |
+| `--text-tertiary` | #686868 (신규, 요청 예시 #767676에서 조정) | 날짜/메타 정보 | grey-50 배경 기준 예시값이 4.02:1로 미달해 4.93:1로 조정 |
+
 ## 알려진 제한 사항 / 후속 과제
 
-- **명도 대비(WCAG AA) 미달 — Color System 자체에서 비롯됨.** `#sendBtn`/
-  `.download-btn`(흰 글자 on Primary-600 #2D9BB2, 실측 3.25:1)과
-  `.badge-pass`/`.badge-verified`(Primary-100 계열 배지, 실측 ~3.3:1),
-  `.card-row .label`(opacity 기반 회색, 실측 ~3.7:1)이 axe-core 기준
-  4.5:1을 만족하지 못한다. 이는 이전 세션에서 사용자가 명시적으로 확정한
-  Color System 토큰/opacity 위계 표현 자체에서 비롯되므로 이번 작업에서는
-  브랜드 색상을 임의로 바꾸지 않았다 — `tests/e2e/test_accessibility.py`가
-  이 항목들을 알려진 이슈로 조건부 `xfail` 처리해두었으니, 디자인 토큰을
-  조정하면(또는 텍스트 크기를 키우면) 자동으로 일반 PASS로 전환된다.
-- **모바일 사이드바는 "접기"이지 "오버레이"가 아니다.** 640px 이하에서
-  대화 목록 사이드바를 기본으로 접어(이번에 고친 버그) 본문 폭을 확보했지만,
-  햄버거로 펼치면 여전히 폭을 나눠 쓰는 방식이다(모달처럼 위에 덮이지 않음).
-  화면이 아주 좁을 때 펼친 상태에서는 본문이 다시 좁아진다 — 진짜 모바일
-  드로어(배경 dim + 오버레이)로 만들려면 별도 UI/UX 설계 결정이 필요하다.
+- **모바일 Overlay Drawer는 "접기"이지 완전한 모달 드로어는 아니다.** 640px
+  이하에서 사이드바는 `position:fixed` + `transform`으로 본문 위에 오버레이되어
+  열려도 본문 폭이 줄지 않는다(핵심 요구사항 충족). 다만 완전한 Focus Trap(Tab
+  키가 Drawer 밖으로 못 나가게 가두는 것)까지는 구현하지 않았다 — 열 때 Drawer
+  안으로, 닫을 때 햄버거로 포커스를 옮기는 최소 요구사항만 구현했다(요청서
+  11절에서 완전한 Trap은 선택 사항으로 명시).
 - **RAG/Ollama 의존 경로는 실제로 붙여서 돌리는 통합 테스트가 없다.** 이번
   E2E 테스트는 전부 `/api/agent/*` 응답을 mock하거나(대부분) 순수 결정론적
   라우트만 실서버로 호출한다(마크다운 버튼). 실제 Ollama + ChromaDB가 붙은
   상태에서의 종단 시나리오는 기존 `tests/test_regression.py` 등 Level 4
   테스트가 검증한다.
+- **다른 배지(.badge-fail/.badge-unknown/.badge-inferred 등)의 명도 대비는
+  이번 범위 밖.** 이번 작업은 요청서에서 명시적으로 지목한 요소(#sendBtn/
+  .download-btn/.badge-pass/.badge-verified/.card-row .label)만 검증·수정했다
+  — 다른 배지 색상도 실측해보면 좋겠지만, 별도 요청 없이 임의로 손대지 않았다.

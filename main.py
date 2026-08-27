@@ -92,14 +92,30 @@ PAGE_STYLE = """
         color-scheme: light;
 
         /* ===== Design Token: Color System ===== */
+        /* Primary-600은 브랜드 컬러(로고/링크/활성 아이콘/Focus Border)로 그대로
+           유지한다 — 절대 값 자체를 더 어둡게 바꾸지 않는다. 대신 흰 글자/아이콘이
+           올라가는 버튼(전송/마크다운 생성/다시 시도 등)에는 흰색 대비 4.5:1을
+           만족하는 별도 --primary-action을 쓴다(요청서 3절: 흰 텍스트 위 Primary-600
+           실측 3.25:1로 WCAG AA 미달, #237C90은 4.82:1). */
         --primary-600: #2D9BB2;
         --primary-500: #3EC2CF;
         --primary-100: #D9FCF4;
+        --primary-action: #237C90;
         --secondary-500: #554596;
         --grey-50: #F1F1F1;
         --grey-200: #EBEEED;
         --grey-300: #DDE0DF;
         --grey-900: #1F1F1F;
+
+        /* opacity로 회색 텍스트의 명도 대비를 낮추면 배경마다 실제 대비가 달라져
+           접근성 관리가 어렵다(요청서 5절) — 본문/보조/메타 정보 텍스트에 쓰는
+           명시적 색상 토큰. 셋 다 grey-50(#F1F1F1)과 흰 배경 양쪽에서 WCAG AA
+           4.5:1 이상을 만족하도록 실측 후 정했다(--text-tertiary는 요청서 예시
+           #767676이 grey-50 배경에서 4.02:1로 미달해 #686868로 조정 — 6절 참고).
+        */
+        --text-primary: #1F1F1F;
+        --text-secondary: #595959;
+        --text-tertiary: #686868;
 
         /* ===== Design Token: Typography ===== */
         --font-family-base: "Spoqa Han Sans Neo", -apple-system, "Segoe UI", "맑은 고딕", sans-serif;
@@ -176,17 +192,87 @@ PAGE_STYLE = """
     }
     .shell.sidebar-collapsed .conv-sidebar { width: 0; opacity: 0; border-right: none; }
 
+    /* 모바일 Backdrop(요청서 7~10절) — 데스크톱에서는 아예 렌더링 대상이 아니다
+       (기본 display:none). 640px 이하 media query 안에서만 fixed 오버레이로
+       뒤집는다. */
+    .mobile-backdrop { display: none; }
+
     /* 좁은 화면(모바일)에서는 고정 280px 대화 사이드바 + 56px 아이콘 레일만으로
        336px가 소모돼, 375px 폭 기기에서는 본문(main-chat)에 39px밖에 남지 않아
        입력창/전송 버튼이 뷰포트 밖으로 밀려나는 문제가 있었다(요청서 13절 반응형
-       테스트로 실측 확인). 640px 이하에서는 기본적으로 사이드바를 접어 본문 폭을
-       확보하고, 기존 햄버거 토글(.shell.sidebar-collapsed를 서로 다른 화면 폭에서
-       재사용)로 필요할 때만 펼쳐 보게 한다 — 별도 JS 변경 없이 이 media query
-       안에서만 그 클래스의 의미를 "펼침"으로 뒤집는다.
+       테스트로 실측 확인). 처음에는 이 폭 문제를 사이드바를 "접어 폭을 0으로"
+       만드는 방식으로 고쳤지만, 펼쳤을 때 여전히 본문과 폭을 나눠 가지므로
+       "펼치면 본문이 다시 좁아지는" 문제가 남아 있었다(요청서 7절: 모바일 Sidebar를
+       실제 Overlay Drawer로 개선). 그래서 640px 이하에서는 사이드바를
+       `position: fixed`로 레이아웃 흐름에서 완전히 빼내 본문 위에 겹쳐 그리고,
+       transform으로 미끄러져 들어오게 한다 — 열려 있어도 본문(.main-chat) 폭은
+       전혀 줄어들지 않는다. 데스크톱 규칙(.shell.sidebar-collapsed .conv-sidebar
+       { width:0; opacity:0; border-right:none; }, 위쪽에 정의됨)에는 media
+       조건이 없어 640px 이하에서도 그대로 적용된다 — 그래서 이 media query
+       안에서 같은 선택자로 width/opacity/border-right를 "열림" 값으로 다시
+       명시해 데스크톱 규칙을 되돌린다(transform만 덮어쓰면 폭이 0인 채로
+       열리는 버그가 있었다 — Playwright로 실측 후 발견/수정). 기존 햄버거
+       토글이 만드는 `.shell.sidebar-collapsed` 클래스를 그대로 재사용하되
+       (별도 JS 상태 없이), 이 media query 안에서만 그 클래스의 의미를
+       "닫힘"에서 "열림"으로 뒤집는다(main.js의 isMobileDrawerMode() 참고).
     */
     @media (max-width: 640px) {
-        .conv-sidebar { width: 0; opacity: 0; border-right: none; }
-        .shell.sidebar-collapsed .conv-sidebar { width: 280px; opacity: 1; border-right: 1px solid var(--grey-300); }
+        .conv-sidebar {
+            position: fixed;
+            top: 0;
+            /* left:0(뷰포트 왼쪽 끝)이 아니라 아이콘 레일(56px) 바로 뒤에서
+               시작한다 — left:0으로 두면 열렸을 때 Drawer가 아이콘 레일 위까지
+               덮어써 그 안의 햄버거 버튼 클릭을 가로채 버린다. 아이콘 레일은
+               항상 보이는 상시 UI이므로 Drawer가 그 위를 덮을 필요도 없다.
+               다만 이 anchor(left:56px) 기준으로 translateX(-100%)를 적용하면
+               "닫힘" 상태의 박스가 x=-224~56에 걸쳐, 시각적으로는 안 보여도
+               히트테스트 상 여전히 아이콘 레일(0~56) 영역과 겹쳐 햄버거 클릭을
+               가로채는 문제가 있었다(Playwright로 재현: 첫 클릭조차 #convSidebar
+               하위 요소에 가로막힘) — 그래서 닫힘 상태에는 visibility:hidden도
+               함께 줘서 좌표가 겹치더라도 히트테스트/포커스 대상에서 완전히
+               빠지게 한다(부수 효과로 닫혀 있을 때 Drawer 내부 항목이 Tab
+               순서에 남는 것도 함께 막아준다). */
+            left: 56px;
+            height: 100dvh;
+            width: min(280px, 85vw);
+            z-index: 1000;
+            opacity: 1;
+            border-right: 1px solid var(--grey-300);
+            visibility: hidden;
+            transform: translateX(-100%);
+            transition: transform .2s ease, visibility .2s;
+        }
+        .shell.sidebar-collapsed .conv-sidebar {
+            width: min(280px, 85vw);
+            opacity: 1;
+            border-right: 1px solid var(--grey-300);
+            visibility: visible;
+            transform: translateX(0);
+        }
+
+        /* 절제된 단색 반투명 Backdrop — Glassmorphism/Blur/Gradient/과도한
+           Shadow 없이, Drawer가 열려 있다는 사실만 명확히 전달한다(요청서 10절).
+           left를 아이콘 레일(56px) 너비만큼 띄운다 — inset:0으로 뷰포트 전체를
+           덮으면 position:fixed(z-index:999) Backdrop이 아이콘 레일의 정적
+           배치 콘텐츠보다 항상 위에 그려져(스태킹 규칙상 static 요소는 z-index
+           값과 무관하게 어떤 positioned 요소보다 아래) 햄버거 버튼 자체를
+           가려버린다 — Drawer를 연 뒤 같은 버튼으로 다시 닫을 수 없게 되는
+           문제였다(Playwright로 재현: 두 번째 클릭이 Backdrop에 가로막힘).
+           아이콘 레일은 늘 보이는 상시 UI라 애초에 dim 대상도 아니다. */
+        .mobile-backdrop {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 56px;
+            right: 0;
+            bottom: 0;
+            z-index: 999;
+            background: rgba(31, 31, 31, .32);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .2s ease;
+        }
+        .shell.sidebar-collapsed .mobile-backdrop { opacity: 1; pointer-events: auto; }
     }
 
     .conv-sidebar-header { padding: 18px 18px 12px; border-bottom: 1px solid var(--grey-300); flex-shrink: 0; }
@@ -198,10 +284,10 @@ PAGE_STYLE = """
     .conv-sidebar-header p {
         font-size: var(--font-body-sm-size); font-weight: var(--font-body-sm-weight);
         line-height: var(--line-height-caption);
-        margin: 4px 0 0; color: var(--grey-900);
-        /* 요청서 15절: axe-core가 실측한 명도 대비 부족(4.19:1, WCAG AA 기준 4.5:1
-           미달)을 고치기 위해 opacity를 .6 -> .7로 올렸다(grey-50 배경 기준 5.74:1). */
-        opacity: .7;
+        margin: 4px 0 0;
+        /* opacity로 대비를 낮추던 방식(요청서 5절)을 명시적 텍스트 토큰으로 교체 —
+           grey-50 배경 기준 6.2:1(이전 opacity 기반 5.74:1보다도 더 안정적). */
+        color: var(--text-secondary);
     }
 
     .conv-action-row {
@@ -236,18 +322,17 @@ PAGE_STYLE = """
 
     .conv-list-label {
         padding: 10px 18px 4px; font-size: var(--font-label-size); font-weight: var(--font-label-weight);
-        color: var(--grey-900);
-        /* 요청서 15절: axe-core 실측 2.72:1(WCAG AA 4.5:1 미달) 수정 — .45 -> .7. */
-        opacity: .7;
+        /* opacity 기반 대비 축소를 텍스트 토큰으로 교체(요청서 5절). grey-50 배경
+           기준 6.2:1. */
+        color: var(--text-secondary);
         letter-spacing: .03em; flex-shrink: 0;
     }
     .conv-list { flex: 1; overflow-y: auto; padding-bottom: 10px; }
     .conv-group-label {
         padding: 10px 18px 4px; font-size: var(--font-support-size); font-weight: var(--font-support-weight);
         line-height: var(--line-height-caption);
-        color: var(--grey-900);
-        /* 요청서 15절: axe-core 실측 2.72:1(WCAG AA 4.5:1 미달) 수정 — .45 -> .7. */
-        opacity: .7;
+        /* 날짜/메타 정보 라벨 — --text-tertiary(grey-50 배경 기준 4.93:1). */
+        color: var(--text-tertiary);
     }
     .conv-item {
         display: block;
@@ -267,8 +352,8 @@ PAGE_STYLE = """
     }
     .conv-item:hover { background: rgba(0,0,0,.04); }
     .conv-item.active { background: var(--primary-100); border-left-color: var(--primary-500); font-weight: 500; }
-    /* 요청서 15절: axe-core 실측 2.72:1(WCAG AA 4.5:1 미달) 수정 — .45 -> .7. */
-    .conv-empty { padding: 10px 18px; font-size: var(--font-label-size); color: var(--grey-900); opacity: .7; }
+    /* opacity 기반 대비 축소를 텍스트 토큰으로 교체(요청서 5절). */
+    .conv-empty { padding: 10px 18px; font-size: var(--font-label-size); color: var(--text-secondary); }
 
     .main-chat {
         flex: 1;
@@ -440,7 +525,9 @@ PAGE_STYLE = """
         line-height: var(--line-height-body);
     }
     .card-row:last-child { border-bottom: none; }
-    .card-row .label { color: var(--grey-900); opacity: .55; flex-shrink: 0; }
+    /* opacity 기반 대비 축소를 텍스트 토큰으로 교체(요청서 5/6절 — axe-core 실측
+       3.7:1로 WCAG AA 미달). */
+    .card-row .label { color: var(--text-secondary); flex-shrink: 0; }
     .card-row .value {
         color: var(--grey-900);
         font-weight: 500;
@@ -459,10 +546,14 @@ PAGE_STYLE = """
         letter-spacing: .02em;
         white-space: nowrap;
     }
-    .badge-pass { background: var(--primary-100); color: #1c6e7d; border: 1px solid var(--primary-500); }
+    /* badge-pass/badge-verified: axe-core 실측 ~3.28:1로 WCAG AA 미달(연한 민트
+       배경 위 연한 민트 텍스트) — 요청서 6절 권고대로 배경은 Primary-100을
+       유지하고 텍스트만 --text-primary로 바꿔 대비를 확보한다(grey-900/primary-100
+       조합 15:1). */
+    .badge-pass { background: var(--primary-100); color: var(--text-primary); border: 1px solid var(--primary-500); }
     .badge-fail { background: #fff5f5; color: #9b2c2c; border: 1px solid #feb2b2; }
     .badge-unknown { background: #fffaf0; color: #9c4221; border: 1px solid #fbd38d; }
-    .badge-verified { background: var(--primary-100); color: var(--primary-600); border: 1px solid var(--primary-500); }
+    .badge-verified { background: var(--primary-100); color: var(--text-primary); border: 1px solid var(--primary-500); }
     .badge-inferred { background: #f4f2fa; color: var(--secondary-500); border: 1px solid #c9c0e6; }
     .badge-userdefined { background: var(--grey-200); color: var(--grey-900); border: 1px solid var(--grey-300); }
     .badge-unset { background: var(--grey-50); color: var(--grey-900); opacity: .5; border: 1px solid var(--grey-300); }
@@ -565,9 +656,14 @@ PAGE_STYLE = """
     }
     .input-bar textarea::placeholder { font-size: var(--font-body-sm-size); color: var(--grey-900); opacity: .45; }
     .input-bar textarea:focus { outline: none; border-color: var(--primary-600); }
+    /* 흰 텍스트가 올라가는 주요 Action 버튼(전송/마크다운 생성)은 브랜드
+       Primary-600이 아니라 --primary-action을 쓴다(요청서 3절 — Primary-600은
+       로고/링크/활성 아이콘 역할로 그대로 남겨두고, 흰 배경 대비가 필요한
+       버튼에만 별도 토큰을 쓴다). Hover는 기존 방식 그대로(고정 hex, gradient/
+       filter 없음) --primary-action을 같은 비율로 어둡게 한 값을 쓴다. */
     .input-bar button {
         border: none;
-        background: var(--primary-600);
+        background: var(--primary-action);
         color: #ffffff;
         padding: 0 22px;
         border-radius: 8px;
@@ -575,21 +671,24 @@ PAGE_STYLE = """
         font-weight: 700;
         cursor: pointer;
     }
-    .input-bar button:hover:not(:disabled) { background: #257c8f; }
+    .input-bar button:hover:not(:disabled) { background: #1d6374; }
+    .input-bar button:focus-visible { outline: 2px solid var(--primary-600); outline-offset: 2px; }
     .input-bar button:disabled { background: var(--grey-300); color: var(--grey-900); opacity: .5; cursor: not-allowed; }
 
     a.download-btn, button.download-btn {
         display: inline-block;
         margin-top: 8px;
         padding: 8px 16px;
-        background: var(--primary-600);
+        background: var(--primary-action);
         color: #ffffff;
         text-decoration: none;
         border-radius: 6px;
         font-weight: 700;
         font-size: var(--font-label-size);
     }
-    button.download-btn:hover { background: #257c8f; }
+    button.download-btn:hover { background: #1d6374; }
+    a.download-btn:focus-visible, button.download-btn:focus-visible { outline: 2px solid var(--primary-600); outline-offset: 2px; }
+    button.download-btn:disabled { background: var(--grey-300); color: var(--grey-900); cursor: not-allowed; }
 """
 
 
@@ -653,11 +752,16 @@ async def agent_page():
     body_html = """
             <div class="shell" id="appShell">
                 <div class="icon-sidebar">
-                    <button type="button" id="hamburgerBtn" class="icon-btn" title="사이드바 접기/펼치기">☰</button>
+                    <button type="button" id="hamburgerBtn" class="icon-btn" title="사이드바 접기/펼치기" aria-expanded="true" aria-controls="convSidebar">☰</button>
                     <button type="button" class="icon-btn icon-btn-active" title="전극 검사기 AI">🔋</button>
                     <div class="icon-sidebar-spacer"></div>
                     <button type="button" class="icon-btn icon-btn-ghost" title="추가 AI 서비스(예정)" disabled>⚙</button>
                 </div>
+
+                <!-- 모바일(640px 이하)에서만 렌더링되는 Overlay Drawer용 Backdrop
+                     (요청서 7~10절) — 데스크톱에서는 CSS 기본값(display:none)으로
+                     완전히 비활성화된다. -->
+                <div class="mobile-backdrop" id="mobileBackdrop" aria-hidden="true"></div>
 
                 <div class="conv-sidebar" id="convSidebar">
                     <div class="conv-sidebar-header">
@@ -1084,7 +1188,10 @@ async def agent_page():
                         return '';
                     }
                     if (content.markdownGenerating) {
-                        return `<button type="button" class="download-btn" disabled style="border:none; opacity:.6; cursor:default;">생성 중...</button>`;
+                        // Disabled 스타일은 CSS button.download-btn:disabled(grey-300
+                        // 기반)이 처리한다 — 인라인 opacity로 같은 색을 흐리게
+                        // 만드는 대신 명확히 구분되는 회색 상태로 표시한다(요청서 4절).
+                        return `<button type="button" class="download-btn" disabled style="border:none;">생성 중...</button>`;
                     }
                     // 오류 배너는 보여주되, 버튼 자체는 사라지지 않고 "다시 시도"로
                     // 남아있어야 한다 — 그렇지 않으면 한 번 실패한 뒤에는 사용자가
@@ -1676,9 +1783,94 @@ async def agent_page():
                     renderConvList();
                 });
 
-                document.getElementById('hamburgerBtn').addEventListener('click', () => {
-                    document.getElementById('appShell').classList.toggle('sidebar-collapsed');
+                // ================================================================
+                // Sidebar / Mobile Overlay Drawer(요청서 7~11절)
+                // ================================================================
+                // 데스크톱과 모바일(640px 이하)에서 같은 `.shell.sidebar-collapsed`
+                // 클래스를 재사용하지만 의미가 반대다 — 데스크톱은 "접힘"(숨김),
+                // 모바일은 CSS 미디어쿼리에서 그 의미를 "펼침"(Drawer 열림)으로
+                // 뒤집어 쓴다(main.py의 해당 CSS 주석 참고). 두 화면 폭을 하나의
+                // 로직으로 다루기 위해 "지금 모바일 Drawer 모드인가"를 640이라는
+                // 숫자를 JS에 또 하드코딩하지 않고, 실제 적용된 CSS
+                // (position:fixed 여부)로 판단한다 — CSS 브레이크포인트가 바뀌어도
+                // 이 판단 로직은 그대로 맞다.
+                const appShellEl = document.getElementById('appShell');
+                const hamburgerBtnEl = document.getElementById('hamburgerBtn');
+                const convSidebarEl = document.getElementById('convSidebar');
+                const mobileBackdropEl = document.getElementById('mobileBackdrop');
+
+                function isMobileDrawerMode() {
+                    return window.getComputedStyle(convSidebarEl).position === 'fixed';
+                }
+
+                function isSidebarVisuallyOpen() {
+                    const collapsedClassPresent = appShellEl.classList.contains('sidebar-collapsed');
+                    return isMobileDrawerMode() ? collapsedClassPresent : !collapsedClassPresent;
+                }
+
+                function updateHamburgerAria() {
+                    hamburgerBtnEl.setAttribute('aria-expanded', String(isSidebarVisuallyOpen()));
+                }
+
+                function openSidebar() {
+                    if (isMobileDrawerMode()) {
+                        appShellEl.classList.add('sidebar-collapsed');
+                        // Drawer가 열리면 그 안의 첫 번째 조작 가능한 요소로 포커스를
+                        // 옮긴다(요청서 11절 Focus 관리) — 완전한 Focus Trap까지는
+                        // 아니지만, 최소한 열자마자 키보드 사용자가 Drawer 안에서
+                        // 시작하게 한다. 클릭을 처리하는 바로 그 tick에 곧바로
+                        // focus()를 부르면(동기 호출이든 rAF/setTimeout(0)이든) 막
+                        // 클릭된 햄버거 버튼이 포커스를 계속 붙들고 있어 조용히
+                        // 무시된다(Playwright로 실측: 80ms 미만은 실패, 50ms부터
+                        // 안정적으로 성공) — 사람이 체감하기엔 충분히 짧은 80ms만
+                        // 미뤄서 그 순간을 피해간다.
+                        setTimeout(() => {
+                            const firstFocusable = convSidebarEl.querySelector(
+                                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                            );
+                            if (firstFocusable) firstFocusable.focus();
+                        }, 80);
+                    } else {
+                        appShellEl.classList.remove('sidebar-collapsed');
+                    }
+                    updateHamburgerAria();
+                }
+
+                function closeSidebar() {
+                    if (isMobileDrawerMode()) {
+                        appShellEl.classList.remove('sidebar-collapsed');
+                    } else {
+                        appShellEl.classList.add('sidebar-collapsed');
+                    }
+                    // 닫을 때는 항상 햄버거 버튼으로 포커스를 되돌린다(요청서 11절).
+                    hamburgerBtnEl.focus();
+                    updateHamburgerAria();
+                }
+
+                hamburgerBtnEl.addEventListener('click', () => {
+                    if (isSidebarVisuallyOpen()) closeSidebar(); else openSidebar();
                 });
+
+                // Backdrop 클릭 시 닫힘(요청서 9절) — Backdrop은 모바일 Drawer가
+                // 열려 있을 때만 pointer-events:auto라 실제로는 그 상태에서만
+                // 클릭될 수 있지만, 방어적으로 조건을 한 번 더 확인한다.
+                mobileBackdropEl.addEventListener('click', () => {
+                    if (isMobileDrawerMode() && isSidebarVisuallyOpen()) closeSidebar();
+                });
+
+                // Escape 키로 닫힘(요청서 9/11절) — 데스크톱에서는 사이드바가
+                // 기본으로 열려 있는 상태라 Escape로 갑자기 접히면 오히려 방해가
+                // 되므로, 모바일 Drawer 모드에서 열려 있을 때만 반응한다.
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && isMobileDrawerMode() && isSidebarVisuallyOpen()) {
+                        closeSidebar();
+                    }
+                });
+
+                // 화면 폭이 브레이크포인트를 넘나들 때(예: 기기 회전, 창 크기 조절)
+                // aria-expanded 값이 실제 표시 상태와 어긋나지 않도록 다시 계산한다.
+                window.addEventListener('resize', updateHamburgerAria);
+                updateHamburgerAria();
 
                 // ================================================================
                 // 부팅 — localStorage에서 대화 목록을 복원한다(요청서 12절 2단계).
