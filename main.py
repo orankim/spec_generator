@@ -670,6 +670,11 @@ async def agent_page():
                 // Frontend 전용 상태다.
                 // ================================================================
                 const STORAGE_KEY = 'electrode_ai_conversations_v1';
+                // 브라우저를 껐다가 다시 켜도 대화 기록은 유지하되, 일정 시간(8시간)
+                // 이상 사용하지 않으면 자동으로 초기화한다 — "컴퓨터 재부팅 시 초기화"는
+                // 웹 API로 구분이 불가능해(브라우저 재시작과 동일하게 보임) 그 대체로
+                // 채택한 비활성 시간 기준 초기화다.
+                const INACTIVITY_CLEAR_MS = 8 * 60 * 60 * 1000;
 
                 const state = {
                     conversations: [],        // Conversation[] — 아래 getOrCreateActiveConversation() 참고
@@ -686,6 +691,22 @@ async def agent_page():
                     } catch (e) {
                         return [];
                     }
+                }
+
+                // 마지막 활동(가장 최근 updatedAt/createdAt) 이후 INACTIVITY_CLEAR_MS가
+                // 지났으면 전체 대화 기록을 비운다 — 일부만 지우는 게 아니라 세션
+                // 전체를 초기화한다(사용자가 기대하는 "오늘 목록이 통째로 사라짐" 동작).
+                function pruneInactiveConversations(conversations) {
+                    if (!conversations.length) return conversations;
+                    const timestamps = conversations
+                        .map((c) => new Date(c.updatedAt || c.createdAt).getTime())
+                        .filter((t) => !Number.isNaN(t));
+                    if (!timestamps.length) return conversations;
+                    const mostRecent = Math.max(...timestamps);
+                    if (Date.now() - mostRecent > INACTIVITY_CLEAR_MS) {
+                        return [];
+                    }
+                    return conversations;
                 }
 
                 function saveConversations() {
@@ -1020,6 +1041,18 @@ async def agent_page():
                     if (content.downloadUrl) {
                         return `<a class="download-btn" href="${escapeHtml(content.downloadUrl)}" download>마크다운 사양서 다운로드</a>`;
                     }
+                    if (content.markdownError) {
+                        return `<div class="banner banner-fail" style="margin-top:8px;">⚠️ 마크다운 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content.markdownError)}</div>`;
+                    }
+                    // 후보 장비가 아예 없으면(예: FAIL만 있어 select_best_candidate가
+                    // null을 반환한 극단적인 경우는 없지만, 방어적으로) 근거 없는
+                    // 사양서를 만들지 않고 버튼 자체를 숨긴다.
+                    if (!content.chosenCandidate) {
+                        return '';
+                    }
+                    if (content.markdownGenerating) {
+                        return `<button type="button" class="download-btn" disabled style="border:none; opacity:.6; cursor:default;">생성 중...</button>`;
+                    }
                     return `<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">📄 마크다운 사양서 생성</button>`;
                 }
 
@@ -1266,18 +1299,24 @@ async def agent_page():
                 async function buildMarkdownForMessage(msgId) {
                     const conv = getActiveConversation();
                     const msg = conv && conv.messages.find(m => m.id === msgId);
-                    if (!msg) return;
+                    if (!msg || !msg.content.chosenCandidate) return;
+                    // 클릭 즉시 버튼을 "생성 중..."으로 바꿔 눈에 보이는 피드백을 준다 —
+                    // 요청이 오래 걸리면 버튼이 그대로 있어 "눌러도 반응이 없다"처럼
+                    // 보일 수 있었다.
+                    msg.content.markdownGenerating = true;
+                    msg.content.markdownError = null;
+                    renderAll();
                     try {
-                        const data = await postJSON('/api/agent/build-markdown', {
-                            specification: msg.content.specification,
+                        const data = await postJSON('/api/agent/build-candidate-markdown', {
+                            candidate: msg.content.chosenCandidate,
                             requirement: msg.content.requirement,
-                            validation: msg.content.validation,
                         });
                         msg.content.downloadUrl = data.download_url;
-                        saveConversations();
-                        renderAll();
                     } catch (err) {
-                        addMessage({ role: 'assistant', type: 'error', content: { text: '마크다운 사양서 생성 중 오류: ' + err.message } });
+                        msg.content.markdownError = err.message;
+                    } finally {
+                        msg.content.markdownGenerating = false;
+                        saveConversations();
                         renderAll();
                     }
                 }
@@ -1460,6 +1499,9 @@ async def agent_page():
                             hardRequirementReport: hardRecords,
                             // build-markdown 호출 시 이 검색을 만든 시점 그대로 재사용하기 위한 스냅샷.
                             requirement: requirement, validation: data.validation,
+                            // "마크다운 사양서 생성" 버튼용 — RAG로 찾은 후보 장비 원본 사양
+                            // (LLM을 거치지 않은 값). 후보가 아예 없으면 null.
+                            chosenCandidate: data.chosen_candidate || null,
                         },
                     });
                     addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
@@ -1588,10 +1630,14 @@ async def agent_page():
                 // 가장 최근에 갱신된 대화가 있으면 새로고침 후에도 이어서 보여준다.
                 // ================================================================
                 function boot() {
-                    state.conversations = loadConversations();
+                    const loaded = loadConversations();
+                    state.conversations = pruneInactiveConversations(loaded);
                     if (state.conversations.length > 0) {
                         const sorted = state.conversations.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
                         state.activeConversationId = sorted[0].id;
+                    } else if (loaded.length > 0) {
+                        // 비활성 초기화로 목록을 비웠다면 localStorage에도 즉시 반영한다.
+                        saveConversations();
                     }
                     renderAll();
                 }

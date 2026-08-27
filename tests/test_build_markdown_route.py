@@ -77,8 +77,15 @@ def test_build_markdown_with_requirement_includes_compliance_table():
 
 
 def test_agent_page_offers_markdown_download_not_pptx():
+    """
+    "마크다운 사양서 생성" 버튼은 이제 /api/agent/build-markdown(LLM이 채운
+    SpecificationSchema 기반)이 아니라 /api/agent/build-candidate-markdown(RAG로
+    찾은 CandidateEquipment 원본 사양 기반, LLM을 거치지 않음)을 호출한다 — 버튼
+    클릭 시 아무 동작도 하지 않던 문제를 고치면서 함께 정리했다. build-markdown
+    라우트 자체는 하위 호환을 위해 그대로 남겨뒀다(위 다른 테스트들이 계속 검증).
+    """
     client = _client()
     body = client.get("/agent").text
     assert "마크다운 사양서" in body
     assert "PPTX 사양서" not in body
-    assert "/api/agent/build-markdown" in body
+    assert "/api/agent/build-candidate-markdown" in body
