@@ -176,6 +176,19 @@ PAGE_STYLE = """
     }
     .shell.sidebar-collapsed .conv-sidebar { width: 0; opacity: 0; border-right: none; }
 
+    /* 좁은 화면(모바일)에서는 고정 280px 대화 사이드바 + 56px 아이콘 레일만으로
+       336px가 소모돼, 375px 폭 기기에서는 본문(main-chat)에 39px밖에 남지 않아
+       입력창/전송 버튼이 뷰포트 밖으로 밀려나는 문제가 있었다(요청서 13절 반응형
+       테스트로 실측 확인). 640px 이하에서는 기본적으로 사이드바를 접어 본문 폭을
+       확보하고, 기존 햄버거 토글(.shell.sidebar-collapsed를 서로 다른 화면 폭에서
+       재사용)로 필요할 때만 펼쳐 보게 한다 — 별도 JS 변경 없이 이 media query
+       안에서만 그 클래스의 의미를 "펼침"으로 뒤집는다.
+    */
+    @media (max-width: 640px) {
+        .conv-sidebar { width: 0; opacity: 0; border-right: none; }
+        .shell.sidebar-collapsed .conv-sidebar { width: 280px; opacity: 1; border-right: 1px solid var(--grey-300); }
+    }
+
     .conv-sidebar-header { padding: 18px 18px 12px; border-bottom: 1px solid var(--grey-300); flex-shrink: 0; }
     .conv-sidebar-header h1 {
         font-size: var(--font-heading-sm-size); font-weight: var(--font-heading-sm-weight);
@@ -185,7 +198,10 @@ PAGE_STYLE = """
     .conv-sidebar-header p {
         font-size: var(--font-body-sm-size); font-weight: var(--font-body-sm-weight);
         line-height: var(--line-height-caption);
-        margin: 4px 0 0; color: var(--grey-900); opacity: .6;
+        margin: 4px 0 0; color: var(--grey-900);
+        /* 요청서 15절: axe-core가 실측한 명도 대비 부족(4.19:1, WCAG AA 기준 4.5:1
+           미달)을 고치기 위해 opacity를 .6 -> .7로 올렸다(grey-50 배경 기준 5.74:1). */
+        opacity: .7;
     }
 
     .conv-action-row {
@@ -220,13 +236,18 @@ PAGE_STYLE = """
 
     .conv-list-label {
         padding: 10px 18px 4px; font-size: var(--font-label-size); font-weight: var(--font-label-weight);
-        color: var(--grey-900); opacity: .45; letter-spacing: .03em; flex-shrink: 0;
+        color: var(--grey-900);
+        /* 요청서 15절: axe-core 실측 2.72:1(WCAG AA 4.5:1 미달) 수정 — .45 -> .7. */
+        opacity: .7;
+        letter-spacing: .03em; flex-shrink: 0;
     }
     .conv-list { flex: 1; overflow-y: auto; padding-bottom: 10px; }
     .conv-group-label {
         padding: 10px 18px 4px; font-size: var(--font-support-size); font-weight: var(--font-support-weight);
         line-height: var(--line-height-caption);
-        color: var(--grey-900); opacity: .45;
+        color: var(--grey-900);
+        /* 요청서 15절: axe-core 실측 2.72:1(WCAG AA 4.5:1 미달) 수정 — .45 -> .7. */
+        opacity: .7;
     }
     .conv-item {
         display: block;
@@ -246,7 +267,8 @@ PAGE_STYLE = """
     }
     .conv-item:hover { background: rgba(0,0,0,.04); }
     .conv-item.active { background: var(--primary-100); border-left-color: var(--primary-500); font-weight: 500; }
-    .conv-empty { padding: 10px 18px; font-size: var(--font-label-size); color: var(--grey-900); opacity: .45; }
+    /* 요청서 15절: axe-core 실측 2.72:1(WCAG AA 4.5:1 미달) 수정 — .45 -> .7. */
+    .conv-empty { padding: 10px 18px; font-size: var(--font-label-size); color: var(--grey-900); opacity: .7; }
 
     .main-chat {
         flex: 1;
@@ -522,6 +544,14 @@ PAGE_STYLE = """
     }
     .input-bar textarea {
         flex: 1;
+        /* flex item의 기본 min-width는 auto(=콘텐츠 기준 intrinsic width)라, 좁은
+           화면(예: 375px 모바일)에서는 textarea가 <textarea>의 기본 내재 너비보다
+           줄어들지 못해 형제 요소인 전송 버튼을 뷰포트 밖으로 밀어내는 문제가
+           있었다(요청서 13절: "전송 버튼이 사라지지 않는가" — Playwright로 실측
+           결과 button의 x좌표가 뷰포트 폭을 넘어서는 것을 확인). 0으로 낮춰
+           gap/padding이 남기는 공간만큼만 차지하게 한다.
+        */
+        min-width: 0;
         resize: none;
         border: 1px solid var(--grey-300);
         border-radius: 8px;
@@ -818,7 +848,13 @@ async def agent_page():
                     const parts = [escapeHtml(source.document)];
                     if (source.chunk_id !== null && source.chunk_id !== undefined) parts.push('chunk_' + escapeHtml(source.chunk_id));
                     if (source.section) parts.push(escapeHtml(source.section));
-                    return `<details class="source-detail"><summary></summary><div class="source-body">${parts.join(' · ')}</div></details>`;
+                    // <summary>가 비어 있고 보이는 "📄 근거 보기" 문구는 CSS ::before로만
+                    // 그려져(요청서 15절 접근성 테스트 — axe-core "summary-name" 위반
+                    // 실측: 생성된 콘텐츠는 스크린리더 접근성 트리에 이름으로 잡히지
+                    // 않는다) 스크린리더 사용자에게는 이름 없는 토글로 들린다.
+                    // aria-label을 직접 채우고, 펼침/접힘 상태에 따라 문구가 바뀌도록
+                    // ontoggle에서 갱신한다.
+                    return `<details class="source-detail" ontoggle="this.querySelector('summary').setAttribute('aria-label', this.open ? '근거 숨기기' : '근거 보기')"><summary aria-label="근거 보기"></summary><div class="source-body">${parts.join(' · ')}</div></details>`;
                 }
 
                 // 값 + 단위 + status 배지 + (VERIFIED면) 근거 문서/chunk. 요청서 13절.
@@ -1041,9 +1077,6 @@ async def agent_page():
                     if (content.downloadUrl) {
                         return `<a class="download-btn" href="${escapeHtml(content.downloadUrl)}" download>마크다운 사양서 다운로드</a>`;
                     }
-                    if (content.markdownError) {
-                        return `<div class="banner banner-fail" style="margin-top:8px;">⚠️ 마크다운 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content.markdownError)}</div>`;
-                    }
                     // 후보 장비가 아예 없으면(예: FAIL만 있어 select_best_candidate가
                     // null을 반환한 극단적인 경우는 없지만, 방어적으로) 근거 없는
                     // 사양서를 만들지 않고 버튼 자체를 숨긴다.
@@ -1053,7 +1086,16 @@ async def agent_page():
                     if (content.markdownGenerating) {
                         return `<button type="button" class="download-btn" disabled style="border:none; opacity:.6; cursor:default;">생성 중...</button>`;
                     }
-                    return `<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">📄 마크다운 사양서 생성</button>`;
+                    // 오류 배너는 보여주되, 버튼 자체는 사라지지 않고 "다시 시도"로
+                    // 남아있어야 한다 — 그렇지 않으면 한 번 실패한 뒤에는 사용자가
+                    // 재시도할 방법이 없어 새 검색을 다시 시작해야 하는 silent-failure에
+                    // 가까운 상태가 된다(요청서: "클릭 후 아무 변화가 없는 silent
+                    // failure가 없는지"·"다시 시도할 수 있는가").
+                    const errorBanner = content.markdownError
+                        ? `<div class="banner banner-fail" style="margin-top:8px;">⚠️ 마크다운 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content.markdownError)}</div>`
+                        : '';
+                    const label = content.markdownError ? '📄 마크다운 사양서 생성 다시 시도' : '📄 마크다운 사양서 생성';
+                    return `${errorBanner}<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">${label}</button>`;
                 }
 
                 // ----- 참고 문서 / References(문서 14절) — EquipmentCard 하단에 별도
@@ -1507,9 +1549,20 @@ async def agent_page():
                     addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
                 }
 
+                // #chatInput/#sendBtn만 disabled로 막는 것으로는 부족하다 — 추가
+                // 질문 제안(.related-item)처럼 메인 입력창과 무관한 다른 클릭
+                // 요소에서도 handleUserMessage()를 호출하는데, 이런 요소는 setInput
+                // Disabled()의 대상이 아니라서 요청이 진행 중이어도 계속 클릭 가능한
+                // 상태로 남는다 — 그 상태에서 빠르게 여러 번 누르면 동일 질문이 여러
+                // 번 중복 전송된다(요청서 3/8절: "중복 요청이 발생하지 않는가"). 이
+                // 플래그로 handleUserMessage 자체를 재진입 금지시켜 어떤 UI 요소에서
+                // 호출되든 동일하게 막는다.
+                let isProcessingMessage = false;
+
                 async function handleUserMessage(rawText) {
                     const text = (rawText || '').trim();
-                    if (!text) return;
+                    if (!text || isProcessingMessage) return;
+                    isProcessingMessage = true;
 
                     addMessage({ role: 'user', type: 'text', content: { text: text } });
                     renderAll();
@@ -1519,6 +1572,7 @@ async def agent_page():
                     if (isExplanationQuery(text) && conv.lastSearchResult) {
                         addMessage({ role: 'assistant', type: 'text', content: { text: buildExplanationMessage(conv) } });
                         renderAll();
+                        isProcessingMessage = false;
                         return;
                     }
 
@@ -1557,6 +1611,7 @@ async def agent_page():
                         renderAll();
                     } finally {
                         setInputDisabled(false);
+                        isProcessingMessage = false;
                     }
                 }
 
