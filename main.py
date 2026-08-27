@@ -670,6 +670,11 @@ async def agent_page():
                 // Frontend 전용 상태다.
                 // ================================================================
                 const STORAGE_KEY = 'electrode_ai_conversations_v1';
+                // 브라우저를 껐다가 다시 켜도 대화 기록은 유지하되, 일정 시간(8시간)
+                // 이상 사용하지 않으면 자동으로 초기화한다 — "컴퓨터 재부팅 시 초기화"는
+                // 웹 API로 구분이 불가능해(브라우저 재시작과 동일하게 보임) 그 대체로
+                // 채택한 비활성 시간 기준 초기화다.
+                const INACTIVITY_CLEAR_MS = 8 * 60 * 60 * 1000;
 
                 const state = {
                     conversations: [],        // Conversation[] — 아래 getOrCreateActiveConversation() 참고
@@ -686,6 +691,22 @@ async def agent_page():
                     } catch (e) {
                         return [];
                     }
+                }
+
+                // 마지막 활동(가장 최근 updatedAt/createdAt) 이후 INACTIVITY_CLEAR_MS가
+                // 지났으면 전체 대화 기록을 비운다 — 일부만 지우는 게 아니라 세션
+                // 전체를 초기화한다(사용자가 기대하는 "오늘 목록이 통째로 사라짐" 동작).
+                function pruneInactiveConversations(conversations) {
+                    if (!conversations.length) return conversations;
+                    const timestamps = conversations
+                        .map((c) => new Date(c.updatedAt || c.createdAt).getTime())
+                        .filter((t) => !Number.isNaN(t));
+                    if (!timestamps.length) return conversations;
+                    const mostRecent = Math.max(...timestamps);
+                    if (Date.now() - mostRecent > INACTIVITY_CLEAR_MS) {
+                        return [];
+                    }
+                    return conversations;
                 }
 
                 function saveConversations() {
@@ -1609,10 +1630,14 @@ async def agent_page():
                 // 가장 최근에 갱신된 대화가 있으면 새로고침 후에도 이어서 보여준다.
                 // ================================================================
                 function boot() {
-                    state.conversations = loadConversations();
+                    const loaded = loadConversations();
+                    state.conversations = pruneInactiveConversations(loaded);
                     if (state.conversations.length > 0) {
                         const sorted = state.conversations.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
                         state.activeConversationId = sorted[0].id;
+                    } else if (loaded.length > 0) {
+                        // 비활성 초기화로 목록을 비웠다면 localStorage에도 즉시 반영한다.
+                        saveConversations();
                     }
                     renderAll();
                 }
