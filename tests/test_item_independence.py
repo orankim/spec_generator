@@ -1,6 +1,8 @@
 """
 검사 항목 독립성 및 최소 검출 결함 크기, 참고 문서 중복 제거 검증 단위 테스트.
 """
+import unittest.mock as mock
+
 import pytest
 from agent.requirement_parser import parse_requirement_text, _extract_inspection_items_and_categories
 from agent.candidate_matcher import build_candidates
@@ -9,12 +11,20 @@ from renderers.common import _source_summary
 from langchain_core.documents import Document
 
 
+def _parse_with_empty_llm(user_text: str) -> RequirementSchema:
+    """다른 회귀 테스트(tests/regression_lib.py)와 동일한 패턴: 이 환경에는 live
+    Ollama 서버가 없으므로 LLM 파싱을 빈 응답으로 스텁하고 deterministic 추출
+    계층만으로 검증한다(worst case — LLM이 실제로 채워주면 결과는 같거나 더 좋다)."""
+    with mock.patch("agent.requirement_parser.ollama_client.parse_structured", return_value=RequirementSchema()):
+        return parse_requirement_text(user_text)
+
+
 def test_coating_thickness_vs_coating_non_uniformity():
-    req1 = parse_requirement_text("전극 코팅 두께를 측정할 수 있는 장비를 찾아줘.")
+    req1 = _parse_with_empty_llm("전극 코팅 두께를 측정할 수 있는 장비를 찾아줘.")
     assert "thickness" in req1.inspection_items
     assert "coating_non_uniformity" not in req1.inspection_items
 
-    req2 = parse_requirement_text("전극 코팅의 Coating Non-uniformity를 Inline으로 검사할 수 있는 장비를 찾아줘.")
+    req2 = _parse_with_empty_llm("전극 코팅의 Coating Non-uniformity를 Inline으로 검사할 수 있는 장비를 찾아줘.")
     assert "coating_non_uniformity" in req2.inspection_items
     assert req2.inspection_items == ["coating_non_uniformity"]
 
