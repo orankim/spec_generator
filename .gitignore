@@ -4,3 +4,4 @@ __pycache__/
 .env
 chroma_db_specs/
 generated_files/
+_test_chroma_db_*/
