@@ -1,0 +1,12 @@
+# E2E(UX) 테스트 전용 의존성 (tests/e2e/). 런타임 requirements.txt와 분리한다 —
+# 배포 환경에는 브라우저/axe-core가 필요 없기 때문이다.
+#
+# 설치:
+#   pip install -r requirements.txt -r requirements-e2e.txt
+#
+# 브라우저는 이 프로젝트가 실행되는 환경에 이미 설치되어 있지 않다면 별도로
+# 준비해야 한다(예: `playwright install chromium`). tests/e2e/conftest.py는
+# PLAYWRIGHT_BROWSERS_PATH 환경변수 또는 기본 설치 경로에서 Chromium을 찾는다.
+pytest>=8.0.0
+playwright>=1.45.0
+axe-playwright-python>=0.1.4
