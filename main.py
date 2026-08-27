@@ -1020,6 +1020,18 @@ async def agent_page():
                     if (content.downloadUrl) {
                         return `<a class="download-btn" href="${escapeHtml(content.downloadUrl)}" download>마크다운 사양서 다운로드</a>`;
                     }
+                    if (content.markdownError) {
+                        return `<div class="banner banner-fail" style="margin-top:8px;">⚠️ 마크다운 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content.markdownError)}</div>`;
+                    }
+                    // 후보 장비가 아예 없으면(예: FAIL만 있어 select_best_candidate가
+                    // null을 반환한 극단적인 경우는 없지만, 방어적으로) 근거 없는
+                    // 사양서를 만들지 않고 버튼 자체를 숨긴다.
+                    if (!content.chosenCandidate) {
+                        return '';
+                    }
+                    if (content.markdownGenerating) {
+                        return `<button type="button" class="download-btn" disabled style="border:none; opacity:.6; cursor:default;">생성 중...</button>`;
+                    }
                     return `<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">📄 마크다운 사양서 생성</button>`;
                 }
 
@@ -1266,18 +1278,24 @@ async def agent_page():
                 async function buildMarkdownForMessage(msgId) {
                     const conv = getActiveConversation();
                     const msg = conv && conv.messages.find(m => m.id === msgId);
-                    if (!msg) return;
+                    if (!msg || !msg.content.chosenCandidate) return;
+                    // 클릭 즉시 버튼을 "생성 중..."으로 바꿔 눈에 보이는 피드백을 준다 —
+                    // 요청이 오래 걸리면 버튼이 그대로 있어 "눌러도 반응이 없다"처럼
+                    // 보일 수 있었다.
+                    msg.content.markdownGenerating = true;
+                    msg.content.markdownError = null;
+                    renderAll();
                     try {
-                        const data = await postJSON('/api/agent/build-markdown', {
-                            specification: msg.content.specification,
+                        const data = await postJSON('/api/agent/build-candidate-markdown', {
+                            candidate: msg.content.chosenCandidate,
                             requirement: msg.content.requirement,
-                            validation: msg.content.validation,
                         });
                         msg.content.downloadUrl = data.download_url;
-                        saveConversations();
-                        renderAll();
                     } catch (err) {
-                        addMessage({ role: 'assistant', type: 'error', content: { text: '마크다운 사양서 생성 중 오류: ' + err.message } });
+                        msg.content.markdownError = err.message;
+                    } finally {
+                        msg.content.markdownGenerating = false;
+                        saveConversations();
                         renderAll();
                     }
                 }
@@ -1460,6 +1478,9 @@ async def agent_page():
                             hardRequirementReport: hardRecords,
                             // build-markdown 호출 시 이 검색을 만든 시점 그대로 재사용하기 위한 스냅샷.
                             requirement: requirement, validation: data.validation,
+                            // "마크다운 사양서 생성" 버튼용 — RAG로 찾은 후보 장비 원본 사양
+                            // (LLM을 거치지 않은 값). 후보가 아예 없으면 null.
+                            chosenCandidate: data.chosen_candidate || null,
                         },
                     });
                     addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });

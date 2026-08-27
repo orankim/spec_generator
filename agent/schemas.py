@@ -551,6 +551,35 @@ class CandidateFieldMatch(BaseModel):
     equipment_spec_display: Optional[str] = Field(default=None, description="장비 사양 표시용 문자열 (예: 800 mm)")
 
 
+class CandidateEquipmentFact(BaseModel):
+    """
+    후보 문서에서 실제로 추출한 사양 정보(agent.candidate_matcher._CandidateFact를
+    그대로 옮김). matches(List[CandidateFieldMatch])는 "사용자가 그 항목을 요구
+    조건으로 물었을 때만" 채워지는 반면, 이 필드는 사용자가 묻지 않은 항목이라도
+    문서에 실제로 있으면 채운다 — Markdown 사양서 내보내기처럼 "이 장비가 실제로
+    어떤 사양을 가졌는지" 전체를 보여줘야 하는 화면에서 쓴다. 근거 없는 필드는
+    전부 None(빈 리스트)으로 남기고 추측하지 않는다.
+    """
+
+    equipment_type: Optional[str] = None
+    measurement_principle: Optional[str] = None
+    inline_offline: Optional[str] = None
+    measurement_method: Optional[str] = None
+    width_mm: Optional[float] = None
+    range_min: Optional[float] = None
+    range_max: Optional[float] = None
+    range_unit: Optional[str] = None
+    accuracy_value: Optional[float] = None
+    accuracy_unit: Optional[str] = None
+    resolution_value: Optional[float] = None
+    resolution_unit: Optional[str] = None
+    speed_value: Optional[float] = None
+    speed_unit: Optional[str] = None
+    defect_types: List[str] = Field(default_factory=list)
+    min_defect_size_value: Optional[float] = None
+    min_defect_size_unit: Optional[str] = None
+
+
 class CandidateEquipment(BaseModel):
     """RAG 검색 결과를 문서(장비) 단위로 그룹화한 후보 하나."""
 
@@ -559,6 +588,9 @@ class CandidateEquipment(BaseModel):
     model: Optional[str] = None
     source_document: str
     matches: List[CandidateFieldMatch] = Field(default_factory=list)
+    equipment_fact: Optional[CandidateEquipmentFact] = Field(
+        default=None, description="Markdown 사양서 내보내기 등에 쓰는, 요구조건과 무관하게 추출된 전체 사양"
+    )
     match_score: float = Field(default=0.0, ge=0.0, le=100.0)
     hard_requirements_pass: bool = Field(
         default=False, description="Hard Requirement 항목 중 FAIL이 하나도 없으면 True (UNKNOWN은 FAIL로 치지 않음)"

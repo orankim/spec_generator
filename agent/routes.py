@@ -14,14 +14,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from renderers.markdown_renderer import render_markdown
+from renderers.markdown_renderer import render_candidate_markdown, render_markdown
 
 from . import candidate_matcher, ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, retrieve_and_generate
 from .requirement_parser import apply_conversational_patch, apply_deterministic_extraction
 from .requirement_validator import validate_requirement
-from .schemas import RequirementSchema, SpecificationSchema
+from .schemas import CandidateEquipment, RequirementSchema, SpecificationSchema
 from .spec_validator import build_hard_requirement_report, build_inspection_item_hard_requirement_records
 
 logger = logging.getLogger(__name__)
@@ -263,4 +263,38 @@ async def build_markdown_api(req: BuildMarkdownRequest):
         }
     except Exception as e:
         logger.exception("Markdown 사양서 생성 실패")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BuildCandidateMarkdownRequest(BaseModel):
+    candidate: Dict[str, Any]
+    # 있으면 "Inspection Items" 절에 사용자가 실제로 요청한 검사 항목 목록을 채운다.
+    requirement: Optional[Dict[str, Any]] = None
+
+
+@router.post("/build-candidate-markdown")
+async def build_candidate_markdown_api(req: BuildCandidateMarkdownRequest):
+    """
+    추천 화면의 "마크다운 사양서 생성" 버튼용 — /generate-spec이 이미 계산해 돌려준
+    chosen_candidate(CandidateEquipment, LLM을 거치지 않고 사양서 원문에서 결정론적
+    으로 추출된 값)를 그대로 받아 간단한 Markdown으로 저장한다. build-markdown(LLM이
+    채운 SpecificationSchema 기반)과는 별도 경로다.
+    """
+    try:
+        candidate = CandidateEquipment(**req.candidate)
+        requirement = RequirementSchema(**req.requirement) if req.requirement else None
+
+        markdown_text = render_candidate_markdown(candidate, requirement=requirement)
+
+        file_id = str(uuid.uuid4())[:8]
+        output_filename = f"electrode_inspection_candidate_{file_id}.md"
+        output_path = OUTPUT_DIR / output_filename
+        output_path.write_text(markdown_text, encoding="utf-8")
+        return {
+            "status": "success",
+            "file_name": output_filename,
+            "download_url": f"/api/download/{output_filename}",
+        }
+    except Exception as e:
+        logger.exception("후보 장비 Markdown 사양서 생성 실패")
         raise HTTPException(status_code=500, detail=str(e))

@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 from langchain_core.documents import Document
 
 from . import categorical_match, units
-from .schemas import CandidateEquipment, CandidateFieldMatch, RequirementSchema, SourceRef
+from .schemas import CandidateEquipment, CandidateEquipmentFact, CandidateFieldMatch, RequirementSchema, SourceRef
 from .spec_retriever import source_label
 
 _MANUFACTURER_RE = re.compile(r"(?:Manufacturer|제조사)\s*[:：]\s*(.+)", re.IGNORECASE)
@@ -66,6 +66,18 @@ _DEFECT_SIZE_LABEL_HINTS = ("minimum detectable defect", "minimum defect size", 
 _DEFECT_TYPES_LABEL_HINTS = ("defect types",)
 # "Measurement Speed"/"Line Speed"/"Maximum Line Speed" 모두 "speed"로 끝난다.
 _SPEED_LABEL_HINTS = ("speed",)
+# 이 corpus에서 "Resolution"은 항상 축(axis)이 붙어 나온다(Thickness/Vertical/Z/
+# X/Y/XY Resolution). X/Y/XY Resolution은 측정 대상의 가로/세로(횡) 해상도라
+# 장비의 "핵심 측정 성능"과는 다른 개념이므로 여기서는 제외하고, 두께/깊이
+# 축을 가리키는 라벨(Thickness/Vertical/Z Resolution)만 "주 Resolution"으로
+# 인정한다 — Markdown 사양서의 "Resolution" 행에 쓰인다.
+_LATERAL_RESOLUTION_LABELS = ("x resolution", "y resolution", "xy resolution")
+
+
+def _is_primary_resolution_label(label_lower: str) -> bool:
+    if not label_lower.endswith("resolution"):
+        return False
+    return label_lower not in _LATERAL_RESOLUTION_LABELS
 
 # requirement.inspection_items 중 "이 결함 종류를 실제로 검출하는가"로 검증 가능한
 # 항목만 다룬다(thickness/coating은 사양서에 이런 형태의 명시적 목록이 없어 안전하게
@@ -229,6 +241,9 @@ class _CandidateFact:
         self.speed_text: Optional[str] = None
         self.notes_text: Optional[str] = None
         self.notes_doc: Optional[Document] = None
+        self.resolution: Optional[Tuple[float, str]] = None
+        self.resolution_doc: Optional[Document] = None
+        self.resolution_text: Optional[str] = None
 
 
 def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
@@ -348,6 +363,12 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                     fact.speed = value_unit
                     fact.speed_doc = doc
                     fact.speed_text = f"{label}: {value}"
+            if fact.resolution is None and _is_primary_resolution_label(label_lower):
+                value_unit = units.parse_value_unit(value)
+                if value_unit is not None:
+                    fact.resolution = value_unit
+                    fact.resolution_doc = doc
+                    fact.resolution_text = f"{label}: {value}"
     return fact
 
 
@@ -889,6 +910,34 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
         else:
             status = "FAIL"
 
+        # Markdown 사양서 내보내기 등에 쓰는 전체 사양 스냅샷 — 위 matches와 달리
+        # 사용자가 그 항목을 요구조건으로 묻지 않았어도 문서에 실제로 있으면 채운다
+        # (요청서: "추천된 장비의 정보를 기반으로 Markdown 사양서를 생성"). 근거
+        # 없는 필드는 그대로 None/빈 리스트로 둔다 — 추측해서 채우지 않는다.
+        equipment_fact = CandidateEquipmentFact(
+            equipment_type=fact.equipment_type_text,
+            measurement_principle=fact.measurement_principle,
+            inline_offline=fact.inspection_mode,
+            measurement_method=fact.measurement_method,
+            width_mm=fact.width_mm,
+            range_min=fact.range[0] if fact.range else None,
+            range_max=fact.range[1] if fact.range else None,
+            range_unit=fact.range[2] if fact.range else None,
+            accuracy_value=fact.accuracy[0] if fact.accuracy else None,
+            accuracy_unit=fact.accuracy[1] if fact.accuracy else None,
+            resolution_value=fact.resolution[0] if fact.resolution else None,
+            resolution_unit=fact.resolution[1] if fact.resolution else None,
+            speed_value=fact.speed[0] if fact.speed else None,
+            speed_unit=fact.speed[1] if fact.speed else None,
+            defect_types=(
+                [t.strip() for t in fact.defect_types_text.split(",") if t.strip()]
+                if fact.defect_types_text and not fact.defect_inspection_not_supported
+                else []
+            ),
+            min_defect_size_value=fact.defect_size[0] if fact.defect_size else None,
+            min_defect_size_unit=fact.defect_size[1] if fact.defect_size else None,
+        )
+
         candidates.append(
             CandidateEquipment(
                 candidate_id=f"cand-{idx}",
@@ -896,6 +945,7 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
                 model=fact.model,
                 source_document=source,
                 matches=matches,
+                equipment_fact=equipment_fact,
                 match_score=match_score,
                 hard_requirements_pass=hard_requirements_pass,
                 unknown_count=unknown_count,
