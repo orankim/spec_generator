@@ -314,3 +314,68 @@ Result: WARNING
 (서로 다른 실제 장비이므로) 안전하게 처리하도록 만든 것이 이번 작업의
 목표였다. 새로운 미검토 중복이 생기면 `tests/test_sample_specs_integrity.py`가
 실패로 잡아낸다.
+
+## 중복 Equipment Name의 화면 표시(Disambiguation UX)
+
+위 Corpus 무결성 작업으로 "Backend/RAG 계층"의 데이터 충돌은 해결됐지만, 별도로
+"사용자에게 보이는 화면"에서도 같은 이름의 서로 다른 장비가 구분되는지는
+검증되지 않았다. 이번 작업에서 실제 코드 흐름을 추적하고 재현했다.
+
+**분석(수정 전 확인한 사실)**:
+- `agent/candidate_matcher.build_candidates()`는 `retrieved_docs`를
+  `source_document`(SPEC 파일명) 단위로 그룹화하므로, SPEC-044와 SPEC-051은
+  이름이 같아도 항상 별개의 `CandidateEquipment`로 남는다 — 하나가 다른
+  하나를 지우거나 병합하는 코드 경로는 없다.
+- 그러나 `agent/routes.py`의 `/api/agent/generate-spec`은 `candidates`(복수)를
+  프론트엔드에 내려주지 않는다 — `select_best_candidate()`가 고른 **후보 1개**
+  (`chosen_candidate`)만 반환한다. 즉 한 번의 검색 결과 화면(EquipmentCard)에는
+  항상 장비가 하나만 보인다 — "추천 결과 목록에 같은 이름이 두 줄 나열되는"
+  화면 자체가 지금 구조에는 없다.
+- 실제 위험은 **대화가 이어지는 동안(후속 질문으로 요구사항이 바뀌는 경우)**
+  발생한다: `main.py`는 각 검색마다 새 `equipment_result` 메시지를 대화에
+  추가해 쌓아 두므로(`renderAll()`이 전체 메시지를 다시 그림), 같은 대화 안에서
+  턴이 바뀌며 다른 `chosen_candidate`가 선택되면 이름이 같은 EquipmentCard
+  두 개가 같은 화면에 함께 나타날 수 있다.
+- 실제 파이프라인(fake-embedding, 실제 sample_specs corpus)으로 재현한 결과,
+  "폭 600mm, 두께+표면결함, 정확도 <=1.0μm" 질의는 SPEC-051.md를,
+  "폭 800mm, Multi-sensor, 정확도 <=0.8μm" 질의는 SPEC-044.md를
+  `chosen_candidate`로 선택했다 — 즉 한 대화에서 후속 질문만으로 이 상황이
+  실제로 발생할 수 있음을 코드 추측이 아니라 실행으로 확인했다.
+- `chosen_candidate`(전체 `CandidateEquipment`, `equipment_fact` 포함:
+  measurement_method/principle/range/accuracy/defect_types 등)는 이미 각
+  `equipment_result` 메시지에 저장되어 localStorage까지 그대로 보존된다 —
+  구분에 필요한 데이터가 이미 Frontend에 있으므로 Backend/API 변경이 필요
+  없었다.
+
+**개선(필요한 경우에만 조건부로 적용)**: `main.py`에 대화 전체의
+`equipment_result` 메시지를 Equipment Name으로 묶고, 실제로 `source_document`가
+서로 다른 그룹에서만(즉 진짜 다른 장비일 때만) 우선순위 기반으로 구분 정보를
+표시하는 로직을 추가했다(`computeEquipmentDisambiguation`/
+`pickDisambiguationLabels`, 요청서 우선순위: Manufacturer → Measurement
+Method/Principle → Inspection Item(Defect Types) → Width → Range → Accuracy →
+Source Document). 이름은 같지만 `source_document`까지 같으면(진짜 같은 추천이
+반복된 경우) 아무것도 표시하지 않는다. 새 Backend 데이터나 새 색상 체계를
+추가하지 않았고, RAG/Ranking/Candidate Filtering은 전혀 건드리지 않았다.
+
+**적용 화면**:
+
+| 화면 | 적용 여부 | 방식 |
+|---|---|---|
+| Chat Result / Candidate Card (EquipmentCard) | 적용 | 카드 헤더 바로 아래 `.card-subtitle`(12px, `--text-secondary`, `--grey-50` 배경 위 6.2:1 대비)로 조건부 표시 |
+| Comparison Result | 해당 없음 | 이 카드는 애초에 장비 이름 자체를 표시하지 않음(Hard Requirement 항목/배지만 표시) |
+| Conversation Restore(새로고침/localStorage 복원) | 자동 적용 | `renderAll()`이 호출될 때마다 저장된 메시지로부터 다시 계산 — 별도 상태 저장 없이 항상 결정론적 |
+| Markdown 생성 | 해당 없음(구조상 미해당) | `build-candidate-markdown`은 candidate 1개만 받아 문서 1개를 만든다(여러 후보를 한 문서에 나열하는 기능 자체가 없음). 각 문서의 "## General" 절에는 이미 Manufacturer/Model/Measurement Principle/Type이 전부 들어있어 파일을 열면 그 자체로 구분된다 |
+| MS Word 다운로드 | 기능 없음 | 이 프로젝트에는 Word(.docx) 출력 기능이 없다(Markdown만 지원) |
+| Mobile(375px) | 회귀 없음 확인 | Disambiguation Label 추가 후에도 가로 스크롤/버튼 밀림 없음(E2E로 검증) |
+
+**수정 파일**:
+
+| 파일 | 수정 내용 |
+|---|---|
+| `main.py` | `computeEquipmentDisambiguation`/`pickDisambiguationLabels`/`disambiguationFieldMap` 추가, `renderAll`/`renderMessageContent`/`renderEquipmentCard`가 이를 사용하도록 연결, `.card-subtitle` CSS 추가 |
+| `tests/e2e/fixtures.py` | `make_candidate()`에 manufacturer/model/source_document/measurement_method/measurement_principle/defect_types 등 선택적 override 추가(기존 호출부는 영향 없음), `make_generate_spec_response()`에 `specification`/`candidate` 직접 지정 옵션 추가 |
+| `tests/e2e/test_duplicate_equipment_disambiguation.py` | 신규 — Normal/Duplicate/Deterministic/Fallback/Persistence/Markdown/Accessibility/Mobile 테스트 9개 |
+
+**검증**: `pytest tests/e2e/test_duplicate_equipment_disambiguation.py` 9개
+전부 PASS, 기존 `tests/e2e/*` 111개 전부 PASS(회귀 없음), 전체 스위트 2회 연속
+635 passed / 0 failed / 0 xfailed.

@@ -187,24 +187,41 @@ def make_hard_requirement_report(scenario: str = "pass") -> List[Dict[str, Any]]
     return [r.model_dump() for r in common]
 
 
-def make_candidate(status: str = "PASS") -> Dict[str, Any]:
+def make_candidate(
+    status: str = "PASS",
+    candidate_id: str = "cand-1",
+    manufacturer: str = "ThicknessPro",
+    model: str = "TP-800",
+    source_document: str = "SPEC-013.md",
+    measurement_method: Optional[str] = "non_contact",
+    measurement_principle: Optional[str] = None,
+    defect_types: Optional[List[str]] = None,
+    width_mm: Optional[float] = 1200.0,
+    range_min: Optional[float] = 0.0,
+    range_max: Optional[float] = 800.0,
+    range_unit: Optional[str] = "um",
+    accuracy_value: Optional[float] = 0.8,
+    accuracy_unit: Optional[str] = "um",
+) -> Dict[str, Any]:
     return CandidateEquipment(
-        candidate_id="cand-1",
-        manufacturer="ThicknessPro",
-        model="TP-800",
-        source_document="SPEC-013.md",
+        candidate_id=candidate_id,
+        manufacturer=manufacturer,
+        model=model,
+        source_document=source_document,
         status=status,
         hard_requirements_pass=(status != "FAIL"),
         equipment_fact=CandidateEquipmentFact(
             equipment_type="Thickness Inspection",
             inline_offline="inline",
-            measurement_method="non_contact",
-            width_mm=1200.0,
-            range_min=0.0,
-            range_max=800.0,
-            range_unit="um",
-            accuracy_value=0.8,
-            accuracy_unit="um",
+            measurement_method=measurement_method,
+            measurement_principle=measurement_principle,
+            defect_types=defect_types or [],
+            width_mm=width_mm,
+            range_min=range_min,
+            range_max=range_max,
+            range_unit=range_unit,
+            accuracy_value=accuracy_value,
+            accuracy_unit=accuracy_unit,
             speed_value=800.0,
             speed_unit="mm/s",
         ),
@@ -215,16 +232,24 @@ def make_generate_spec_response(
     scenario: str = "pass",
     retrieved_sources_count: int = 3,
     include_candidate: bool = True,
+    specification: Optional[Dict[str, Any]] = None,
+    candidate: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    """
+    specification/candidate를 명시하면(예: 중복 Equipment Name 시나리오처럼
+    make_specification()/make_candidate()의 기본값으로는 표현할 수 없는 조합이
+    필요할 때) 그 값을 그대로 쓰고, 없으면 기존처럼 scenario 기반 기본값을 만든다
+    — 기존 호출부는 전혀 바뀌지 않는다.
+    """
     candidate_status = {"pass": "PASS", "unknown": "PARTIAL", "fail": "FAIL"}[scenario]
     return {
-        "specification": make_specification(include_unknowns=(scenario == "unknown")),
+        "specification": specification if specification is not None else make_specification(include_unknowns=(scenario == "unknown")),
         "validation": make_validation(),
         "retrieved_sources": [
             {"source": "SPEC-013.md", "excerpt": "Thickness Inspection ..."} for _ in range(retrieved_sources_count)
         ],
         "hard_requirement_report": make_hard_requirement_report(scenario),
-        "chosen_candidate": make_candidate(candidate_status) if include_candidate else None,
+        "chosen_candidate": (candidate if candidate is not None else (make_candidate(candidate_status) if include_candidate else None)),
         "recommendation_reasons": [],
         "unconfirmed_items": [],
         "comparison_table": [],

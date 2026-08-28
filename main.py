@@ -514,6 +514,21 @@ PAGE_STYLE = """
         align-items: center;
         gap: 6px;
     }
+    /* 동일 Equipment Name을 가진 서로 다른 SPEC 문서가 한 대화 안에 함께
+       등장할 때만 조건부로 렌더링되는 구분 정보(JS computeEquipmentDisambiguation
+       참고) — 정상적인 카드에는 나타나지 않는다. text-secondary는 --grey-50
+       배경 위에서 6.2:1로 이미 WCAG AA를 만족하는 조합(위 .badge-unset 참고)을
+       그대로 재사용한다. */
+    .card-subtitle {
+        padding: 0 14px 8px;
+        margin-top: -4px;
+        background: var(--grey-50);
+        border-bottom: 1px solid var(--grey-300);
+        font-size: var(--font-label-size);
+        font-weight: var(--font-label-weight);
+        color: var(--text-secondary);
+        word-break: break-word;
+    }
     .card-body { padding: 12px 14px; }
     .card-row {
         display: flex;
@@ -1260,7 +1275,104 @@ async def agent_page():
                     `;
                 }
 
-                function renderEquipmentCard(content, msgId) {
+                // ----- Duplicate Equipment Name Disambiguation -----
+                // 배경: sample_specs Corpus 무결성 조사에서 서로 다른 두 사양서(SPEC-044.md/
+                // SPEC-051.md)가 우연히 같은 Equipment Name("MultiInspect MI-800")을 쓰는
+                // 사례가 발견됐다. 이름만으로는 후보를 구분할 수 없고, 대화 흐름상 후속
+                // 질문(예: 정확도를 더 엄격하게)으로 요구사항을 바꾸면 실제로 서로 다른
+                // SPEC 문서가 chosen_candidate로 선택될 수 있다(재현 확인됨) — 그러면 같은
+                // 대화 안에 이름이 같은 EquipmentCard 두 개가 나타나 "같은 장비가 중복
+                // 추천된 것"인지 "실제로 다른 장비"인지 사용자가 구분할 수 없다.
+                //
+                // 정책: 이름이 같아도 가리키는 SPEC 문서(source_document)가 실제로 같으면
+                // (진짜 같은 추천 반복) 아무것도 표시하지 않는다 — 문서가 서로 다를 때만
+                // 이 카드들이 실제로 구분이 필요한 상황이다. 구분 정보는 이미
+                // chosen_candidate(CandidateEquipment)에 들어있는 값만 쓰고, 새 Backend
+                // 데이터를 추가하지 않는다.
+                const DISAMBIGUATION_PRIORITY = ['manufacturer', 'measurement_method', 'inspection_item', 'width', 'range', 'accuracy', 'source'];
+
+                function disambiguationFieldMap(candidate) {
+                    const map = {};
+                    if (!candidate) return map;
+                    const ef = candidate.equipment_fact || {};
+                    if (candidate.manufacturer) {
+                        map.manufacturer = { value: candidate.manufacturer, display: candidate.manufacturer };
+                    }
+                    if (ef.measurement_method) {
+                        map.measurement_method = { value: 'method:' + ef.measurement_method, display: `측정 방식: ${ef.measurement_method}` };
+                    } else if (ef.measurement_principle) {
+                        map.measurement_method = { value: 'principle:' + ef.measurement_principle, display: `측정 원리: ${ef.measurement_principle}` };
+                    }
+                    if (ef.defect_types && ef.defect_types.length) {
+                        const text = ef.defect_types.join(', ');
+                        map.inspection_item = { value: text, display: `검사 항목: ${text}` };
+                    }
+                    if (ef.width_mm != null) {
+                        map.width = { value: ef.width_mm, display: `대응 폭: ${ef.width_mm}mm` };
+                    }
+                    if (ef.range_min != null && ef.range_max != null) {
+                        const text = `${ef.range_min}~${ef.range_max}${ef.range_unit || ''}`;
+                        map.range = { value: text, display: `측정 범위: ${text}` };
+                    }
+                    if (ef.accuracy_value != null) {
+                        const text = `±${ef.accuracy_value}${ef.accuracy_unit || ''}`;
+                        map.accuracy = { value: text, display: `정확도: ${text}` };
+                    }
+                    const specId = (candidate.source_document || '').replace(/\.md$/i, '');
+                    if (specId) {
+                        map.source = { value: specId, display: `Reference: ${specId}` };
+                    }
+                    return map;
+                }
+
+                // group: [{ msgId, candidate }] — 모두 같은 Equipment Name이면서 서로 다른
+                // source_document를 가진 경우에만 호출된다. 우선순위 순서대로 "그룹 전원이
+                // 값을 갖고 있고 + 값이 서로 다른" 첫 필드를 찾아 그 필드로 구분한다 —
+                // Random이나 RAG 결과 순서에 의존하지 않는, 후보 데이터 자체만 보는 결정론적
+                // 선택이다. Source Document(우선순위 마지막)는 spec_id가 서로 다른 한 항상
+                // 값이 갈리므로 다른 필드가 전부 같아도 반드시 여기서 구분이 성립한다.
+                function pickDisambiguationLabels(group) {
+                    const maps = group.map(g => disambiguationFieldMap(g.candidate));
+                    for (const key of DISAMBIGUATION_PRIORITY) {
+                        if (!maps.every(m => m[key] !== undefined)) continue;
+                        const values = maps.map(m => m[key].value);
+                        if (values.every(v => v === values[0])) continue;
+                        const labels = {};
+                        group.forEach((g, i) => { labels[g.msgId] = maps[i][key].display; });
+                        return labels;
+                    }
+                    return {};
+                }
+
+                // 현재 대화의 모든 equipment_result 메시지를 Equipment Name으로 묶고,
+                // 실제로 서로 다른 SPEC 문서를 가리키는 이름 그룹에만 구분 Label을
+                // 계산한다. 정상적인(이름이 유일하거나, 같은 문서가 반복 추천된) 경우는
+                // 빈 Map을 돌려줘 기존 카드 UI를 그대로 유지한다.
+                function computeEquipmentDisambiguation(messages) {
+                    const byName = new Map();
+                    for (const msg of messages) {
+                        if (msg.type !== 'equipment_result') continue;
+                        const spec = msg.content && msg.content.specification;
+                        const name = spec && spec.equipment && spec.equipment.name;
+                        const candidate = msg.content && msg.content.chosenCandidate;
+                        if (!name || !candidate) continue;
+                        if (!byName.has(name)) byName.set(name, []);
+                        byName.get(name).push({ msgId: msg.id, candidate: candidate });
+                    }
+                    const result = new Map();
+                    for (const group of byName.values()) {
+                        if (group.length < 2) continue;
+                        const distinctSources = new Set(group.map(g => g.candidate.source_document));
+                        if (distinctSources.size < 2) continue; // 같은 문서가 반복 추천된 것뿐 — 구분 불필요
+                        const labels = pickDisambiguationLabels(group);
+                        for (const [msgId, label] of Object.entries(labels)) {
+                            result.set(msgId, label);
+                        }
+                    }
+                    return result;
+                }
+
+                function renderEquipmentCard(content, msgId, disambiguationLabel) {
                     const spec = content.specification;
                     const eq = spec.equipment || {};
                     const target = spec.inspection_target || {};
@@ -1299,9 +1411,13 @@ async def agent_page():
                         .map(([label, valueHtml]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span>${valueHtml}</div>`)
                         .join('');
 
+                    const subtitleHtml = disambiguationLabel
+                        ? `<div class="card-subtitle">${escapeHtml(disambiguationLabel)}</div>`
+                        : '';
                     return `
                         <div class="card">
                             <div class="card-header">${equipmentHeaderPrefix(content.hasFail, content.hasUnknown, content.hasRecords)} — ${escapeHtml(eq.name || 'N/A')}</div>
+                            ${subtitleHtml}
                             <div class="card-body">
                                 ${equipmentBanner(content.hasFail, content.hasUnknown, content.hasRecords)}
                                 ${noResults}
@@ -1360,12 +1476,12 @@ async def agent_page():
                     `;
                 }
 
-                function renderMessageContent(msg) {
+                function renderMessageContent(msg, disambiguationByMsgId) {
                     switch (msg.type) {
                         case 'text': return renderTextMessage(msg.content);
                         case 'requirement_summary': return renderRequirementSummaryCard(msg.content);
                         case 'search_status': return renderSearchProgressCard(msg.content);
-                        case 'equipment_result': return renderEquipmentCard(msg.content, msg.id);
+                        case 'equipment_result': return renderEquipmentCard(msg.content, msg.id, disambiguationByMsgId && disambiguationByMsgId.get(msg.id));
                         case 'comparison_result': return renderComparisonCard(msg.content);
                         case 'error': return renderErrorMessage(msg.content);
                         default: return '';
@@ -1394,6 +1510,10 @@ async def agent_page():
                     const conv = getActiveConversation();
                     const messages = conv ? conv.messages : [];
                     const wasAtBottom = (container.scrollTop + container.clientHeight) >= (container.scrollHeight - 40);
+                    // 동일 Equipment Name을 가진 서로 다른 SPEC 문서가 이 대화 안에 함께
+                    // 등장하는지는 매번(새 메시지 추가/복원 포함) 메시지 전체를 다시 봐야만
+                    // 알 수 있다 — 렌더링마다 결정론적으로 재계산한다(상태로 저장하지 않음).
+                    const disambiguationByMsgId = computeEquipmentDisambiguation(messages);
 
                     container.innerHTML = '';
                     if (messages.length === 0) {
@@ -1411,7 +1531,7 @@ async def agent_page():
                             // pre-wrap을 쓴다 — 그런데 카드 컴포넌트들은 들여쓰기된 템플릿
                             // 리터럴을 반환하므로, trim() 없이 그대로 넣으면 앞뒤 공백/개행이
                             // 그대로 렌더링되어 카드 위에 빈 공백이 보이는 문제가 있다.
-                            bubble.innerHTML = renderMessageContent(msg).trim();
+                            bubble.innerHTML = renderMessageContent(msg, disambiguationByMsgId).trim();
                             if (isUser) {
                                 // 사용자 Avatar(문서 9절): Secondary-500 Purple.
                                 const avatar = document.createElement('div');
