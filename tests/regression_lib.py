@@ -21,6 +21,7 @@ import contextlib
 import hashlib
 import json
 import unittest.mock as mock
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -82,6 +83,18 @@ def candidate_name(c: CandidateEquipment) -> str:
     return f"{c.manufacturer or '?'} {c.model or '?'}"
 
 
+class AmbiguousCandidateNameError(ValueError):
+    """
+    동일한 Equipment Name(Manufacturer + Model)을 가진 후보가 corpus에 둘 이상
+    있을 때 발생한다. sample_specs/SPEC-044.md와 SPEC-051.md가 우연히 둘 다
+    "MultiInspect MI-800"을 쓰는 사례가 실제로 발견되었다(Flaky Test 조사 중
+    발견) — 예전에는 by_name 딕셔너리가 이름으로 뒤에 나온 후보로 조용히
+    overwrite해서 어느 문서를 검증하는지 알 수 없었다. 이제는 이름이 중복될 때
+    spec_id(예: "SPEC-051.md")를 함께 넘겨 어느 후보를 가리키는지 명시하지
+    않으면 이 예외를 던져 문제를 조용히 감추지 않는다.
+    """
+
+
 class RegressionRunResult:
     """한 케이스를 실제 파이프라인으로 돌린 결과 + 실패 원인 리포트에 필요한 정보."""
 
@@ -94,10 +107,38 @@ class RegressionRunResult:
         self.requirement = requirement
         self.candidates = candidates
         self.chosen = chosen
-        self.by_name: Dict[str, CandidateEquipment] = {candidate_name(c): c for c in candidates}
+        # 이름 하나에 후보가 여러 개일 수 있으므로(중복 장비명) list로 보관한다
+        # — 뒤에 나온 후보가 앞의 후보를 조용히 덮어쓰지 않게 한다. 순서는
+        # candidates(= build_candidates가 만든, source 파일명 기준 결정론적
+        # 순서)를 그대로 따른다.
+        self.by_name: Dict[str, List[CandidateEquipment]] = defaultdict(list)
+        for c in candidates:
+            self.by_name[candidate_name(c)].append(c)
 
-    def candidate(self, name: str) -> Optional[CandidateEquipment]:
-        return self.by_name.get(name)
+    def candidates_by_name(self, name: str) -> List[CandidateEquipment]:
+        return list(self.by_name.get(name, []))
+
+    def candidate(self, name: str, spec_id: Optional[str] = None) -> Optional[CandidateEquipment]:
+        """
+        이름으로 후보를 찾는다. 동일 이름의 후보가 둘 이상이면 spec_id(예:
+        "SPEC-051.md")로 어느 것을 가리키는지 명시해야 한다 — 명시하지 않으면
+        AmbiguousCandidateNameError를 던진다(예전처럼 마지막 후보로 조용히
+        결정하지 않는다).
+        """
+        matches = self.by_name.get(name, [])
+        if spec_id is not None:
+            for c in matches:
+                if c.source_document == spec_id:
+                    return c
+            return None
+        if len(matches) > 1:
+            raise AmbiguousCandidateNameError(
+                f"'{name}'이라는 이름의 후보가 {len(matches)}개 있습니다 "
+                f"({', '.join(c.source_document for c in matches)}). "
+                "regression_cases.json의 candidate_spec_ids로 어느 SPEC 문서를 "
+                "가리키는지 명시하세요."
+            )
+        return matches[0] if matches else None
 
 
 def run_case(case: Dict[str, Any], db_path: str, k_per_query: int = 100) -> RegressionRunResult:

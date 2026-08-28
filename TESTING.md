@@ -238,3 +238,79 @@ E2E 테스트가 실패하면 pytest의 표준 assert 메시지에 다음이 포
     코드를 추측성으로 수정하지 않는다는 원칙에 따라 이번에는 코드를
     수정하지 않았고, 대신 재발 시 정확한 assertion 실패 내용과 traceback을
     반드시 기록해 다음 조사가 이어질 수 있게 한다.
+
+## Sample Specs Corpus 데이터 무결성
+
+위 flaky test 조사 중 발견된 `sample_specs/SPEC-044.md`/`SPEC-051.md`의 중복
+장비명("MultiInspect MI-800")을 계기로, corpus 전체의 데이터 무결성을 검사했다.
+
+**구조 분석(수정 전 확인한 사실)**:
+- Equipment Name(Manufacturer + Model)은 corpus 내에서 Unique하다고 보장되지
+  않는다 — 실제로 52개 문서 중 이 한 쌍만 중복(`scripts/audit_sample_specs.py`
+  실행 결과, 아래 참고).
+- SPEC 파일명(`source_document`, 예: `"SPEC-051.md"`)은 파일시스템이 보장하는
+  유일 식별자이며, **운영 코드(`agent/candidate_matcher.py`의
+  `build_candidates`가 만드는 `by_source` 딕셔너리, `CandidateEquipment.
+  candidate_id`/`source_document`)는 이미 이 값을 Key로 쓴다** — 즉 RAG/후보
+  매칭 엔진 자체는 이름 중복에 영향받지 않는다.
+- Equipment Name을 Dictionary Key로 쓰는 코드는 저장소 전체에서
+  `tests/regression_lib.py`의 `RegressionRunResult.by_name` 단 한 곳뿐이었다
+  (`grep`으로 전수 확인). 이 딕셔너리는 `{candidate_name(c): c for c in
+  candidates}` 형태로, 이름이 중복되면 나중 후보가 앞의 후보를 조용히
+  overwrite했다 — 우연히 SPEC-044.md < SPEC-051.md 알파벳 순서 덕분에 지금까지
+  항상 의도한(SPEC-051) 후보로 덮였을 뿐, 설계상 보장된 동작은 아니었다.
+- SPEC-044.md(정확도 ±0.8μm, Measurement Principle "Multi-sensor", Defect
+  Types "Surface Defect")와 SPEC-051.md(정확도 ±1.0μm, Measurement Principle
+  "3D Laser Profilometry", Defect Types "Scratch, Crack, Particle, Coating
+  Defect", Classification/Safety 섹션 추가 보유)를 직접 비교한 결과, 두 문서는
+  서로 다른 실측 스펙을 가진 **서로 다른 장비**이며 이름만 우연히 겹친
+  것으로 판단된다(원본 데이터를 추측 없이 그대로 비교한 결과).
+
+**결정한 정책**: 새 Database나 ID 마이그레이션을 추가하지 않고, 이미 운영
+코드가 쓰고 있는 **SPEC 파일명(`source_document`)을 Unique Identifier**로
+채택했다 — 가장 적은 변경으로 충돌을 방지할 수 있는 기존 구조이기 때문이다.
+
+**변경 사항**:
+- `scripts/audit_sample_specs.py` 추가 — SPEC ID/Equipment Name/Manufacturer+
+  Model 중복, 완전 동일 문서, 핵심 Metadata·Spec 필드 동일, 필수 필드
+  (Manufacturer/Model) 누락을 검사하는 독립 Audit 도구(`python
+  scripts/audit_sample_specs.py`로 직접 실행 가능). 새 유사도 엔진을 만들지
+  않고 이미 운영 코드가 쓰는 `build_rag_ollama.parse_markdown_file`/
+  `agent.candidate_matcher._extract_candidate_fact`를 그대로 재사용한다.
+- `tests/test_sample_specs_integrity.py` 추가 — 위 Audit을 pytest로 감싸,
+  (1) Manufacturer/Model 누락, (2) SPEC ID 중복, (3) 완전 동일 문서는 항상
+  실패시키고, (4) 새로 발견된(리뷰되지 않은) 중복 장비명이 있으면 실패시켜
+  앞으로 SPEC 파일을 추가할 때 기존 이름과 우연히 겹치는 실수를 자동으로
+  잡는다. 이미 검토된 "MultiInspect MI-800" 중복은 허용 목록에 등록해뒀다.
+- `tests/regression_lib.py`: `RegressionRunResult.by_name`을 이름 -> 단일
+  후보에서 이름 -> 후보 목록(`Dict[str, List[CandidateEquipment]]`)으로 바꿔
+  중복 시에도 데이터가 사라지지 않게 했다. `.candidate(name, spec_id=None)`에
+  `spec_id`(예: `"SPEC-051.md"`) 인자를 추가해 이름이 중복될 때 어느 문서를
+  가리키는지 명시할 수 있게 했고, 명시하지 않았는데 중복이면 조용히 아무
+  후보나 고르는 대신 `AmbiguousCandidateNameError`를 던져 문제를 드러낸다.
+  기존처럼 이름이 유일한 경우는 동작이 전혀 바뀌지 않는다.
+- `tests/ground_truth/regression_cases.json`: "MultiInspect MI-800"을 참조하는
+  4개 케이스(T001/T002/T005/T021)에 `"candidate_spec_ids": {"MultiInspect
+  MI-800": "SPEC-051.md"}`를 추가해, 그동안 알파벳 순서 우연에 의존하던 것을
+  명시적으로 고정했다. 검증 강도는 그대로 유지했다(이름 존재 여부만 보던 것을
+  느슨하게 만들지 않았고, 오히려 어느 문서인지까지 명시하도록 강화했다).
+- `tests/test_regression.py`: `AmbiguousCandidateNameError`를 잡아 기존
+  리포트 포맷(`format_case_failure`)으로 사람이 읽을 수 있게 표시하도록
+  `_lookup` 헬퍼를 추가했다.
+
+**Audit 결과**(`python scripts/audit_sample_specs.py`, 2026-08-28 기준):
+```
+Total Documents: 52
+Unique Equipment Names: 51
+Duplicate Equipment Names: MultiInspect MI-800 (SPEC-044.md, SPEC-051.md) — 검토 완료, 허용 목록 등록
+Result: WARNING
+```
+참고로 SPEC-030.md/SPEC-049.md는 Range/Accuracy/Resolution/Speed가 전부
+`UNKNOWN`이고 Width(800mm)만 같아 "Same Core Spec Fields" 검사에 함께
+걸리지만, Manufacturer(EdgeScan Pro vs VisionFlex)·Model·Equipment Type이
+전부 달라 실제로는 다른 장비다 — 우연의 일치이며 조치가 필요 없다.
+
+`Result: WARNING`은 의도된 상태다 — SPEC-044/051 중복은 삭제 대상이 아니라
+(서로 다른 실제 장비이므로) 안전하게 처리하도록 만든 것이 이번 작업의
+목표였다. 새로운 미검토 중복이 생기면 `tests/test_sample_specs_integrity.py`가
+실패로 잡아낸다.

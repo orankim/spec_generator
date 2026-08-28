@@ -18,7 +18,8 @@
       "expected_fail_candidates": [],
       "forbidden_candidates": [],
       "expected_final_status": "PASS",
-      "notes": "SPEC-013(ThicknessPro TP-800) 및 SPEC-051(MultiInspect MI-800): Width 800mm 이상, Speed 500mm/s 이상, Range 0~500um, Accuracy 1.0um 이하, 두께 측정 근거 명시로 PASS. TI-800(SPEC-046)은 수치 조건은 충족하지만 두께 언급이 없어 PARTIAL."
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-051.md"},
+      "notes": "SPEC-013(ThicknessPro TP-800) 및 SPEC-051(MultiInspect MI-800): Width 800mm 이상, Speed 500mm/s 이상, Range 0~500um, Accuracy 1.0um 이하, 두께 측정 근거 명시로 PASS. TI-800(SPEC-046)은 수치 조건은 충족하지만 두께 언급이 없어 PARTIAL. 'MultiInspect MI-800'은 SPEC-044.md에도 존재하는 중복 장비명이므로(둘은 서로 다른 실제 스펙 — 정확도 0.8 vs 1.0) candidate_spec_ids로 SPEC-051.md를 명시한다(TESTING.md 참고)."
     },
     {
       "test_id": "T002",
@@ -36,7 +37,8 @@
       "expected_fail_candidates": [],
       "forbidden_candidates": [],
       "expected_final_status": "PASS",
-      "notes": "SPEC-051(MultiInspect MI-800): Width 800mm, Inline, Thickness & Surface Defect 동시검사, Range 0~500um(0~300um 커버), Accuracy 1.0um 조건을 모두 만족하여 PASS."
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-051.md"},
+      "notes": "SPEC-051(MultiInspect MI-800): Width 800mm, Inline, Thickness & Surface Defect 동시검사, Range 0~500um(0~300um 커버), Accuracy 1.0um 조건을 모두 만족하여 PASS. 'MultiInspect MI-800'은 SPEC-044.md에도 존재하는 중복 장비명이므로 candidate_spec_ids로 SPEC-051.md를 명시한다."
     },
     {
       "test_id": "T003",
@@ -89,7 +91,8 @@
       "expected_fail_candidates": [],
       "forbidden_candidates": [],
       "expected_final_status": "PASS",
-      "notes": "required_accuracy_um이 None이므로 Hard Requirement 목록에 Accuracy가 없어야 함(문제7). SPEC-051(MultiInspect MI-800)이 Width, Inline, Thickness, Surface Defect를 모두 만족하여 PASS."
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-051.md"},
+      "notes": "required_accuracy_um이 None이므로 Hard Requirement 목록에 Accuracy가 없어야 함(문제7). SPEC-051(MultiInspect MI-800)이 Width, Inline, Thickness, Surface Defect를 모두 만족하여 PASS. 'MultiInspect MI-800'은 SPEC-044.md에도 존재하는 중복 장비명이므로 candidate_spec_ids로 SPEC-051.md를 명시한다."
     },
     {
       "test_id": "T006",
@@ -344,7 +347,8 @@
       "expected_fail_candidates": [],
       "forbidden_candidates": [],
       "expected_final_status": "PASS",
-      "notes": "사용자가 Accuracy를 요구하지 않은 경우 required_accuracy_um = None 이어야 하며, Hard Requirement 평가 항목으로 추가되지 않아야 함."
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-051.md"},
+      "notes": "사용자가 Accuracy를 요구하지 않은 경우 required_accuracy_um = None 이어야 하며, Hard Requirement 평가 항목으로 추가되지 않아야 함. 'MultiInspect MI-800'은 SPEC-044.md에도 존재하는 중복 장비명이므로 candidate_spec_ids로 SPEC-051.md를 명시한다."
     },
     {
       "test_id": "T022",
