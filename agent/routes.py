@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from renderers.docx_renderer import render_candidate_docx
 from renderers.markdown_renderer import render_candidate_markdown, render_markdown
 
 from . import candidate_matcher, ollama_client, spec_retriever
@@ -21,7 +23,7 @@ from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, retrieve_and_generate
 from .requirement_parser import apply_conversational_patch, apply_deterministic_extraction
 from .requirement_validator import validate_requirement
-from .schemas import CandidateEquipment, RequirementSchema, SpecificationSchema
+from .schemas import CandidateEquipment, ComplianceRecord, RequirementSchema, SpecificationSchema
 from .spec_validator import build_hard_requirement_report, build_inspection_item_hard_requirement_records
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,22 @@ router = APIRouter(prefix="/api/agent", tags=["electrode-agent"])
 DB_PATH = os.environ.get("CHROMA_DB_PATH", DEFAULT_CHROMA_DB_PATH)
 OUTPUT_DIR = Path("./generated_files")
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Windows에서 파일명으로 쓸 수 없는 문자(\ / : * ? " < > |)를 "_"로 치환한다.
+# 다운로드 파일명이 추천 장비명을 그대로 담으므로, 장비명에 이런 문자가 섞여
+# 있어도(현재 corpus에는 없지만 향후 임의의 Manufacturer/Model 문자열이 들어올
+# 수 있음) 안전한 파일명이 되도록 방어한다.
+_UNSAFE_FILENAME_CHARS_RE = re.compile(r'[\\/:*?"<>|]')
+
+
+def _safe_filename_stem(candidate: CandidateEquipment) -> str:
+    name_parts = [p for p in (candidate.manufacturer, candidate.model) if p]
+    if not name_parts:
+        return "equipment_specification"
+    raw = "_".join(name_parts)
+    sanitized = _UNSAFE_FILENAME_CHARS_RE.sub("_", raw)
+    sanitized = re.sub(r"\s+", "_", sanitized).strip("_")
+    return f"{sanitized}_specification" if sanitized else "equipment_specification"
 
 
 class AnalyzeRequest(BaseModel):
@@ -270,24 +288,38 @@ class BuildCandidateMarkdownRequest(BaseModel):
     candidate: Dict[str, Any]
     # 있으면 "Inspection Items" 절에 사용자가 실제로 요청한 검사 항목 목록을 채운다.
     requirement: Optional[Dict[str, Any]] = None
+    # 있으면 "Requirement Compliance" 절에 Hard Requirement PASS/FAIL/UNKNOWN
+    # 비교 결과를 포함한다 — /generate-spec이 이미 계산해 돌려준 값을 그대로
+    # 재사용한다(재계산/재해석하지 않음, 요청서 4/11절).
+    hard_requirement_report: Optional[List[Dict[str, Any]]] = None
+
+
+def _build_candidate_document_inputs(req_candidate: Dict[str, Any], req_requirement: Optional[Dict[str, Any]], req_hard_requirement_report: Optional[List[Dict[str, Any]]]):
+    candidate = CandidateEquipment(**req_candidate)
+    requirement = RequirementSchema(**req_requirement) if req_requirement else None
+    hard_requirement_report = (
+        [ComplianceRecord(**r) for r in req_hard_requirement_report] if req_hard_requirement_report else None
+    )
+    return candidate, requirement, hard_requirement_report
 
 
 @router.post("/build-candidate-markdown")
 async def build_candidate_markdown_api(req: BuildCandidateMarkdownRequest):
     """
-    추천 화면의 "마크다운 사양서 생성" 버튼용 — /generate-spec이 이미 계산해 돌려준
+    추천 화면의 "Markdown 다운로드" 버튼용 — /generate-spec이 이미 계산해 돌려준
     chosen_candidate(CandidateEquipment, LLM을 거치지 않고 사양서 원문에서 결정론적
-    으로 추출된 값)를 그대로 받아 간단한 Markdown으로 저장한다. build-markdown(LLM이
-    채운 SpecificationSchema 기반)과는 별도 경로다.
+    으로 추출된 값)를 그대로 받아 Markdown으로 저장한다. build-markdown(LLM이 채운
+    SpecificationSchema 기반)과는 별도 경로다. build-candidate-docx와 정확히 같은
+    renderers.candidate_specification 데이터를 사용하므로 두 포맷의 내용이 어긋나지
+    않는다.
     """
     try:
-        candidate = CandidateEquipment(**req.candidate)
-        requirement = RequirementSchema(**req.requirement) if req.requirement else None
+        candidate, requirement, hard_requirement_report = _build_candidate_document_inputs(
+            req.candidate, req.requirement, req.hard_requirement_report
+        )
+        markdown_text = render_candidate_markdown(candidate, requirement=requirement, hard_requirement_report=hard_requirement_report)
 
-        markdown_text = render_candidate_markdown(candidate, requirement=requirement)
-
-        file_id = str(uuid.uuid4())[:8]
-        output_filename = f"electrode_inspection_candidate_{file_id}.md"
+        output_filename = f"{_safe_filename_stem(candidate)}.md"
         output_path = OUTPUT_DIR / output_filename
         output_path.write_text(markdown_text, encoding="utf-8")
         return {
@@ -297,4 +329,37 @@ async def build_candidate_markdown_api(req: BuildCandidateMarkdownRequest):
         }
     except Exception as e:
         logger.exception("후보 장비 Markdown 사양서 생성 실패")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BuildCandidateDocxRequest(BaseModel):
+    candidate: Dict[str, Any]
+    requirement: Optional[Dict[str, Any]] = None
+    hard_requirement_report: Optional[List[Dict[str, Any]]] = None
+
+
+@router.post("/build-candidate-docx")
+async def build_candidate_docx_api(req: BuildCandidateDocxRequest):
+    """
+    추천 화면의 "Word 다운로드" 버튼용 — build-candidate-markdown과 완전히 동일한
+    입력(candidate/requirement/hard_requirement_report)을 받아, 같은 Structured
+    Data(renderers.candidate_specification.build_candidate_specification_data)로
+    Word(.docx) 문서를 만든다.
+    """
+    try:
+        candidate, requirement, hard_requirement_report = _build_candidate_document_inputs(
+            req.candidate, req.requirement, req.hard_requirement_report
+        )
+        docx_bytes = render_candidate_docx(candidate, requirement=requirement, hard_requirement_report=hard_requirement_report)
+
+        output_filename = f"{_safe_filename_stem(candidate)}.docx"
+        output_path = OUTPUT_DIR / output_filename
+        output_path.write_bytes(docx_bytes)
+        return {
+            "status": "success",
+            "file_name": output_filename,
+            "download_url": f"/api/download/{output_filename}",
+        }
+    except Exception as e:
+        logger.exception("후보 장비 Word 사양서 생성 실패")
         raise HTTPException(status_code=500, detail=str(e))

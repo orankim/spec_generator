@@ -84,7 +84,7 @@ def test_markdown_button_click_triggers_real_api_call_and_download_link(agent_pa
     # "idle 버튼 -> 생성 중 -> 다운로드 링크"라는 관찰 가능한 상태 변화의 최종 증거다.
     download_link = agent_page.locator("a.download-btn")
     expect(download_link).to_be_visible(timeout=10000)
-    expect(download_link).to_have_text("마크다운 사양서 다운로드")
+    expect(download_link).to_have_text("📄 Markdown 파일 다운로드")
     expect(agent_page.locator("button.build-markdown-btn")).to_have_count(0)
 
     assert _saw_generating(agent_page), "\"생성 중...\" 로딩 상태가 화면에 한 번도 표시되지 않음"
@@ -130,7 +130,7 @@ def test_markdown_button_shows_error_on_api_failure_not_silent(agent_page: Page,
 
     error_banner = agent_page.locator(".bubble.ai .banner-fail")
     expect(error_banner).to_be_visible(timeout=5000)
-    expect(error_banner).to_contain_text("마크다운 사양서 생성 중 오류가 발생했습니다")
+    expect(error_banner).to_contain_text("Markdown 사양서 생성 중 오류가 발생했습니다")
 
     # 오류 후에도 아무 반응 없이 끝나지 않는다 — 다시 시도할 수 있도록 버튼이 되돌아온다.
     retry_btn = agent_page.locator(".build-markdown-btn")

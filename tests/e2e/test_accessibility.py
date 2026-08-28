@@ -159,12 +159,19 @@ def test_send_button_meets_wcag_aa_contrast(agent_page: Page):
 
 
 def test_download_button_meets_wcag_aa_contrast(agent_page: Page, mock_api):
+    """Markdown/Word 두 다운로드 버튼 모두 확인한다 — 둘 다 같은 .download-btn
+    스타일을 쓰지만(요청서: 새 색상 도입 금지, 기존 토큰 재사용), 실제로 둘 다
+    렌더링되는 요소이므로 하나만 확인하고 넘어가지 않는다."""
     mock_api.mock("**/api/agent/analyze-requirement", make_analyze_response())
     mock_api.mock("**/api/agent/generate-spec", make_generate_spec_response("pass"))
     agent_page.fill("#chatInput", QUESTION)
     agent_page.click("#sendBtn")
     expect(agent_page.locator(".build-markdown-btn")).to_be_visible(timeout=10000)
-    _assert_contrast_at_least(agent_page.locator(".download-btn"), 4.5, ".download-btn")
+    buttons = agent_page.locator(".download-btn")
+    count = buttons.count()
+    assert count >= 2, f"Markdown/Word 다운로드 버튼이 모두 보여야 함(현재 {count}개)"
+    for i in range(count):
+        _assert_contrast_at_least(buttons.nth(i), 4.5, f".download-btn[{i}]")
 
 
 # ---------------------------------------------------------------

@@ -490,3 +490,95 @@ C(별도 라벨)는 적용하지 않았다. 재현 결과 카드 간 시각적 �
 
 **테스트**: 신규 포함 총 13개 전부 PASS, 기존 `tests/e2e/*` 113개 회귀 없음
 (총 115개), 전체 스위트 2회 연속 639 passed / 0 failed / 0 xfailed.
+
+## Word(.docx) 사양서 다운로드
+
+기존 "마크다운 사양서 생성" 버튼(`/api/agent/build-candidate-markdown`,
+`renderers.markdown_renderer.render_candidate_markdown`)을 분석한 뒤, 같은
+데이터(`CandidateEquipment`/`RequirementSchema`/Hard Requirement 결과)로 Word
+(.docx) 문서도 만들 수 있도록 확장했다.
+
+**분석(수정 전 확인한 사실)**:
+- 프론트엔드 "마크다운 사양서 생성" 버튼은 검색 시점에 계산된 `chosen_candidate`
+  (CandidateEquipment, LLM을 거치지 않고 사양서 원문에서 결정론적으로 추출한 값)
+  와 `requirement`만 `/api/agent/build-candidate-markdown`에 보내고 있었다 —
+  Hard Requirement 비교 결과(`hardRequirementReport`)는 화면에는 표시되지만
+  Markdown 문서에는 포함되지 않았다.
+- `renderers/common.py`에는 이미 `SpecificationSchema`(LLM이 채운 최종 사양서)
+  기반의 12섹션 공통 구조(`build_sections()`)가 있고 `pptx_renderer.py`가 이를
+  재사용하고 있었다 — 하지만 이 프로젝트의 실제 "마크다운 사양서 생성" 버튼은
+  의도적으로 이 경로를 쓰지 않는다(`tests/test_candidate_markdown_route.py`
+  상단 docstring: LLM이 채운 값과 섞이지 않는, 근거가 명확한 문서를 만들기
+  위함). 따라서 Word도 같은 이유로 `CandidateEquipment` 기반으로 만들었다 —
+  `SpecificationSchema` 경로로 갈아타면 기존에 의도적으로 배제한 LLM 값이
+  다시 섞여 들어가는 더 큰(그리고 불필요한) 변경이 된다.
+
+**공통 Structured Data**: `renderers/candidate_specification.py`
+(`build_candidate_specification_data()`)를 새로 만들어, Markdown과 Word
+렌더러가 candidate/requirement/hard_requirement_report를 각자 재해석하지 않고
+정확히 같은 계산 결과(`SpecSection`/`SpecRow`/`ComplianceRow`)를 공유하도록
+했다. 값이 원본 사양서에 없으면 "UNKNOWN"으로 정직하게 남기고(요청서 9절),
+CandidateEquipmentFact가 아예 추출하지 않는 영역(Spatial Performance/Optical
+System/System Configuration/Interfaces/Environment/Safety)도 섹션 자체는 항상
+포함하되 전부 UNKNOWN으로 표시한다 — 요청서가 명시한 13개 섹션 구조를 항상
+일관되게 유지하기 위함이다.
+
+**기존 Markdown 출력 보존**: `render_candidate_markdown()`의 General/Inspection
+Performance/Inspection Items/Defect Inspection/Sources 절은 기존 형식(문자열
+그대로)을 전혀 바꾸지 않았다 — `tests/test_candidate_markdown_route.py`가 계속
+그대로 통과한다. 새 13-섹션 구조(Inspection Target/Requirements/Measurement
+Performance/Spatial Performance/Optical System/System Configuration/
+Interfaces/Environment/Safety/Requirement Compliance)는 그 뒤에 이어 붙였다.
+
+**Word 문서**: `renderers/docx_renderer.py`(`render_candidate_docx()`,
+python-docx)가 같은 Structured Data로 Title(장비명) + 섹션별 표(Item/
+Specification/Status) + Requirement Compliance 표(Requirement/Required/
+Equipment/Result) + Sources/Notes를 만든다. 값과 상태(VERIFIED/UNKNOWN)는
+표의 별도 컬럼에 들어가므로 "0~300umVERIFIED"처럼 붙어 보이는 문제가 없다
+(python-docx로 재확인: 각 셀이 별도 텍스트).
+
+**API**: 기존 명명 규칙(`/api/agent/build-candidate-markdown`)에 맞춰
+`/api/agent/build-candidate-docx`를 추가했다(요청서가 제안한 `POST /api/
+specification/download?format=` 대신 기존 라우트 네이밍을 그대로 확장 — "기존
+구조를 최대한 재사용"). 두 라우트 모두 이제 `hard_requirement_report`(선택,
+프론트엔드가 검색 시점에 이미 계산해 저장해 둔 값)를 받는다.
+
+**파일명**: 기존 `electrode_inspection_candidate_{uuid}.md`(무작위) 대신 추천
+장비명 기반 `{Manufacturer}_{Model}_specification.{md|docx}`로 바꿨다. Windows
+금지 문자(`\ / : * ? " < > |`)는 정규식으로 `_`치환하고, 장비명이 전혀 없으면
+`equipment_specification.{md|docx}`로 fallback한다(`agent/routes.py:
+_safe_filename_stem`). 다운로드 시점에 기존부터 있던 `/api/download/{file_name}`
+라우트가 모든 다운로드에 "설비사양서_" 접두어를 붙이는 동작(이번 작업 이전부터
+있던, 이 기능과 무관한 공통 동작)은 그대로 두었다 — 실제 브라우저 다운로드
+파일명은 `설비사양서_{Manufacturer}_{Model}_specification.docx`가 된다.
+
+**UI**: 기존 "[📄 마크다운 사양서 생성]" 버튼 1개를 "[📄 Markdown 다운로드]
+[📝 Word 다운로드]" 2개로 나눴다(`DOWNLOAD_FORMATS` 표 하나로 두 버튼의 렌더링/
+생성 로직을 공유 — 세 번째 포맷이 추가돼도 표만 늘리면 됨). 각 버튼은 독립적인
+상태(생성 중/완료/오류)를 가지며, 하나가 실패해도 다른 하나는 정상 동작한다.
+중복 클릭 방지는 기존 마크다운 버튼과 동일한 패턴(클릭 시 동기적으로 버튼을
+DOM에서 제거)을 그대로 재사용했다. 새 색상은 추가하지 않고 기존
+`.download-btn` 스타일을 그대로 썼다.
+
+**수정/추가 파일**:
+
+| 파일 | 내용 |
+|---|---|
+| `renderers/candidate_specification.py` | 신규 — Markdown/Word 공통 Structured Data 빌더 |
+| `renderers/docx_renderer.py` | 신규 — python-docx 기반 Word 렌더러 |
+| `renderers/markdown_renderer.py` | `render_candidate_markdown()`이 공통 데이터로 새 섹션들을 추가 렌더링(기존 섹션은 그대로) |
+| `agent/routes.py` | `/api/agent/build-candidate-docx` 신규 라우트, 파일명 sanitize 헬퍼, 두 라우트가 `hard_requirement_report` 수신 |
+| `main.py` | 버튼 2개로 분리, `DOWNLOAD_FORMATS` 테이블 기반 공통 렌더링/생성 로직, `.download-actions`/`.card-hint` 등 CSS, `_DOWNLOAD_MEDIA_TYPES`에 `.docx` 추가 |
+| `requirements.txt` | `python-docx>=1.1.0` 추가 |
+| `pytest.ini` | `specification`/`download` 마커 추가 |
+| `tests/test_candidate_docx_route.py` | 신규 — Word 렌더링/라우트/파일명 테스트 8개 |
+| `tests/test_specification_consistency.py` | 신규 — Markdown/Word 핵심 정보 일치 테스트 5개 |
+| `tests/e2e/test_docx_download_button.py` | 신규 — Word 버튼 E2E 테스트 7개 |
+| `tests/e2e/test_markdown_button.py` | 새 버튼 라벨에 맞춰 텍스트 assertion 2곳 갱신(동작 자체는 동일) |
+| `tests/e2e/test_accessibility.py` | 다운로드 버튼이 2개가 됐으므로 대비 검사를 두 버튼 모두에 적용 |
+
+**검증**: 신규 테스트(백엔드 13개 + E2E 7개) 전부 PASS, 기존 `tests/e2e/*`
+115개 중 텍스트 문구 2곳만 의도적으로 갱신하고 전부 PASS, 실제 브라우저에서
+질문 전송 → 두 버튼 모두 클릭 → 실제 `.md`/`.docx` 파일 다운로드 → python-docx로
+재확인까지 수동으로도 확인했다. 전체 스위트 2회 연속 659 passed / 0 failed /
+0 xfailed.

@@ -702,6 +702,11 @@ PAGE_STYLE = """
     .input-bar button:focus-visible { outline: 2px solid var(--primary-600); outline-offset: 2px; }
     .input-bar button:disabled { background: var(--grey-300); color: var(--grey-900); opacity: .5; cursor: not-allowed; }
 
+    /* Markdown/Word 두 다운로드 버튼을 나란히 두되, 375px처럼 좁은 화면에서는
+       가로 스크롤 없이 줄바꿈되도록 한다(요청서 Mobile 절). */
+    .download-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .download-actions .download-btn { margin-top: 8px; }
+
     a.download-btn, button.download-btn {
         display: inline-block;
         margin-top: 8px;
@@ -1204,17 +1209,42 @@ async def agent_page():
                     return blocks.join('');
                 }
 
-                function renderDownloadArea(content, msgId) {
-                    if (content.downloadUrl) {
-                        return `<a class="download-btn" href="${escapeHtml(content.downloadUrl)}" download>마크다운 사양서 다운로드</a>`;
+                // 사양서 다운로드 포맷 정의 — Markdown/Word 버튼 렌더링과 생성 로직이
+                // 이 표 하나만 보고 동작하므로, 세 번째 포맷이 추가되어도 여기 한 곳만
+                // 늘리면 된다(요청서 11절: 중복 코드 방지).
+                const DOWNLOAD_FORMATS = {
+                    markdown: {
+                        endpoint: '/api/agent/build-candidate-markdown',
+                        btnClass: 'build-markdown-btn',
+                        urlField: 'downloadUrl',
+                        generatingField: 'markdownGenerating',
+                        errorField: 'markdownError',
+                        icon: '📄',
+                        formatLabel: 'Markdown',
+                        generateLabel: '📄 Markdown 다운로드',
+                        retryLabel: '📄 Markdown 다운로드 다시 시도',
+                        readyLabel: '📄 Markdown 파일 다운로드',
+                    },
+                    docx: {
+                        endpoint: '/api/agent/build-candidate-docx',
+                        btnClass: 'build-docx-btn',
+                        urlField: 'docxDownloadUrl',
+                        generatingField: 'docxGenerating',
+                        errorField: 'docxError',
+                        icon: '📝',
+                        formatLabel: 'Word',
+                        generateLabel: '📝 Word 다운로드',
+                        retryLabel: '📝 Word 다운로드 다시 시도',
+                        readyLabel: '📝 Word 파일 다운로드',
+                    },
+                };
+
+                function renderSingleDownloadButton(format, content, msgId) {
+                    const spec = DOWNLOAD_FORMATS[format];
+                    if (content[spec.urlField]) {
+                        return `<a class="download-btn ${spec.btnClass}-ready" href="${escapeHtml(content[spec.urlField])}" download>${spec.readyLabel}</a>`;
                     }
-                    // 후보 장비가 아예 없으면(예: FAIL만 있어 select_best_candidate가
-                    // null을 반환한 극단적인 경우는 없지만, 방어적으로) 근거 없는
-                    // 사양서를 만들지 않고 버튼 자체를 숨긴다.
-                    if (!content.chosenCandidate) {
-                        return '';
-                    }
-                    if (content.markdownGenerating) {
+                    if (content[spec.generatingField]) {
                         // Disabled 스타일은 CSS button.download-btn:disabled(grey-300
                         // 기반)이 처리한다 — 인라인 opacity로 같은 색을 흐리게
                         // 만드는 대신 명확히 구분되는 회색 상태로 표시한다(요청서 4절).
@@ -1225,11 +1255,26 @@ async def agent_page():
                     // 재시도할 방법이 없어 새 검색을 다시 시작해야 하는 silent-failure에
                     // 가까운 상태가 된다(요청서: "클릭 후 아무 변화가 없는 silent
                     // failure가 없는지"·"다시 시도할 수 있는가").
-                    const errorBanner = content.markdownError
-                        ? `<div class="banner banner-fail" style="margin-top:8px;">⚠️ 마크다운 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content.markdownError)}</div>`
+                    const errorBanner = content[spec.errorField]
+                        ? `<div class="banner banner-fail" style="margin-top:8px;">⚠️ ${spec.formatLabel} 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content[spec.errorField])}</div>`
                         : '';
-                    const label = content.markdownError ? '📄 마크다운 사양서 생성 다시 시도' : '📄 마크다운 사양서 생성';
-                    return `${errorBanner}<button type="button" class="download-btn build-markdown-btn" data-msg-id="${escapeHtml(msgId)}" style="border:none; cursor:pointer;">${label}</button>`;
+                    const label = content[spec.errorField] ? spec.retryLabel : spec.generateLabel;
+                    return `${errorBanner}<button type="button" class="download-btn ${spec.btnClass}" data-msg-id="${escapeHtml(msgId)}" data-format="${format}" style="border:none; cursor:pointer;">${label}</button>`;
+                }
+
+                function renderDownloadArea(content, msgId) {
+                    // 후보 장비가 아예 없으면(예: FAIL만 있어 select_best_candidate가
+                    // null을 반환한 극단적인 경우는 없지만, 방어적으로) 근거 없는
+                    // 사양서를 만들지 않고 버튼 자체를 숨긴다.
+                    if (!content.chosenCandidate) {
+                        return '';
+                    }
+                    return `
+                        <div class="download-actions">
+                            ${renderSingleDownloadButton('markdown', content, msgId)}
+                            ${renderSingleDownloadButton('docx', content, msgId)}
+                        </div>
+                    `;
                 }
 
                 // ----- 참고 문서 / References(문서 14절) — EquipmentCard 하단에 별도
@@ -1612,8 +1657,8 @@ async def agent_page():
                 }
 
                 function wireCardActions() {
-                    document.querySelectorAll('.build-markdown-btn').forEach(btn => {
-                        btn.addEventListener('click', () => buildMarkdownForMessage(btn.dataset.msgId));
+                    document.querySelectorAll('.build-markdown-btn, .build-docx-btn').forEach(btn => {
+                        btn.addEventListener('click', () => buildDocumentForMessage(btn.dataset.msgId, btn.dataset.format));
                     });
                     // 추가 질문 제안 클릭 시 바로 전송한다(문서 15절: "즉시 질문을 전송").
                     document.querySelectorAll('.related-item').forEach(btn => {
@@ -1622,29 +1667,39 @@ async def agent_page():
                 }
 
                 // 요청서 흐름의 마지막 단계(최종 사양서 다운로드) — EquipmentCard에 심은
-                // 버튼에서 호출된다. 그 검색을 만든 시점의 requirement/validation을 그대로
-                // 함께 보내(각 메시지 content에 스냅샷으로 저장해둠) 기존 build-markdown
-                // API(agent/routes.py, renderers/markdown_renderer.py)를 그대로 재사용한다.
-                async function buildMarkdownForMessage(msgId) {
+                // Markdown/Word 버튼 둘 다 이 함수 하나로 처리한다(format 인자로 분기).
+                // 그 검색을 만든 시점의 requirement/hardRequirementReport를 그대로 함께
+                // 보내(각 메시지 content에 스냅샷으로 저장해둠) build-candidate-markdown/
+                // build-candidate-docx API(agent/routes.py)가 같은 Structured Data
+                // (renderers/candidate_specification.py)로 두 포맷을 만들도록 한다 —
+                // 두 포맷이 서로 다른 값을 보여주는 문제를 막는다(요청서 4/11절).
+                async function buildDocumentForMessage(msgId, format) {
+                    const spec = DOWNLOAD_FORMATS[format];
+                    if (!spec) return;
                     const conv = getActiveConversation();
                     const msg = conv && conv.messages.find(m => m.id === msgId);
                     if (!msg || !msg.content.chosenCandidate) return;
+                    // 이미 생성 중이면 같은 버튼을 다시 눌러도 무시한다 — 클릭과 renderAll()
+                    // 재렌더링(버튼 disabled 반영) 사이의 짧은 틈에 빠르게 여러 번 누르면
+                    // 중복 API 요청/중복 파일 생성이 발생하는 문제를 막는다(요청서 14절).
+                    if (msg.content[spec.generatingField]) return;
                     // 클릭 즉시 버튼을 "생성 중..."으로 바꿔 눈에 보이는 피드백을 준다 —
                     // 요청이 오래 걸리면 버튼이 그대로 있어 "눌러도 반응이 없다"처럼
                     // 보일 수 있었다.
-                    msg.content.markdownGenerating = true;
-                    msg.content.markdownError = null;
+                    msg.content[spec.generatingField] = true;
+                    msg.content[spec.errorField] = null;
                     renderAll();
                     try {
-                        const data = await postJSON('/api/agent/build-candidate-markdown', {
+                        const data = await postJSON(spec.endpoint, {
                             candidate: msg.content.chosenCandidate,
                             requirement: msg.content.requirement,
+                            hard_requirement_report: msg.content.hardRequirementReport,
                         });
-                        msg.content.downloadUrl = data.download_url;
+                        msg.content[spec.urlField] = data.download_url;
                     } catch (err) {
-                        msg.content.markdownError = err.message;
+                        msg.content[spec.errorField] = err.message;
                     } finally {
-                        msg.content.markdownGenerating = false;
+                        msg.content[spec.generatingField] = false;
                         saveConversations();
                         renderAll();
                     }
@@ -2136,6 +2191,7 @@ async def agent_page():
 _DOWNLOAD_MEDIA_TYPES = {
     ".md": "text/markdown; charset=utf-8",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
