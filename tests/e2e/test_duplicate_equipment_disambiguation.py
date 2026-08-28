@@ -15,9 +15,13 @@ SPEC-051, Multi-sensor 원리를 강조한 <=0.8um 질의는 SPEC-044를 선택)
 후속 작업(동일 장비명 재등장 시 대화 UX 검증)에서, 실제 브라우저로 재현한 결과
 Card Subtitle(구분 정보)만으로는 "이 값 차이가 서로 다른 장비를 가리킨다"는 사실
 자체가 사용자에게 명확히 전달되지 않는 문제(값만 다르고 왜 다른지 설명이 없음)를
-확인했다 — 이를 보완하기 위해 짧은 Contextual Hint("ℹ️ 동일한 장비명이지만 이전
-추천과 다른 사양의 장비입니다.")를 "새로 등장해 기존 그룹과 충돌하는" 카드에만
-추가했다. 과거에 이미 표시된 카드에 Hint를 소급 삽입하지 않는다 — Subtitle은
+확인했다 — 이를 보완하기 위해 짧은 Contextual Hint("ℹ️ 이전 추천과 이름은
+같지만, 서로 다른 장비입니다.")를 "새로 등장해 기존 그룹과 충돌하는" 카드에만
+추가했다. ("...다른 사양의 장비입니다"라는 초안 문구는 한국어에서 "같은 제품의
+다른 옵션/구성"으로도 흔히 읽힐 수 있어 — 예: "다른 사양의 노트북" = 같은 모델의
+RAM/SSD 구성만 다름 — 실제로 다른 제품이라는 의미를 명확히 하기 위해 "서로 다른
+장비"로 재확인 후 교체했다.) 과거에 이미 표시된 카드에 Hint를 소급 삽입하지
+않는다 — Subtitle은
 그룹이 확정될 때마다 대칭적으로 다시 계산되는 것이 맞지만(그래야 그룹 구성이
 바뀌어도 항상 올바른 구분 필드를 쓸 수 있다), Hint까지 과거 카드에 끼워 넣으면
 과거 메시지가 두 번(Subtitle + Hint) 바뀌는 셈이라 오히려 혼란을 키우기
@@ -156,7 +160,10 @@ def test_duplicate_equipment_name_shows_both_candidates_with_disambiguation(agen
     # 테스트에서 더 구체적으로 검증).
     hints = agent_page.locator(".card-hint").all_text_contents()
     assert len(hints) == 1, f"Contextual Hint는 정확히 1개(새로 등장한 카드)여야 함: {hints}"
-    assert "이전 추천과 다른 사양" in hints[0]
+    assert "서로 다른 장비" in hints[0]
+    # "사양이 다르다"는 한국어에서 "같은 제품의 다른 구성(옵션)"으로도 흔히 읽혀
+    # 실제로 다른 제품이라는 의미가 약해질 수 있으므로 이 표현은 쓰지 않는다.
+    assert "다른 사양" not in hints[0], hints[0]
     # 내부 데이터 구조 용어를 사용자에게 노출하지 않는다(요청서 4절 금지어).
     forbidden_terms = ["source_document", "SPEC ID", "spec_id", "candidate collision", "Duplicate equipment detected"]
     assert not any(term in hints[0] for term in forbidden_terms), hints[0]
@@ -176,6 +183,65 @@ def test_duplicate_equipment_name_with_identical_source_is_not_flagged(agent_pag
     expect(headers).to_have_count(2)
     assert agent_page.locator(".card-subtitle").count() == 0
     assert agent_page.locator(".card-hint").count() == 0, "완전히 같은 장비가 반복 추천된 것이므로 안내 문구도 필요 없다"
+
+
+def test_duplicate_equipment_name_reverse_order_shows_hint_on_the_new_card(agent_page: Page, mock_api):
+    """등장 순서를 바꿔도(SPEC-044 먼저, SPEC-051 나중) 동작이 대칭적이어야 한다 —
+    Hint는 항상 "나중에 새로 등장한" 카드에만 붙어야 하며, 어느 물리적 SPEC 파일이
+    먼저인지에 의존하면 안 된다."""
+    spec_a, candidate_a = _duplicate_spec_and_candidate_a()  # SPEC-051.md
+    spec_b, candidate_b = _duplicate_spec_and_candidate_b()  # SPEC-044.md
+
+    _mock_turn(mock_api, spec_b, candidate_b)  # SPEC-044를 먼저 보냄(역순)
+    _send(agent_page, QUESTION_2)
+    _mock_turn(mock_api, spec_a, candidate_a)
+    _send(agent_page, QUESTION_1)
+
+    cards = agent_page.locator(".card", has=agent_page.locator(".card-header", has_text=DUPLICATE_NAME))
+    expect(cards).to_have_count(2)
+    assert cards.nth(0).locator(".card-hint").count() == 0, "먼저 등장한 카드(SPEC-044)에는 Hint가 없어야 함"
+    assert cards.nth(1).locator(".card-hint").count() == 1, "나중에 등장한 카드(SPEC-051)에만 Hint가 있어야 함"
+    subtitles = agent_page.locator(".card-subtitle").all_text_contents()
+    assert len(subtitles) == 2 and subtitles[0] != subtitles[1]
+
+
+def test_three_equipment_sharing_the_same_name_are_all_distinguishable(agent_page: Page, mock_api):
+    """향후 동일 Equipment Name을 가진 세 번째 장비가 추가되는 경우를 가정한
+    synthetic 검증(요청서 3절) — corpus를 건드리지 않고 fixture로만 구성한다.
+    세 후보 모두 일관된 구분 필드로 구분되어야 하고(우선순위 로직이 그룹 크기에
+    상관없이 동작), 처음 등장한 후보에는 Hint가 없고 두 번째/세 번째에는 각각
+    Hint가 있어야 한다."""
+    name = "TripleTest TT-900"
+    spec = make_specification(name=name, manufacturer="TripleTest", model="TT-900")
+    common = dict(
+        manufacturer="TripleTest", model="TT-900", width_mm=800.0,
+        range_min=0.0, range_max=500.0, range_unit="um", accuracy_value=1.0, accuracy_unit="um",
+    )
+    candidate_a = make_candidate(status="PASS", candidate_id="cand-a", source_document="SPEC-A.md",
+        measurement_method="Laser Triangulation", **common)
+    candidate_b = make_candidate(status="PASS", candidate_id="cand-b", source_document="SPEC-B.md",
+        measurement_method="White Light Interferometry", **common)
+    candidate_c = make_candidate(status="PASS", candidate_id="cand-c", source_document="SPEC-C.md",
+        measurement_method="Confocal", **common)
+
+    for candidate in (candidate_a, candidate_b, candidate_c):
+        _mock_turn(mock_api, spec, candidate)
+        _send(agent_page, f"{name} 후보 질문 ({candidate['source_document']})")
+
+    cards = agent_page.locator(".card", has=agent_page.locator(".card-header", has_text=name))
+    expect(cards).to_have_count(3)  # 세 후보 모두 화면에 유지됨 — 하나로 합쳐지거나 사라지지 않음
+
+    subtitles = agent_page.locator(".card-subtitle").all_text_contents()
+    assert len(subtitles) == 3
+    assert len(set(subtitles)) == 3, f"세 후보 모두 서로 다른 구분 정보를 가져야 함: {subtitles}"
+    assert all("측정 방식" in s for s in subtitles), subtitles
+
+    assert cards.nth(0).locator(".card-hint").count() == 0, "맨 처음 등장한 후보는 비교 대상이 없어 Hint가 없어야 함"
+    assert cards.nth(1).locator(".card-hint").count() == 1
+    assert cards.nth(2).locator(".card-hint").count() == 1
+    # 안내 문구가 여러 번(2회) 나타나도 문구 자체는 항상 동일해 대화가 산만해지지 않는다.
+    hints = agent_page.locator(".card-hint").all_text_contents()
+    assert hints[0] == hints[1]
 
 
 # ----- Test C: Deterministic Disambiguation -----
