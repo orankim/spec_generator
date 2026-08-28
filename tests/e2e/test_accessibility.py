@@ -200,6 +200,113 @@ def test_card_row_label_meets_wcag_aa_contrast(agent_page: Page, mock_api):
         _assert_contrast_at_least(labels.nth(i), 4.5, f".card-row .label[{i}]")
 
 
+# ---------------------------------------------------------------
+# 요청서(Mobile Drawer 접근성 완성) 섹션 11~15 — 프로젝트 전체 Badge/상태 표시
+# UI 전수 점검. main.py에서 실제로 찾은 status/badge 관련 클래스는:
+#   .badge-pass/.badge-fail/.badge-unknown/.badge-verified/.badge-inferred/
+#   .badge-userdefined/.badge-unset (span.badge, RESULT_BADGE·STATUS_BADGE)
+#   .banner-pass/.banner-fail/.banner-unknown (큰 배너)
+#   .confirm-pass/.confirm-fail/.confirm-unknown (EquipmentCard 요약 블록)
+# 이 중 이미 앞의 두 테스트(#sendBtn 등)에서 다루는 badge-pass/badge-verified를
+# 뺀 나머지 전부를 여기서 실측한다. .badge-unset은 CSS는 존재하지만 JS
+# 어디에서도 실제로 쓰이지 않는(dead) 클래스라 실제 사용자 흐름으로는 화면에
+# 나타나지 않는다 — 규칙 자체는 여전히 존재하므로 마크업을 직접 주입해 CSS
+# 값만 검증한다.
+# ---------------------------------------------------------------
+def test_badge_fail_and_unknown_result_meet_wcag_aa_contrast(agent_page: Page, mock_api):
+    """Hard Requirement 비교 목록(RESULT_BADGE)의 FAIL/UNKNOWN 배지."""
+    mock_api.mock("**/api/agent/analyze-requirement", make_analyze_response())
+    mock_api.mock("**/api/agent/generate-spec", make_generate_spec_response("fail"))
+    agent_page.fill("#chatInput", QUESTION)
+    agent_page.click("#sendBtn")
+    expect(agent_page.locator(".hard-req-list .badge-fail").first).to_be_visible(timeout=10000)
+
+    fail_badges = agent_page.locator(".hard-req-list .badge-fail")
+    assert fail_badges.count() > 0
+    for i in range(fail_badges.count()):
+        _assert_contrast_at_least(fail_badges.nth(i), 4.5, f".badge-fail[{i}]")
+
+
+def test_badge_unknown_result_meets_wcag_aa_contrast(agent_page: Page, mock_api):
+    mock_api.mock("**/api/agent/analyze-requirement", make_analyze_response())
+    mock_api.mock("**/api/agent/generate-spec", make_generate_spec_response("unknown"))
+    agent_page.fill("#chatInput", QUESTION)
+    agent_page.click("#sendBtn")
+    expect(agent_page.locator(".hard-req-list .badge-unknown").first).to_be_visible(timeout=10000)
+
+    unknown_badges = agent_page.locator(".hard-req-list .badge-unknown")
+    assert unknown_badges.count() > 0
+    for i in range(unknown_badges.count()):
+        _assert_contrast_at_least(unknown_badges.nth(i), 4.5, f".badge-unknown[{i}]")
+
+
+def test_badge_inferred_and_userdefined_status_meet_wcag_aa_contrast(agent_page: Page, mock_api):
+    """EquipmentCard의 값별 근거 상태 배지(STATUS_BADGE) — INFERRED/USER_DEFINED.
+    make_specification(accuracy_status=...)로 "정확도" 행의 상태만 바꿔 실제
+    화면에 해당 배지가 뜨게 만든다."""
+    from fixtures import make_specification
+
+    for status, badge_class in (("INFERRED", ".badge-inferred"), ("USER_DEFINED", ".badge-userdefined")):
+        mock_api.calls.clear()
+        agent_page.click("#newChatBtn")
+        mock_api.mock("**/api/agent/analyze-requirement", make_analyze_response())
+        response = make_generate_spec_response("pass")
+        response["specification"] = make_specification(accuracy_status=status)
+        mock_api.mock("**/api/agent/generate-spec", response)
+
+        agent_page.fill("#chatInput", QUESTION)
+        agent_page.click("#sendBtn")
+        expect(agent_page.locator(badge_class).first).to_be_visible(timeout=10000)
+
+        badges = agent_page.locator(badge_class)
+        assert badges.count() > 0, f"{badge_class} 배지가 화면에 나타나지 않음(fixture 문제 가능성)"
+        for i in range(badges.count()):
+            _assert_contrast_at_least(badges.nth(i), 4.5, f"{badge_class}[{i}]")
+
+
+def test_banner_and_confirm_block_contrast(agent_page: Page, mock_api):
+    """.banner-pass/fail/unknown, .confirm-pass/fail/unknown — pass/fail/unknown
+    관련 다른 상태 표시 UI(작은 badge는 아니지만 동일한 원칙 적용 대상)."""
+    for scenario, banner_class, confirm_class in (
+        ("pass", ".banner-pass", None),  # PASS 시나리오는 confirm-block을 만들지 않음(전부 확인된 조건)
+        ("fail", ".banner-fail", ".confirm-fail"),
+        ("unknown", ".banner-unknown", ".confirm-unknown"),
+    ):
+        mock_api.calls.clear()
+        agent_page.click("#newChatBtn")
+        mock_api.mock("**/api/agent/analyze-requirement", make_analyze_response())
+        mock_api.mock("**/api/agent/generate-spec", make_generate_spec_response(scenario))
+        agent_page.fill("#chatInput", QUESTION)
+        agent_page.click("#sendBtn")
+        expect(agent_page.locator(banner_class).first).to_be_visible(timeout=10000)
+        _assert_contrast_at_least(agent_page.locator(banner_class).first, 4.5, banner_class)
+
+        if confirm_class:
+            expect(agent_page.locator(confirm_class).first).to_be_visible(timeout=3000)
+            _assert_contrast_at_least(agent_page.locator(confirm_class).first, 4.5, confirm_class)
+
+
+def test_badge_unset_css_rule_meets_wcag_aa_contrast(agent_page: Page):
+    """.badge-unset은 현재 JS 어디에서도 실제로 렌더링되지 않는 dead CSS다 —
+    실제 사용자 흐름으로는 화면에 나타날 수 없으므로, 마크업을 직접 주입해
+    CSS 규칙 자체의 대비만 검증한다(요청서: "발견된 모든 Badge"를 전수 조사)."""
+    agent_page.evaluate(
+        """
+        () => {
+            const span = document.createElement('span');
+            span.id = '__testBadgeUnset';
+            span.className = 'badge badge-unset';
+            span.textContent = 'UNSET';
+            document.body.appendChild(span);
+        }
+        """
+    )
+    try:
+        _assert_contrast_at_least(agent_page.locator("#__testBadgeUnset"), 4.5, ".badge-unset")
+    finally:
+        agent_page.evaluate("() => document.getElementById('__testBadgeUnset').remove()")
+
+
 def test_input_placeholder_is_not_the_only_label(agent_page: Page):
     """placeholder만으로 입력의 의미를 전달하면 안 된다 — placeholder는 값 입력 시
     사라져 스크린리더 사용자에게도 일관되게 전달되지 않는다. 최소한 주변에

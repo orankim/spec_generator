@@ -556,7 +556,9 @@ PAGE_STYLE = """
     .badge-verified { background: var(--primary-100); color: var(--text-primary); border: 1px solid var(--primary-500); }
     .badge-inferred { background: #f4f2fa; color: var(--secondary-500); border: 1px solid #c9c0e6; }
     .badge-userdefined { background: var(--grey-200); color: var(--grey-900); border: 1px solid var(--grey-300); }
-    .badge-unset { background: var(--grey-50); color: var(--grey-900); opacity: .5; border: 1px solid var(--grey-300); }
+    /* opacity 기반 텍스트 대비 축소를 명시적 토큰으로 교체(요청서: 전체 Badge
+       Contrast 점검 — 실측 3.14:1로 WCAG AA 미달, --text-secondary로 6.2:1). */
+    .badge-unset { background: var(--grey-50); color: var(--text-secondary); border: 1px solid var(--grey-300); }
 
     .banner {
         padding: 9px 12px; border-radius: 6px; margin-bottom: 10px;
@@ -763,7 +765,7 @@ async def agent_page():
                      완전히 비활성화된다. -->
                 <div class="mobile-backdrop" id="mobileBackdrop" aria-hidden="true"></div>
 
-                <div class="conv-sidebar" id="convSidebar">
+                <div class="conv-sidebar" id="convSidebar" role="navigation" aria-label="대화 목록">
                     <div class="conv-sidebar-header">
                         <h1>전극 검사기 AI</h1>
                         <p>전극 검사 장비 검색 및 사양 분석</p>
@@ -1798,6 +1800,7 @@ async def agent_page():
                 const hamburgerBtnEl = document.getElementById('hamburgerBtn');
                 const convSidebarEl = document.getElementById('convSidebar');
                 const mobileBackdropEl = document.getElementById('mobileBackdrop');
+                const mainChatEl = document.querySelector('.main-chat');
 
                 function isMobileDrawerMode() {
                     return window.getComputedStyle(convSidebarEl).position === 'fixed';
@@ -1812,22 +1815,46 @@ async def agent_page():
                     hamburgerBtnEl.setAttribute('aria-expanded', String(isSidebarVisuallyOpen()));
                 }
 
+                // Drawer 내부에서 실제로 Tab이 도달할 수 있는 요소를 그때그때
+                // 동적으로 찾는다(요청서: 첫/마지막 요소를 하드코딩하지 말 것 —
+                // Sidebar 내부 구조가 나중에 바뀌어도 그대로 맞아야 한다). 화면에
+                // 실제로 보이지 않는 요소(display:none/visibility:hidden/렌더링된
+                // 사각형이 없는 요소, 예: 검색창이 접혀 있을 때의 #convSearchInput)는
+                // 제외한다.
+                function getFocusableElements(container) {
+                    const selector = 'a[href], button:not([disabled]), textarea:not([disabled]), '
+                        + 'input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+                    return Array.from(container.querySelectorAll(selector)).filter((el) => {
+                        const style = window.getComputedStyle(el);
+                        if (style.display === 'none' || style.visibility === 'hidden') return false;
+                        return el.getClientRects().length > 0;
+                    });
+                }
+
+                // Drawer가 열려 있는 동안 배경(본문) 콘텐츠를 키보드 포커스/포인터
+                // 상호작용/스크린리더 탐색 대상에서 제외한다(요청서 10절). Tab
+                // 트랩(아래)이 키보드 쪽은 이미 막아주지만, inert는 마우스/터치로
+                // 배경을 조작하거나 스크린리더 가상 커서로 훑는 것까지 함께
+                // 막아주는 표준 속성이라 이중 방어로 추가한다 — 지원하지 않는
+                // 브라우저에서는 그냥 조용히 무시되는 progressive enhancement라
+                // 별도 폴리필은 두지 않는다.
+                function setBackgroundInert(isInert) {
+                    if (mainChatEl) mainChatEl.inert = isInert;
+                }
+
                 function openSidebar() {
                     if (isMobileDrawerMode()) {
                         appShellEl.classList.add('sidebar-collapsed');
+                        setBackgroundInert(true);
                         // Drawer가 열리면 그 안의 첫 번째 조작 가능한 요소로 포커스를
-                        // 옮긴다(요청서 11절 Focus 관리) — 완전한 Focus Trap까지는
-                        // 아니지만, 최소한 열자마자 키보드 사용자가 Drawer 안에서
-                        // 시작하게 한다. 클릭을 처리하는 바로 그 tick에 곧바로
-                        // focus()를 부르면(동기 호출이든 rAF/setTimeout(0)이든) 막
-                        // 클릭된 햄버거 버튼이 포커스를 계속 붙들고 있어 조용히
-                        // 무시된다(Playwright로 실측: 80ms 미만은 실패, 50ms부터
-                        // 안정적으로 성공) — 사람이 체감하기엔 충분히 짧은 80ms만
-                        // 미뤄서 그 순간을 피해간다.
+                        // 옮긴다(요청서 11절 Focus 관리). 클릭을 처리하는 바로 그
+                        // tick에 곧바로 focus()를 부르면(동기 호출이든 rAF/
+                        // setTimeout(0)이든) 방금 클릭된 햄버거 버튼이 포커스를
+                        // 계속 붙들고 있어 조용히 무시된다(Playwright로 실측: 80ms
+                        // 미만은 실패, 50ms부터 안정적으로 성공) — 사람이 체감하기엔
+                        // 충분히 짧은 80ms만 미뤄서 그 순간을 피해간다.
                         setTimeout(() => {
-                            const firstFocusable = convSidebarEl.querySelector(
-                                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-                            );
+                            const [firstFocusable] = getFocusableElements(convSidebarEl);
                             if (firstFocusable) firstFocusable.focus();
                         }, 80);
                     } else {
@@ -1839,6 +1866,7 @@ async def agent_page():
                 function closeSidebar() {
                     if (isMobileDrawerMode()) {
                         appShellEl.classList.remove('sidebar-collapsed');
+                        setBackgroundInert(false);
                     } else {
                         appShellEl.classList.add('sidebar-collapsed');
                     }
@@ -1858,12 +1886,38 @@ async def agent_page():
                     if (isMobileDrawerMode() && isSidebarVisuallyOpen()) closeSidebar();
                 });
 
-                // Escape 키로 닫힘(요청서 9/11절) — 데스크톱에서는 사이드바가
-                // 기본으로 열려 있는 상태라 Escape로 갑자기 접히면 오히려 방해가
-                // 되므로, 모바일 Drawer 모드에서 열려 있을 때만 반응한다.
+                // Escape로 닫힘 + Tab Focus Trap(요청서 2~4절). 데스크톱에서는
+                // 사이드바가 기본으로 열려 있는 상태라 Escape로 갑자기 접히거나
+                // Tab이 트랩되면 오히려 방해가 되므로, 모바일 Drawer 모드에서
+                // 열려 있을 때만 반응한다 — 그 외에는 이 리스너가 아무 것도 하지
+                // 않아 데스크톱의 기존 Sidebar 키보드 탐색을 그대로 둔다.
                 document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape' && isMobileDrawerMode() && isSidebarVisuallyOpen()) {
+                    if (!(isMobileDrawerMode() && isSidebarVisuallyOpen())) return;
+
+                    if (e.key === 'Escape') {
                         closeSidebar();
+                        return;
+                    }
+
+                    if (e.key === 'Tab') {
+                        const focusables = getFocusableElements(convSidebarEl);
+                        if (focusables.length === 0) return;
+                        const first = focusables[0];
+                        const last = focusables[focusables.length - 1];
+                        const active = document.activeElement;
+                        if (e.shiftKey) {
+                            // 첫 번째 요소(또는 Drawer 밖 어딘가)에서 Shift+Tab -> 마지막으로.
+                            if (active === first || !convSidebarEl.contains(active)) {
+                                e.preventDefault();
+                                last.focus();
+                            }
+                        } else {
+                            // 마지막 요소(또는 Drawer 밖 어딘가)에서 Tab -> 첫 번째로.
+                            if (active === last || !convSidebarEl.contains(active)) {
+                                e.preventDefault();
+                                first.focus();
+                            }
+                        }
                     }
                 });
 

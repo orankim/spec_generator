@@ -59,6 +59,7 @@ tests/e2e/
     test_accessibility.py          # axe-core 스캔 + 키보드/이름 접근성 + WCAG AA 명도 대비 실측
     test_dead_ui.py                # 주요 클릭 요소의 "클릭 → 실제 동작" 종합 점검
     test_mobile_drawer.py          # 모바일(640px 이하) Overlay Drawer: 열림/닫힘/Backdrop/Escape/Focus 관리
+    test_focus_trap.py             # Drawer 내부 Tab 순환(Focus Trap), inert 배경, 데스크톱 비활성화 회귀
 ```
 
 ### 설계 원칙
@@ -158,20 +159,47 @@ E2E 테스트가 실패하면 pytest의 표준 assert 메시지에 다음이 포
 | `--text-secondary` | #595959 (신규) | 설명/사이드바 보조 텍스트/카드 라벨 | 흰 배경 7.0:1, grey-50 배경 6.2:1 |
 | `--text-tertiary` | #686868 (신규, 요청 예시 #767676에서 조정) | 날짜/메타 정보 | grey-50 배경 기준 예시값이 4.02:1로 미달해 4.93:1로 조정 |
 
+## Mobile Drawer Focus Trap
+
+`main.py`의 `getFocusableElements(container)`가 Drawer 내부에서 실제로 화면에
+보이는 포커스 가능 요소를 그때그때 동적으로 찾는다(첫/마지막 요소 하드코딩
+없음 — 대화 목록이 늘어나거나 검색창이 열려도 그대로 맞는다). `document`의
+`keydown` 리스너 하나가 Escape 처리와 Tab 순환을 함께 담당하며, "모바일 Drawer
+모드 + 열림" 조건일 때만 개입한다 — 그 외(데스크톱, 닫힌 상태)에는 아무 것도
+하지 않아 데스크톱의 기존 키보드 탐색을 그대로 둔다. Drawer가 열려 있는 동안
+`.main-chat`에 `inert` 속성을 걸어 배경 콘텐츠를 키보드/포인터/스크린리더
+탐색 대상에서 제외한다(지원 브라우저에서만 동작하는 progressive enhancement —
+폴리필 없음). `#convSidebar`에는 `role="navigation"` + `aria-label`을 부여했다
+(모달이 아닌 실제 역할에 맞게 — `dialog`를 임의로 쓰지 않았다).
+
+## 전체 Badge/상태 표시 UI 명도 대비 실측
+
+| Badge/상태 | Background | Text | Contrast | 결과 |
+|---|---|---|---:|---|
+| `.badge-pass` / `.badge-verified` | Primary-100 | text-primary | 15.06:1 | PASS |
+| `.badge-fail` (RESULT_BADGE) | #fff5f5 | #9b2c2c | 7.04:1 | PASS (기존 값 유지) |
+| `.badge-unknown` (RESULT_BADGE/STATUS_BADGE) | #fffaf0 | #9c4221 | 6.28:1 | PASS (기존 값 유지) |
+| `.badge-inferred` (STATUS_BADGE) | #f4f2fa | Secondary-500 | 7.07:1 | PASS (기존 값 유지) |
+| `.badge-userdefined` (STATUS_BADGE) | Grey-200 | Grey-900 | 14.12:1 | PASS (기존 값 유지) |
+| `.badge-unset` | Grey-50 | opacity 기반 Grey-900(.5) | 3.14:1 → 6.2:1 | **수정**: opacity 제거, text-secondary로 교체 |
+| `'N/A'`(인라인 override) | #e0e0e0 | #555 | 5.65:1 | PASS (기존 값 유지) |
+| `.banner-pass` / `.confirm-pass` | Primary-100 | #1c6e7d | 5.36:1 | PASS (기존 값 유지) |
+| `.banner-fail` / `.confirm-fail` | #fff5f5 | #822727 / #9b2c2c | 8.65:1 / 7.04:1 | PASS (기존 값 유지) |
+| `.banner-unknown` / `.confirm-unknown` | #fffaf0 | #7b341e / #9c4221 | 8.58:1 | PASS (기존 값 유지) |
+
+`.badge-unset`은 CSS 규칙만 존재하고 JS 어디에서도 실제로 쓰이지 않는 dead
+클래스라(현재 화면에 나타나지 않음) `tests/e2e/test_accessibility.py`가 마크업을
+직접 주입해 규칙 자체만 검증한다.
+
 ## 알려진 제한 사항 / 후속 과제
 
-- **모바일 Overlay Drawer는 "접기"이지 완전한 모달 드로어는 아니다.** 640px
-  이하에서 사이드바는 `position:fixed` + `transform`으로 본문 위에 오버레이되어
-  열려도 본문 폭이 줄지 않는다(핵심 요구사항 충족). 다만 완전한 Focus Trap(Tab
-  키가 Drawer 밖으로 못 나가게 가두는 것)까지는 구현하지 않았다 — 열 때 Drawer
-  안으로, 닫을 때 햄버거로 포커스를 옮기는 최소 요구사항만 구현했다(요청서
-  11절에서 완전한 Trap은 선택 사항으로 명시).
 - **RAG/Ollama 의존 경로는 실제로 붙여서 돌리는 통합 테스트가 없다.** 이번
   E2E 테스트는 전부 `/api/agent/*` 응답을 mock하거나(대부분) 순수 결정론적
   라우트만 실서버로 호출한다(마크다운 버튼). 실제 Ollama + ChromaDB가 붙은
   상태에서의 종단 시나리오는 기존 `tests/test_regression.py` 등 Level 4
   테스트가 검증한다.
-- **다른 배지(.badge-fail/.badge-unknown/.badge-inferred 등)의 명도 대비는
-  이번 범위 밖.** 이번 작업은 요청서에서 명시적으로 지목한 요소(#sendBtn/
-  .download-btn/.badge-pass/.badge-verified/.card-row .label)만 검증·수정했다
-  — 다른 배지 색상도 실측해보면 좋겠지만, 별도 요청 없이 임의로 손대지 않았다.
+- **`tests/test_sample_specs_full_coverage.py::test_chat_ui_regression_baseline_multisense_ms600`이
+  전체 스위트를 함께 돌릴 때 드물게 flaky하다(격리 실행 시 항상 통과, 이번
+  작업에서 3회 전체 실행 중 1회 실패).** 순수 RAG/후보 매칭 로직 테스트로 이번
+  작업(Mobile Drawer/Badge)과는 무관하고, Backend/RAG 코드를 바꾸지 말라는
+  지시에 따라 원인 조사·수정은 이번 범위에 포함하지 않았다.
