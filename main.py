@@ -1373,7 +1373,7 @@ async def agent_page():
                     group.forEach((g) => {
                         const source = g.candidate.source_document;
                         if (seenSources.size > 0 && !seenSources.has(source)) {
-                            hints[g.msgId] = '동일한 장비명이지만 이전 추천과 다른 사양의 장비입니다.';
+                            hints[g.msgId] = '이전 추천과 이름은 같지만, 서로 다른 장비입니다.';
                         }
                         seenSources.add(source);
                     });
