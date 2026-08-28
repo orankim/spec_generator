@@ -198,8 +198,43 @@ E2E 테스트가 실패하면 pytest의 표준 assert 메시지에 다음이 포
   라우트만 실서버로 호출한다(마크다운 버튼). 실제 Ollama + ChromaDB가 붙은
   상태에서의 종단 시나리오는 기존 `tests/test_regression.py` 등 Level 4
   테스트가 검증한다.
-- **`tests/test_sample_specs_full_coverage.py::test_chat_ui_regression_baseline_multisense_ms600`이
-  전체 스위트를 함께 돌릴 때 드물게 flaky하다(격리 실행 시 항상 통과, 이번
-  작업에서 3회 전체 실행 중 1회 실패).** 순수 RAG/후보 매칭 로직 테스트로 이번
-  작업(Mobile Drawer/Badge)과는 무관하고, Backend/RAG 코드를 바꾸지 말라는
-  지시에 따라 원인 조사·수정은 이번 범위에 포함하지 않았다.
+- **`tests/test_sample_specs_full_coverage.py::test_chat_ui_regression_baseline_multisense_ms600`의
+  1회성 flaky 실패(이전 작업에서 전체 실행 3회 중 1회 관찰)에 대해 원인 분석을
+  진행했으나, 재현에는 실패했고 원인도 확정하지 못했다.** 이번 작업에서 다음을
+  실제로 재현·코드 분석으로 확인했다(추측이 아님):
+  - **재현 시도**: 대상 테스트 단독 20회, 대상 파일 10회, 전체 스위트 3회 —
+    모두 통과(추가로 별도 fresh-process 재구축 스크립트로 20회 추가 재현
+    시도, 전부 통과). 총 58회 이상의 반복 실행에서 단 한 번도 실패를
+    재현하지 못했다.
+  - **배제한 가설(코드 근거 확인됨)**: (1) `set()` 순회 순서에 의존하는 hash
+    randomization — `spec_retriever.py`/`candidate_matcher.py`/
+    `spec_generator.py`의 모든 `set` 사용은 멤버십 검사 전용이거나 완전히
+    명시된 `sorted()` 키를 쓰는 안정 정렬이라 해당 없음. (2) ChromaDB HNSW
+    재구축 시의 근사 인덱스 비결정성 — 동일 corpus로 20회 독립 프로세스에서
+    벡터 DB를 새로 빌드해 비교했으나 결과가 100% 동일. (3) pytest 실행
+    순서/플러그인 — randomly/xdist/rerun류 플러그인 미설치, 수집 순서
+    알파벳순으로 결정적. (4) 실제 timeout/sleep 코드 — 이 테스트는
+    `ollama_client.parse_structured`를 직접 mock하므로 재시도/타임아웃
+    코드 경로 자체가 실행되지 않음(테스트명의 "ms600"은 시간(ms)이 아니라
+    장비 모델명 "MultiSense MS-600"). (5) 전역 상태 오염 — 모든
+    `fake_embeddings` fixture가 `with mock.patch.object(...): yield`
+    컨텍스트 매니저 패턴으로 module 종료 시 확실히 해제되고,
+    `get_embeddings()`에는 캐시(`lru_cache` 등)가 없어 파일 간 누수 경로가
+    없음. (6) 유력하게 의심했던 가설 — `sample_specs/SPEC-044.md`와
+    `SPEC-051.md`가 동일하게 "MultiInspect MI-800"이라는 장비명을 쓰는 것을
+    발견(52개 corpus 문서 중 유일한 이름 중복)하고, 이 둘 사이의 RAG 유사도
+    근소 차이로 인한 흔들림이 원인일 수 있다고 의심했으나, 직접 후보 랭킹을
+    출력해 확인한 결과 SPEC-051 후보는 `status=PASS`(pass=6, unknown=0),
+    SPEC-044/MS-600 후보는 `status=PASS`가 아닌 `PARTIAL`(unknown=1)로—
+    점수 차이가 아니라 등급(Status Tier) 자체가 달라 결정적으로 SPEC-051이
+    이기는 구조임을 확인했다. 즉 이 중복은 실제 데이터 위생 문제이긴 하지만
+    (별도로 `tests/regression_lib.py`의 `by_name` 딕셔너리 구성 시 이론상
+    이름 충돌 가능성이 있음) 이번 flaky 실패의 원인은 아님이 확인되어
+    코드/데이터 수정은 진행하지 않았다(원인이 아닌 것으로 확인된 부분을
+    범위 밖에서 임의로 고치지 않는다는 원칙에 따름).
+  - **확인하지 못한 사실**: 최초 1회 실패 당시의 정확한 assertion/traceback이
+    기록되어 있지 않아, 이번에 배제한 가설 외의 원인(예: 최초 실패 당시의
+    환경에 고유했던 일회성 이슈)을 완전히 배제할 수는 없다. 근거 없이
+    코드를 추측성으로 수정하지 않는다는 원칙에 따라 이번에는 코드를
+    수정하지 않았고, 대신 재발 시 정확한 assertion 실패 내용과 traceback을
+    반드시 기록해 다음 조사가 이어질 수 있게 한다.
