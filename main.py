@@ -530,6 +530,16 @@ PAGE_STYLE = """
         word-break: break-word;
     }
     .card-body { padding: 12px 14px; }
+    /* Contextual Hint(JS pickContextualHints 참고) — 같은 이름의 다른 SPEC 문서가
+       "새로 등장"할 때만 카드 본문 맨 위에 한 번 표시되는 짧은 안내. 새 색상을
+       추가하지 않고 본문 기본 대비 한 단계 낮은 --text-secondary(6.2:1, 위
+       .card-subtitle과 동일 조합)를 그대로 쓴다 — 경고/오류가 아니라 정보 안내이므로
+       .banner-* 색상 박스는 쓰지 않는다. */
+    .card-hint {
+        font-size: var(--font-body-sm-size);
+        color: var(--text-secondary);
+        margin-bottom: 8px;
+    }
     .card-row {
         display: flex;
         justify-content: space-between;
@@ -1344,10 +1354,38 @@ async def agent_page():
                     return {};
                 }
 
+                // 실제 브라우저 재현(요청서 1/5절) 결과, Disambiguation Label(구분 정보)
+                // 만으로는 "이것이 서로 다른 장비를 구분하기 위한 정보"라는 사실 자체가
+                // 사용자에게 명확히 전달되지 않았다 — "검사 항목: Surface Defect"와
+                // "검사 항목: Scratch, Crack, Particle" 같은 값 차이만 보고는, 같은 장비의
+                // 답변이 문맥에 따라 다르게 요약된 것인지 실제로 다른 장비인지 구분하기
+                // 어렵다(문제 A). 이를 보완하기 위해 짧은 안내 문구(Contextual Hint)를
+                // "새로 등장해 기존 그룹과 충돌하는" 메시지에만 추가한다 — 이미 표시된
+                // 과거 카드에 안내 문구까지 추가로 끼워 넣으면 과거 메시지가 두 번(구분
+                // 정보 + 안내 문구) 바뀌는 셈이라 오히려 문제 C를 키운다. 안내는 "지금 막
+                // 등장한, 이전과 다른 장비"라는 대화의 자연스러운 시간 순서를 그대로
+                // 따른다: 그룹 내에서 이미 등장한 source_document 집합에 없는
+                // source_document가 새로 나타나는 시점의 메시지에만 붙인다(맨 처음
+                // 등장한 메시지는 비교 대상이 아직 없으므로 안내가 필요 없다).
+                function pickContextualHints(group) {
+                    const hints = {};
+                    const seenSources = new Set();
+                    group.forEach((g) => {
+                        const source = g.candidate.source_document;
+                        if (seenSources.size > 0 && !seenSources.has(source)) {
+                            hints[g.msgId] = '동일한 장비명이지만 이전 추천과 다른 사양의 장비입니다.';
+                        }
+                        seenSources.add(source);
+                    });
+                    return hints;
+                }
+
                 // 현재 대화의 모든 equipment_result 메시지를 Equipment Name으로 묶고,
-                // 실제로 서로 다른 SPEC 문서를 가리키는 이름 그룹에만 구분 Label을
-                // 계산한다. 정상적인(이름이 유일하거나, 같은 문서가 반복 추천된) 경우는
-                // 빈 Map을 돌려줘 기존 카드 UI를 그대로 유지한다.
+                // 실제로 서로 다른 SPEC 문서를 가리키는 이름 그룹에만 구분 Label/안내
+                // 문구를 계산한다. 정상적인(이름이 유일하거나, 같은 문서가 반복 추천된)
+                // 경우는 빈 Map을 돌려줘 기존 카드 UI를 그대로 유지한다. 대화(conv.messages)
+                // 단위로만 그룹화하므로 다른 Conversation의 동일 이름 장비는 전혀 영향을
+                // 주지 않는다.
                 function computeEquipmentDisambiguation(messages) {
                     const byName = new Map();
                     for (const msg of messages) {
@@ -1359,20 +1397,23 @@ async def agent_page():
                         if (!byName.has(name)) byName.set(name, []);
                         byName.get(name).push({ msgId: msg.id, candidate: candidate });
                     }
-                    const result = new Map();
+                    const labels = new Map();
+                    const hints = new Map();
                     for (const group of byName.values()) {
                         if (group.length < 2) continue;
                         const distinctSources = new Set(group.map(g => g.candidate.source_document));
                         if (distinctSources.size < 2) continue; // 같은 문서가 반복 추천된 것뿐 — 구분 불필요
-                        const labels = pickDisambiguationLabels(group);
-                        for (const [msgId, label] of Object.entries(labels)) {
-                            result.set(msgId, label);
+                        for (const [msgId, label] of Object.entries(pickDisambiguationLabels(group))) {
+                            labels.set(msgId, label);
+                        }
+                        for (const [msgId, hint] of Object.entries(pickContextualHints(group))) {
+                            hints.set(msgId, hint);
                         }
                     }
-                    return result;
+                    return { labels, hints };
                 }
 
-                function renderEquipmentCard(content, msgId, disambiguationLabel) {
+                function renderEquipmentCard(content, msgId, disambiguationLabel, contextualHint) {
                     const spec = content.specification;
                     const eq = spec.equipment || {};
                     const target = spec.inspection_target || {};
@@ -1414,11 +1455,20 @@ async def agent_page():
                     const subtitleHtml = disambiguationLabel
                         ? `<div class="card-subtitle">${escapeHtml(disambiguationLabel)}</div>`
                         : '';
+                    // Contextual Hint(요청서 3/4절 Option B) — 같은 이름의 다른 SPEC 문서가
+                    // "새로 등장"했을 때만, 왜 정보가 다른지 일반 사용자가 이해할 수 있는
+                    // 자연어 문장으로 짧게 안내한다. 내부 식별자(SPEC ID 등)는 절대 언급하지
+                    // 않는다 — computeEquipmentDisambiguation/pickContextualHints가 실제로
+                    // 서로 다른 SPEC 문서가 같은 이름으로 충돌할 때만 값을 채운다.
+                    const hintHtml = contextualHint
+                        ? `<div class="card-hint">ℹ️ ${escapeHtml(contextualHint)}</div>`
+                        : '';
                     return `
                         <div class="card">
                             <div class="card-header">${equipmentHeaderPrefix(content.hasFail, content.hasUnknown, content.hasRecords)} — ${escapeHtml(eq.name || 'N/A')}</div>
                             ${subtitleHtml}
                             <div class="card-body">
+                                ${hintHtml}
                                 ${equipmentBanner(content.hasFail, content.hasUnknown, content.hasRecords)}
                                 ${noResults}
                                 ${confirmationSummaryHtml(content.hardRequirementReport)}
@@ -1476,12 +1526,16 @@ async def agent_page():
                     `;
                 }
 
-                function renderMessageContent(msg, disambiguationByMsgId) {
+                function renderMessageContent(msg, disambiguation) {
                     switch (msg.type) {
                         case 'text': return renderTextMessage(msg.content);
                         case 'requirement_summary': return renderRequirementSummaryCard(msg.content);
                         case 'search_status': return renderSearchProgressCard(msg.content);
-                        case 'equipment_result': return renderEquipmentCard(msg.content, msg.id, disambiguationByMsgId && disambiguationByMsgId.get(msg.id));
+                        case 'equipment_result': return renderEquipmentCard(
+                            msg.content, msg.id,
+                            disambiguation && disambiguation.labels.get(msg.id),
+                            disambiguation && disambiguation.hints.get(msg.id)
+                        );
                         case 'comparison_result': return renderComparisonCard(msg.content);
                         case 'error': return renderErrorMessage(msg.content);
                         default: return '';
@@ -1510,10 +1564,14 @@ async def agent_page():
                     const conv = getActiveConversation();
                     const messages = conv ? conv.messages : [];
                     const wasAtBottom = (container.scrollTop + container.clientHeight) >= (container.scrollHeight - 40);
-                    // 동일 Equipment Name을 가진 서로 다른 SPEC 문서가 이 대화 안에 함께
-                    // 등장하는지는 매번(새 메시지 추가/복원 포함) 메시지 전체를 다시 봐야만
-                    // 알 수 있다 — 렌더링마다 결정론적으로 재계산한다(상태로 저장하지 않음).
-                    const disambiguationByMsgId = computeEquipmentDisambiguation(messages);
+                    // 동일 Equipment Name을 가진 서로 다른 SPEC 문서가 이 대화(conv.messages,
+                    // 다른 대화에는 영향 없음) 안에 함께 등장하는지는 매번(새 메시지 추가/
+                    // 복원 포함) 메시지 전체를 다시 봐야만 알 수 있다 — 렌더링마다 결정론적
+                    // 으로 재계산한다(Message에 상태로 저장하지 않음: 후보가 하나 더 추가돼
+                    // 그룹을 구분하는 기준 필드 자체가 바뀌어야 하는 경우, 예전에 저장해둔
+                    // 값을 그대로 두면 오히려 틀린 구분 정보가 굳어버릴 수 있다 — 아래
+                    // TESTING.md "과거 메시지 처리 방식" 절 참고).
+                    const disambiguation = computeEquipmentDisambiguation(messages);
 
                     container.innerHTML = '';
                     if (messages.length === 0) {
@@ -1531,7 +1589,7 @@ async def agent_page():
                             // pre-wrap을 쓴다 — 그런데 카드 컴포넌트들은 들여쓰기된 템플릿
                             // 리터럴을 반환하므로, trim() 없이 그대로 넣으면 앞뒤 공백/개행이
                             // 그대로 렌더링되어 카드 위에 빈 공백이 보이는 문제가 있다.
-                            bubble.innerHTML = renderMessageContent(msg, disambiguationByMsgId).trim();
+                            bubble.innerHTML = renderMessageContent(msg, disambiguation).trim();
                             if (isUser) {
                                 // 사용자 Avatar(문서 9절): Secondary-500 Purple.
                                 const avatar = document.createElement('div');
