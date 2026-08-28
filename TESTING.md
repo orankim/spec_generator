@@ -379,3 +379,60 @@ Source Document). 이름은 같지만 `source_document`까지 같으면(진짜 �
 **검증**: `pytest tests/e2e/test_duplicate_equipment_disambiguation.py` 9개
 전부 PASS, 기존 `tests/e2e/*` 111개 전부 PASS(회귀 없음), 전체 스위트 2회 연속
 635 passed / 0 failed / 0 xfailed.
+
+## 동일 장비명 재등장 시 대화 UX 검증 (Conditional Disambiguation 충분성 재검토)
+
+위 Disambiguation Label(Card Subtitle) 하나만으로 사용자가 "같은 이름의 서로
+다른 장비"를 충분히 이해할 수 있는지, 실제 브라우저로 재현해 검증했다.
+
+**분석 결과**:
+- `computeEquipmentDisambiguation()`은 `renderAll()`이 호출될 때마다(새 메시지
+  추가 포함) 대화 전체를 다시 계산한다 — 실제로 재현한 결과, 두 번째 동일 이름
+  후보가 등장하면 **이미 그려져 있던 첫 번째 카드도 Subtitle을 새로 얻는다**
+  (재현: 1턴 후 Subtitle 0개 → 2턴 후 Subtitle 2개, 첫 카드 포함).
+- Subtitle만으로는 "이 값 차이가 서로 다른 장비를 가리킨다"는 사실 자체가
+  명확히 전달되지 않았다 — 예를 들어 "검사 항목: Surface Defect"와 "검사 항목:
+  Scratch, Crack, Particle, Coating Defect"는 같은 장비를 다른 맥락에서 요약한
+  결과로도 읽힐 수 있다(문제 A 해당).
+- 반대로 첫 카드가 Subtitle을 소급해서 얻는 것 자체는 문제로 보지 않았다 —
+  오히려 두 카드가 비대칭으로(한쪽만 구분 정보를 가짐) 표시되는 쪽이 더
+  혼란스럽다고 판단했다(§ 과거 메시지 처리 방식 참고).
+
+**UX 개선 결정: 최소 UX 개선 적용(Option B, Contextual Hint)**
+- 적용 방식: 같은 이름 그룹 안에서 **새로 등장해 기존 그룹과 처음으로 다른
+  `source_document`를 도입하는 메시지에만** "ℹ️ 동일한 장비명이지만 이전
+  추천과 다른 사양의 장비입니다."를 카드 본문 맨 위에 표시(`pickContextualHints`).
+  이미 표시된 과거 카드에는 Hint를 소급 삽입하지 않는다.
+- 적용 조건(4가지 모두 충족해야 함): (1) 서로 다른 `source_document`, (2) 동일
+  Equipment Name, (3) 같은 Conversation 안, (4) 새로 등장하는 후보가 기존
+  동일 이름 후보와 실제로 다름(그룹 내에서 그 `source_document`가 처음 등장).
+- 왜 이 방식이 적절한가: Subtitle은 그룹 구성이 바뀔 때마다 다시 계산돼야
+  올바른 구분 필드를 유지할 수 있으므로(예: 세 번째 후보가 등장하면 구분
+  기준 필드 자체가 바뀔 수 있음) 대칭적 재계산을 유지하는 것이 맞다. 반면
+  Hint는 "왜 지금 이 카드가 다른가"를 그 카드가 등장하는 시점에 설명하는
+  용도이므로, 과거 카드에 두 번째 변경(Hint)까지 추가하면 오히려 문제 C를
+  키운다 — 새로 등장하는 카드에만 붙이는 것이 대화의 시간 순서와 자연스럽게
+  맞아떨어진다.
+
+**과거 메시지 처리 방식**:
+- **동적 계산을 유지했다**(Message State에 저장하지 않음). 이유: 세 번째
+  동일 이름 후보가 나중에 등장하면 그룹을 구분하는 기준 필드 자체가 바뀔 수
+  있다 — 이때 과거에 저장해 둔 Disambiguation을 그대로 두면 "더 이상 실제로
+  구분되지 않는 필드"가 화면에 남아 오히려 잘못된 정보가 된다. 동적 계산은
+  이런 상황에서도 항상 현재 대화 전체 기준으로 올바른 구분 필드를 재선택한다.
+  구현 복잡도(State 추가, localStorage Migration)도 동적 계산 쪽이 훨씬 낮다.
+- Persistence와의 관계: 상태를 저장하지 않으므로 `localStorage`에는
+  `chosen_candidate`(계산에 필요한 원본 데이터)만 그대로 저장되고,
+  Disambiguation Label/Hint는 페이지 로드 시 `renderAll()`이 매번 다시
+  계산한다 — 새로고침 전후 정확히 같은 입력이므로 항상 같은 결과가 나온다
+  (E2E로 재현/검증 완료).
+
+**수정 파일**:
+
+| 파일 | 수정 내용 |
+|---|---|
+| `main.py` | `pickContextualHints()` 추가, `computeEquipmentDisambiguation()`이 `{labels, hints}`를 함께 반환하도록 변경, `renderEquipmentCard`/`renderMessageContent`가 Hint를 받아 조건부로 렌더링, `.card-hint` CSS 추가(새 색상 없이 `--text-secondary`/`--font-body-sm-size` 재사용) |
+| `tests/e2e/test_duplicate_equipment_disambiguation.py` | Hint 관련 검증 추가 + 신규 테스트 2개(첫 카드는 Hint를 소급으로 얻지 않음, 새 Conversation 격리) |
+
+**테스트**: 신규 포함 총 11개 전부 PASS, 기존 `tests/e2e/*` 111개 회귀 없음
+(총 113개), 전체 스위트 2회 연속 637 passed / 0 failed / 0 xfailed.
