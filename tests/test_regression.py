@@ -9,9 +9,12 @@ Hard Requirement 검증 -> PASS/PARTIAL/FAIL Ranking)으로 전부 실행한다.
 """
 from __future__ import annotations
 
+from typing import Optional, Tuple
+
 import pytest
 
 from tests.regression_lib import (
+    AmbiguousCandidateNameError,
     build_fake_embedding_db,
     check_requirement_field,
     format_case_failure,
@@ -48,29 +51,47 @@ def test_regression_case(db, case):
     result = run_case(case, db)
 
     problems = []
+    # 동일 Equipment Name의 후보가 corpus에 둘 이상 있을 때(예: SPEC-044.md/
+    # SPEC-051.md의 "MultiInspect MI-800") 어느 SPEC 문서를 가리키는지 명시하는
+    # 선택적 맵. 없으면 이름이 유일하다고 가정하고 기존과 동일하게 동작한다.
+    spec_ids = case.get("candidate_spec_ids", {})
 
     for field, expected in case["expected_requirement"].items():
         problem = check_requirement_field(result.requirement, field, expected)
         if problem:
             problems.append(f"Requirement Parsing: {problem}")
 
+    def _lookup(name: str) -> Tuple[object, Optional[str]]:
+        """(candidate, ambiguity_error) — ambiguity_error가 있으면 candidate는
+        항상 None이고, 그 문자열이 이미 사람이 읽을 수 있는 문제 설명이다."""
+        try:
+            return result.candidate(name, spec_id=spec_ids.get(name)), None
+        except AmbiguousCandidateNameError as exc:
+            return None, f"Candidate Extraction: {exc}"
+
     for name in case["expected_pass_candidates"]:
-        c = result.candidate(name)
-        if c is None:
+        c, ambiguity = _lookup(name)
+        if ambiguity:
+            problems.append(ambiguity)
+        elif c is None:
             problems.append(f"Candidate Extraction: '{name}'이 후보로 발견되지 않았습니다")
         elif c.status != "PASS":
             problems.append(f"Hard Requirement: '{name}'의 status가 PASS여야 하는데 {c.status}입니다")
 
     for name in case["expected_partial_candidates"]:
-        c = result.candidate(name)
-        if c is None:
+        c, ambiguity = _lookup(name)
+        if ambiguity:
+            problems.append(ambiguity)
+        elif c is None:
             problems.append(f"Candidate Extraction: '{name}'이 후보로 발견되지 않았습니다")
         elif c.status != "PARTIAL":
             problems.append(f"Hard Requirement: '{name}'의 status가 PARTIAL이어야 하는데 {c.status}입니다")
 
     for name in case["expected_fail_candidates"]:
-        c = result.candidate(name)
-        if c is None:
+        c, ambiguity = _lookup(name)
+        if ambiguity:
+            problems.append(ambiguity)
+        elif c is None:
             problems.append(f"Candidate Extraction: '{name}'이 후보로 발견되지 않았습니다")
         elif c.status != "FAIL":
             problems.append(f"Hard Requirement: '{name}'의 status가 FAIL이어야 하는데 {c.status}입니다")
