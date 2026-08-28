@@ -12,6 +12,7 @@ from typing import List, Optional
 from agent.schemas import CandidateEquipment, ComplianceRecord, RequirementSchema, SpecificationSchema, ValidationResult
 from agent.spec_validator import build_compliance_report
 
+from .candidate_specification import build_candidate_specification_data
 from .common import (
     COMPLIANCE_SECTION_EMPTY_NOTE,
     COMPLIANCE_SECTION_TITLE,
@@ -139,13 +140,48 @@ def render_markdown(
     return "\n".join(parts).rstrip() + "\n"
 
 
-def render_candidate_markdown(candidate: CandidateEquipment, requirement: Optional[RequirementSchema] = None) -> str:
+def _candidate_section_to_md(section) -> str:
+    lines = [f"## {section.title}", "", "| Item | Specification | Status |", "|---|---|---|"]
+    for row in section.rows:
+        lines.append(f"| {row.label} | {row.value} | {row.status} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _candidate_compliance_to_md(compliance) -> str:
+    lines = ["## Requirement Compliance", ""]
+    if not compliance:
+        lines.append("_No requirement provided for comparison._")
+        lines.append("")
+        return "\n".join(lines)
+    lines.append("| Requirement | Required | Equipment | Result |")
+    lines.append("|---|---|---|---|")
+    for row in compliance:
+        lines.append(f"| {row.item} | {row.required_display} | {row.equipment_display} | {row.result} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_candidate_markdown(
+    candidate: CandidateEquipment,
+    requirement: Optional[RequirementSchema] = None,
+    hard_requirement_report: Optional[List[ComplianceRecord]] = None,
+) -> str:
     """
-    추천된 CandidateEquipment 하나를 간단한 Markdown 사양서로 렌더링한다.
+    추천된 CandidateEquipment 하나를 Markdown 사양서로 렌더링한다.
     render_markdown()(SpecificationSchema 기반, LLM이 채운 값 포함)과는 별개의
     경로다 — 이 함수는 candidate.equipment_fact(사양서 원문에서 결정론적으로
     추출된 값)만 사용하고 LLM을 전혀 거치지 않는다. 근거 없는 필드는 "UNKNOWN"
     으로 정직하게 남긴다(요청서: "마크다운 사양서 생성" 버튼).
+
+    General/Inspection Performance/Inspection Items/Defect Inspection/Sources
+    절은 기존 형식을 그대로 유지한다(tests/test_candidate_markdown_route.py가
+    검증하는 기존 동작 — 절대 바꾸지 않는다). 그 뒤에 candidate_specification.
+    build_candidate_specification_data()가 만드는 나머지 절(Inspection Target/
+    Requirements/Measurement Performance/Spatial Performance/Optical System/
+    System Configuration/Interfaces/Environment/Safety/Requirement Compliance)
+    을 이어 붙인다 — docx_renderer.render_candidate_docx()도 정확히 같은 데이터로
+    이 절들을 만들므로 두 포맷의 내용이 어긋나지 않는다(요청서 4절).
     """
     fact = candidate.equipment_fact
     name_parts = [p for p in (candidate.manufacturer, candidate.model) if p]
@@ -210,8 +246,25 @@ def render_candidate_markdown(candidate: CandidateEquipment, requirement: Option
     lines.append(f"| Defect Types | {defect_types_display} |")
     lines.append("")
 
+    # Markdown/Word 공통 Structured Data(candidate_specification.py) — 위 절들과
+    # 겹치는 값(Width/Range/Accuracy 등)이 있더라도 이 아래는 요청서가 명시한
+    # 13개 섹션 구조를 빠짐없이 갖춘 전체 사양서다.
+    spec_data = build_candidate_specification_data(candidate, requirement=requirement, hard_requirement_report=hard_requirement_report)
+    for section in spec_data.sections:
+        if section.id == "general":
+            continue  # General은 위에서 이미 렌더링했다 — 중복 방지.
+        lines.append(_candidate_section_to_md(section))
+
+    lines.append(_candidate_compliance_to_md(spec_data.compliance))
+
     lines.append("## Sources")
     lines.append("")
     lines.append(f"- {candidate.source_document}")
+    lines.append("")
+
+    lines.append("## Notes")
+    lines.append("")
+    for note in spec_data.notes:
+        lines.append(f"- {note}")
 
     return "\n".join(lines).rstrip() + "\n"
