@@ -1373,7 +1373,7 @@ async def agent_page():
                         const text = `±${ef.accuracy_value}${ef.accuracy_unit || ''}`;
                         map.accuracy = { value: text, display: `정확도: ${text}` };
                     }
-                    const specId = (candidate.source_document || '').replace(/\.md$/i, '');
+                    const specId = (candidate.source_document || '').replace(/\\.md$/i, '');
                     if (specId) {
                         map.source = { value: specId, display: `Reference: ${specId}` };
                     }
@@ -1544,7 +1544,7 @@ async def agent_page():
                 // 표시용으로만 그 꼬리를 잘라내고, reason 문자열 자체(다른 곳에서 재사용될
                 // 수 있는 원본 데이터)는 건드리지 않는다.
                 function stripTrailingResultArrow(reason) {
-                    return (reason || '').replace(/\s*(→|->)\s*(PASS|FAIL|UNKNOWN)\s*$/i, '');
+                    return (reason || '').replace(/\\s*(→|->)\\s*(PASS|FAIL|UNKNOWN)\\s*$/i, '');
                 }
 
                 function renderComparisonCard(content) {
