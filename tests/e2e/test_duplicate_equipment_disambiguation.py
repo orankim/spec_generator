@@ -382,8 +382,8 @@ def test_fallback_to_source_document_when_all_other_fields_identical(agent_page:
 # ----- Test E: Conversation Persistence -----
 
 
-def test_disambiguation_survives_reload_and_localstorage_restore(agent_page: Page, mock_api, live_server: str):
-    """중복 결과를 표시한 뒤 페이지를 새로고침(localStorage 복원)해도 동일한
+def test_disambiguation_survives_reload_and_sessionstorage_restore(agent_page: Page, mock_api, live_server: str):
+    """중복 결과를 표시한 뒤 페이지를 새로고침(sessionStorage 복원)해도 동일한
     Disambiguation이 유지되어야 한다."""
     spec_a, candidate_a = _duplicate_spec_and_candidate_a()
     spec_b, candidate_b = _duplicate_spec_and_candidate_b()
