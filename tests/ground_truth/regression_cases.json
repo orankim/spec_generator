@@ -433,6 +433,429 @@
       "forbidden_candidates": [],
       "expected_final_status": "PASS",
       "notes": "장비 문서에 Minimum Detectable Defect 정보가 없으면 사용자의 요구값(3um)을 장비 사양으로 복사하여 VERIFIED 처리하면 안 됨."
+    },
+    {
+      "test_id": "QA001",
+      "name": "단일조건 — Inline 두께 검사",
+      "user_query": "Inline으로 전극 두께를 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inline_offline": "inline",
+        "inspection_items": ["thickness"]
+      },
+      "expected_pass_candidates": ["OCTVision OCT-E100"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-003(OCTVision OCT-E100): Inline 지원 + Thickness Range 1~500um 명시로 PASS."
+    },
+    {
+      "test_id": "QA002",
+      "name": "단일조건 — Offline 표면 결함 검사",
+      "user_query": "Offline으로 전극 표면 결함을 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inline_offline": "offline",
+        "inspection_items": ["surface_defect"]
+      },
+      "expected_pass_candidates": ["NanoProfile NP-100"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-007(NanoProfile NP-100): Offline 지원 + Defect Types(Scratch, Pit, Particle)로 PASS."
+    },
+    {
+      "test_id": "QA003",
+      "name": "단일조건 — 3D Profile",
+      "user_query": "전극 표면을 3D Profile 방식으로 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["profile_3d"]
+      },
+      "expected_pass_candidates": ["ProfileScan PS-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-039(ProfileScan PS-1000): Equipment Type/Measurement Principle에 3D Profile/3D Laser 명시로 PASS."
+    },
+    {
+      "test_id": "QA004",
+      "name": "단일조건 — Vision 표면 결함",
+      "user_query": "Vision 방식으로 전극 표면 결함을 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "measurement_principle": "Vision",
+        "inspection_items": ["surface_defect"]
+      },
+      "expected_pass_candidates": ["MultiSense MS-600"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-010(MultiSense MS-600): Measurement Principle=Vision, Defect Types(Scratch,Crack,Particle,Coating Defect) 명시로 PASS."
+    },
+    {
+      "test_id": "QA005",
+      "name": "단일조건 — OCT 기반 검사",
+      "user_query": "OCT 기반으로 전극을 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "measurement_principle": "OCT"
+      },
+      "expected_pass_candidates": ["PrecisionGauge PG-600"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-016(PrecisionGauge PG-600): Measurement Principle=OCT 명시로 PASS. 기존 T001~T027에는 OCT 단독 조건 케이스가 없어 신규 추가."
+    },
+    {
+      "test_id": "QA006",
+      "name": "복수HR — Width+Speed+Inline",
+      "user_query": "폭 800 mm 이상의 전극을 500 mm/s 이상의 속도로 Inline 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "inline_offline": "inline",
+        "measurement_speed": {"value": 500.0, "unit": "mm/s", "operator": ">="}
+      },
+      "expected_pass_candidates": ["SurfaceScan SS-1200"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-025(SurfaceScan SS-1200): Width 1200mm, Speed 500mm/s, Inline 모두 명시로 PASS."
+    },
+    {
+      "test_id": "QA007",
+      "name": "복수HR — Width+Range",
+      "user_query": "폭 800 mm 이상의 전극을 0~500 μm 범위에서 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "measurement_range": {"min": 0.0, "max": 500.0, "unit": "um"}
+      },
+      "expected_pass_candidates": ["MultiInspect MI-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-044.md"},
+      "notes": "SPEC-044(MultiInspect MI-800): Width 800mm, Range 0~500um 명시로 PASS. 'MultiInspect MI-800'은 SPEC-051.md에도 존재하는 중복 장비명(TESTING.md 참고)이므로 candidate_spec_ids로 SPEC-044.md를 명시."
+    },
+    {
+      "test_id": "QA008",
+      "name": "복수HR — Width+Accuracy",
+      "user_query": "폭 800 mm 이상의 전극을 ±1 μm 이하 정확도로 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 800.0,
+        "accuracy": {"value": 1.0, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": ["TotalInspect TI-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-052(TotalInspect TI-1000): Width 1000mm, Accuracy ±0.8um(<=1um 충족)로 PASS."
+    },
+    {
+      "test_id": "QA009",
+      "name": "복수HR — Width+Inline+Thickness+SurfaceDefect",
+      "user_query": "폭 600 mm 이상의 전극을 Inline으로 검사하면서 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 600.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness", "surface_defect"]
+      },
+      "expected_pass_candidates": ["TotalInspect TI-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-052(TotalInspect TI-1000): Width 1000mm, Inline, Thickness(Range Z 0~800um), Surface Defect(Scratch/Pinhole/Particle/Surface Defect) 모두 명시로 PASS."
+    },
+    {
+      "test_id": "QA010",
+      "name": "복수 Inspection Item — Edge Defect + Edge Crack",
+      "user_query": "전극의 Edge Defect와 Edge Crack을 동시에 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["edge_crack", "edge_defect"]
+      },
+      "expected_pass_candidates": ["EdgeScan Pro ES-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-030(EdgeScan Pro ES-800): Defect Types에 Edge Defect, Edge Crack이 모두 명시되어 두 항목 모두 독립적으로 PASS(T009와 동일 정책, 다른 corpus 문구로 재검증)."
+    },
+    {
+      "test_id": "QA011",
+      "name": "복수 Inspection Item — Scratch+Contamination+Pinhole(3종)",
+      "user_query": "스크래치와 오염과 핀홀을 동시에 검출할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "inspection_items": ["scratch", "contamination", "pinhole"],
+        "inspection_categories": ["surface_defect"]
+      },
+      "expected_pass_candidates": ["VisionInspect VI-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-021(VisionInspect VI-1000): Defect Types에 Scratch, Contamination, Particle, Pin Hole이 모두 명시되어 3개 세부 항목이 각각 독립적으로 PASS. 기존 T003/T023은 2개 항목(scratch+contamination, scratch+void) 조합만 검증했으므로 3개 항목 AND 조건은 신규 추가."
+    },
+    {
+      "test_id": "QA012",
+      "name": "수치조건 — Range 단독(0~500um)",
+      "user_query": "0~500 μm 범위를 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "measurement_range": {"min": 0.0, "max": 500.0, "unit": "um"}
+      },
+      "expected_pass_candidates": ["ThicknessPro TP-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-013(ThicknessPro TP-800): Range 0~800um이 요구 범위(0~500um)를 포함(range_covers)하여 PASS."
+    },
+    {
+      "test_id": "QA013",
+      "name": "수치조건 — '최대 500um까지' 표현",
+      "user_query": "최대 500 μm까지 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "measurement_range": {"min": 0.0, "max": 500.0, "unit": "um"}
+      },
+      "expected_pass_candidates": ["LaserMetrix LP-500"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-005(LaserMetrix LP-500): Range 정확히 0~500um으로 PASS. '최대 N까지' 표현이 0~N 범위로 정상 구조화됨을 확인."
+    },
+    {
+      "test_id": "QA014",
+      "name": "수치조건 — '500um 이하 범위' 표현",
+      "user_query": "500 μm 이하 범위를 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "measurement_range": {"min": 0.0, "max": 500.0, "unit": "um"}
+      },
+      "expected_pass_candidates": ["MultiInspect MI-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-044.md"},
+      "notes": "SPEC-044(MultiInspect MI-800): Range 0~500um으로 PASS. 'N 이하 범위' 표현이 0~N으로 정상 구조화됨을 확인."
+    },
+    {
+      "test_id": "QA015",
+      "name": "수치조건 — Accuracy 단독(±1um 이내)",
+      "user_query": "±1 μm 이내 정확도가 필요한 전극 검사기를 찾아줘.",
+      "expected_requirement": {
+        "accuracy": {"value": 1.0, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": ["OptiScan ES-200"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "SPEC-001(OptiScan ES-200): Accuracy ±1um으로 정확히 경계값 PASS(요구 <=1.0, 실측 1.0)."
+    },
+    {
+      "test_id": "QA016",
+      "name": "수치조건 — Minimum Defect Size 단독(3um)",
+      "user_query": "최소 3 μm 크기의 결함을 검출할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "minimum_defect_size": {"value": 3.0, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": ["MultiInspect MI-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-051.md"},
+      "notes": "SPEC-051(MultiInspect MI-800): Minimum Detectable Defect 3um으로 정확히 경계값 PASS."
+    },
+    {
+      "test_id": "QA017",
+      "name": "FAIL/UNKNOWN — Width 2000mm(존재하지 않는 조건)",
+      "user_query": "폭 2000 mm 이상의 전극을 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "target.width_mm": 2000.0
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체에 Maximum Electrode Width>=2000mm를 명시한 문서가 없다(가장 넓은 것도 그 미만) — 장비 사양서에 Width 자체가 없는 문서가 선택되어 UNKNOWN(PARTIAL)으로 정직하게 처리됨. 허위로 PASS가 되지 않는지가 핵심 검증 대상."
+    },
+    {
+      "test_id": "QA018",
+      "name": "FAIL/UNKNOWN — Speed 2000mm/s(존재하지 않는 조건)",
+      "user_query": "2000 mm/s 이상의 속도로 검사할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "measurement_speed": {"value": 2000.0, "unit": "mm/s", "operator": ">="}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체에 Speed>=2000mm/s를 명시한 문서가 없다 — Speed 정보가 없는 문서가 선택되어 UNKNOWN(PARTIAL)으로 처리됨."
+    },
+    {
+      "test_id": "QA019",
+      "name": "FAIL/UNKNOWN — Range 0~5000um(존재하지 않는 조건)",
+      "user_query": "0~5000 μm 범위를 측정할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "measurement_range": {"min": 0.0, "max": 5000.0, "unit": "um"}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체에 0~5000um 범위를 커버하는 문서가 없다 — Range 정보가 없는 문서가 선택되어 UNKNOWN(PARTIAL)으로 처리됨."
+    },
+    {
+      "test_id": "QA020",
+      "name": "FAIL/UNKNOWN — Minimum Defect Size 0.1um(존재하지 않는 조건)",
+      "user_query": "최소 0.1 μm 크기의 결함을 검출할 수 있는 장비를 찾아줘.",
+      "expected_requirement": {
+        "minimum_defect_size": {"value": 0.1, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PARTIAL",
+      "notes": "corpus 전체에 0.1um 이하를 검출한다고 명시한 문서가 없다(가장 정밀해도 2~3um대) — 정보가 없는 문서가 선택되어 UNKNOWN(PARTIAL)으로 처리됨. 기존 T010/T027(3um/5um)보다 훨씬 엄격한 경계값이라 신규 추가."
+    },
+    {
+      "test_id": "QA021",
+      "name": "조건미지정 — Accuracy 명시적 제외",
+      "user_query": "폭 600 mm 이상의 전극을 Inline으로 검사하면서 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘. 정확도는 지정하지 않을게.",
+      "expected_requirement": {
+        "target.width_mm": 600.0,
+        "inline_offline": "inline",
+        "inspection_items": ["thickness", "surface_defect"],
+        "required_accuracy_um": null
+      },
+      "expected_pass_candidates": ["MultiInspect MI-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "candidate_spec_ids": {"MultiInspect MI-800": "SPEC-051.md"},
+      "notes": "T005/T021과 동일 정책(Accuracy 미지정 시 required_accuracy_um=None, Hard Requirement에서 제외)을 다시 확인 — SPEC-051 선택."
+    },
+    {
+      "test_id": "QA022",
+      "name": "조건미지정 — Speed 명시적 제외",
+      "user_query": "Inline 두께 검사기를 찾아줘. 속도 조건은 상관없어.",
+      "expected_requirement": {
+        "inline_offline": "inline",
+        "inspection_items": ["thickness"],
+        "measurement_speed": null
+      },
+      "expected_pass_candidates": ["FilmInspect FI-500"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "사용자가 '속도 조건은 상관없어'라고 명시 — measurement_speed는 None으로 남아야 하고 Speed는 Hard Requirement에 포함되지 않아야 한다. 기존 T005/T021은 Accuracy 제외만 검증했으므로, 같은 정책이 Speed 축에도 동일하게 적용되는지 신규로 검증(요청서 2절: Width/Speed/Range/Accuracy/MinDefectSize/Principle/Mode/Items 전체에 동일 정책 적용)."
+    },
+    {
+      "test_id": "QA023",
+      "name": "조건미지정 — Width 명시적 제외",
+      "user_query": "표면 결함 검사기를 찾아줘. 폭 조건은 따로 없어.",
+      "expected_requirement": {
+        "inspection_items": ["surface_defect"]
+      },
+      "expected_pass_candidates": ["FastScan FS-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "사용자가 '폭 조건은 따로 없어'라고 명시 — target.width_mm은 None으로 남아야 하고 Width는 Hard Requirement에 포함되지 않아야 한다. Speed(QA022)와 마찬가지로 Width 축에 대한 동일 정책 신규 검증."
+    },
+    {
+      "test_id": "QA024",
+      "name": "자연어변형 — 'N까지 검사할 수 있는' 단위 조사 결합",
+      "user_query": "전극을 0~300um까지 검사할 수 있는 장비",
+      "expected_requirement": {
+        "measurement_range": {"min": 0.0, "max": 300.0, "unit": "um"}
+      },
+      "expected_pass_candidates": ["FastScan FS-1000"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "'0~300um까지'처럼 단위 뒤에 조사가 바로 붙어도 정상 구조화되는지 확인."
+    },
+    {
+      "test_id": "QA025",
+      "name": "자연어변형 — 'N - M' 대시 표기",
+      "user_query": "0 - 300 μm",
+      "expected_requirement": {
+        "measurement_range": {"min": 0.0, "max": 300.0, "unit": "um"}
+      },
+      "expected_pass_candidates": ["ThicknessPro TP-800"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "문장 없이 'N - M 단위'만 입력해도 범위로 정상 구조화되는지 확인."
+    },
+    {
+      "test_id": "QA026",
+      "name": "자연어변형 — 'N 이하'만 단독(문맥 단어 없음)",
+      "user_query": "300 μm 이하",
+      "expected_requirement": {},
+      "expected_pass_candidates": [],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "'범위'/'정확도'/'결함' 같은 문맥 단어 없이 '300 μm 이하'만 입력하면 어떤 필드에 대한 조건인지 판단할 근거가 없어 measurement_range 등 어떤 Requirement 필드도 채우지 않는다(관찰된 실제 동작) — 이는 버그가 아니라 '근거 없이 추측하지 않는다'는 핵심 정책이 자연어 파싱 단계에도 일관되게 적용된 결과다. Hard Requirement가 전혀 없으므로 모든 후보가 자동으로 PASS(조건이 없으므로 무조건 충족)가 되고, 그중 결정론적 정렬 1순위 후보가 선택된다."
+    },
+    {
+      "test_id": "QA027",
+      "name": "자연어변형 — 'N 이내' 정확도 단독",
+      "user_query": "정확도 1 μm 이내",
+      "expected_requirement": {
+        "accuracy": {"value": 1.0, "unit": "um", "operator": "<="}
+      },
+      "expected_pass_candidates": ["NanoProfile NP-500"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "'정확도'라는 문맥 단어 + 'N 이내'가 결합되면 accuracy로 정상 구조화됨(위 QA026과의 대조 — 문맥 단어가 있으면 정상 인식됨을 함께 보여준다)."
+    },
+    {
+      "test_id": "QA028",
+      "name": "자연어변형 — 'N mm/s 이상' 속도 단독",
+      "user_query": "속도 500mm/s 이상",
+      "expected_requirement": {
+        "measurement_speed": {"value": 500.0, "unit": "mm/s", "operator": ">="}
+      },
+      "expected_pass_candidates": ["EdgeVision EV-300"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "단위(mm/s)와 숫자 사이에 공백이 없어도('500mm/s') 정상 구조화되는지 확인."
+    },
+    {
+      "test_id": "QA029",
+      "name": "자연어변형 — 'N mm 이상' 폭 단독",
+      "user_query": "폭 800mm 이상",
+      "expected_requirement": {
+        "target.width_mm": 800.0
+      },
+      "expected_pass_candidates": ["ThicknessPro TP-500"],
+      "expected_partial_candidates": [],
+      "expected_fail_candidates": [],
+      "forbidden_candidates": [],
+      "expected_final_status": "PASS",
+      "notes": "'800mm'처럼 숫자와 단위 사이 공백이 없어도 target.width_mm이 정상 구조화되는지 확인."
     }
   ]
 }

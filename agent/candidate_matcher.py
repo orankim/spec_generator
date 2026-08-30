@@ -973,6 +973,20 @@ def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[Cand
     3순위: FAIL 수가 적은 후보 (fail_count 오름차순)
     4순위: RAG similarity가 높은 후보 (-(c.rag_similarity_score or 0.0) 내림차순)
     5순위: 후보 문서 순서 (candidate_id 오름차순)
+
+    검토했으나 채택하지 않은 대안(QA 개선 작업 5절): fail_count와 RAG similarity 사이에
+    -c.total_margin(요구조건 대비 성능 여유, 사용자가 실제로 요구한 항목의 margin만 합산 —
+    이미 build_candidates()가 계산해 CandidateEquipment.total_margin에 채워둔다)을 추가로
+    끼워 넣는 실험을 해봤다. 단일 항목 요구에서는 의도대로 더 여유 있는 후보를 우선했지만,
+    기존에 확정된 후보 선택 결과에 의존하는 3개의 회귀 테스트(예:
+    test_chat_ui_regression_baseline_multisense_ms600,
+    test_end_to_end_pipeline_selects_correct_candidate_for_non_standard_label,
+    test_integration_10b_end_to_end_correct_candidate_now_selected)가 깨졌다 — 이 테스트들이
+    가정하는 기존 동점 처리 순서(RAG similarity/candidate_id)로 이미 확정된 후보가 margin
+    도입으로 바뀌었기 때문이다. "666/666 기존 테스트를 절대 깨지 않는다"는 이번 작업의
+    최우선 원칙이므로 이 변경은 되돌렸다 — 이 기능을 원하면 별도 후속 작업으로 위 3개
+    테스트의 기대값을 의도적으로 함께 갱신해야 한다(코드에 맞추기 위한 임의 변경이 아니라
+    "랭킹 정책을 실제로 바꾸기로 결정"하는 별도 승인이 필요하다).
     """
     if not candidates:
         return None
