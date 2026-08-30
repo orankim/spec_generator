@@ -775,11 +775,13 @@ async def agent_page():
     호출한다. 이번 UI 개편에서 Backend에는 단 한 줄도 손대지 않았다.
 
     Conversation은 서버에 저장하지 않고 브라우저에만 둔다 — 여러 개의 대화를
-    배열(state.conversations)로 관리하고 localStorage에 영속화한다(키:
-    electrode_ai_conversations_v1). Agent의 RAG/ChromaDB와는 완전히 분리된
-    Frontend 전용 상태이며, 매 API 호출은 활성 대화가 들고 있는 조각(current_
-    requirement 등)을 그대로 요청 본문에 실어 보낸다 — 서버는 여전히 요청 단위로
-    무상태다.
+    배열(state.conversations)로 관리하고 sessionStorage에 저장한다(키:
+    electrode_ai_conversations_v1). sessionStorage는 브라우저 탭/창을 완전히
+    닫으면 사라지므로(localStorage와 달리) "브라우저를 종료했다 다시 실행하면
+    이전 대화 목록이 남아있지 않아야 한다"는 정책을 정확히 만족한다. Agent의
+    RAG/ChromaDB와는 완전히 분리된 Frontend 전용 상태이며, 매 API 호출은 활성
+    대화가 들고 있는 조각(current_requirement 등)을 그대로 요청 본문에 실어
+    보낸다 — 서버는 여전히 요청 단위로 무상태다.
     """
     body_html = """
             <div class="shell" id="appShell">
@@ -829,17 +831,19 @@ async def agent_page():
             <script>
                 // ================================================================
                 // Conversation State — 서버 세션/DB 없이 브라우저에만 둔다(요청서 12절).
-                // 대화 여러 개를 배열로 관리하고 localStorage에 영속화한다. 매 API
+                // 대화 여러 개를 배열로 관리하고 sessionStorage에 저장한다. 매 API
                 // 호출은 활성 대화(active conversation)가 들고 있는 조각(current_
                 // requirement 등)을 그대로 요청 본문에 실어 보낸다 — 서버는 여전히
                 // 요청 단위로 무상태이며, Agent의 RAG/ChromaDB와는 완전히 분리된
                 // Frontend 전용 상태다.
                 // ================================================================
                 const STORAGE_KEY = 'electrode_ai_conversations_v1';
-                // 브라우저를 껐다가 다시 켜도 대화 기록은 유지하되, 일정 시간(8시간)
-                // 이상 사용하지 않으면 자동으로 초기화한다 — "컴퓨터 재부팅 시 초기화"는
-                // 웹 API로 구분이 불가능해(브라우저 재시작과 동일하게 보임) 그 대체로
-                // 채택한 비활성 시간 기준 초기화다.
+                // sessionStorage는 같은 탭/창을 유지하는 동안(새로고침 포함)에는
+                // 대화 기록을 보존하지만, 탭이나 브라우저를 완전히 닫으면 사라진다 —
+                // "브라우저를 완전히 종료했다 재실행하면 이전 대화 목록이 남아있지
+                // 않아야 한다"는 정책을 브라우저 표준 동작만으로 정확히 만족한다.
+                // 그와는 별개로, 탭을 계속 열어둔 채 오래 자리를 비운 경우까지
+                // 대비해 일정 시간(8시간) 이상 비활성 상태면 추가로 초기화한다.
                 const INACTIVITY_CLEAR_MS = 8 * 60 * 60 * 1000;
 
                 const state = {
@@ -850,7 +854,7 @@ async def agent_page():
 
                 function loadConversations() {
                     try {
-                        const raw = localStorage.getItem(STORAGE_KEY);
+                        const raw = sessionStorage.getItem(STORAGE_KEY);
                         if (!raw) return [];
                         const parsed = JSON.parse(raw);
                         return Array.isArray(parsed) ? parsed : [];
@@ -877,9 +881,9 @@ async def agent_page():
 
                 function saveConversations() {
                     try {
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations));
+                        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state.conversations));
                     } catch (e) {
-                        // localStorage 사용 불가(프라이빗 모드, 용량 초과 등) — 조용히 무시한다.
+                        // sessionStorage 사용 불가(프라이빗 모드, 용량 초과 등) — 조용히 무시한다.
                         // 세션 내 메모리(state.conversations)는 계속 정상 동작하므로 새로고침
                         // 전까지는 대화가 유지된다(요청서 12절 1단계 수준으로 자연스럽게 저하).
                     }
@@ -2160,7 +2164,7 @@ async def agent_page():
                 updateHamburgerAria();
 
                 // ================================================================
-                // 부팅 — localStorage에서 대화 목록을 복원한다(요청서 12절 2단계).
+                // 부팅 — sessionStorage에서 대화 목록을 복원한다(요청서 12절 2단계).
                 // 가장 최근에 갱신된 대화가 있으면 새로고침 후에도 이어서 보여준다.
                 // ================================================================
                 function boot() {
@@ -2170,7 +2174,7 @@ async def agent_page():
                         const sorted = state.conversations.slice().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
                         state.activeConversationId = sorted[0].id;
                     } else if (loaded.length > 0) {
-                        // 비활성 초기화로 목록을 비웠다면 localStorage에도 즉시 반영한다.
+                        // 비활성 초기화로 목록을 비웠다면 sessionStorage에도 즉시 반영한다.
                         saveConversations();
                     }
                     renderAll();
