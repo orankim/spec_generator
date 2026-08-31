@@ -7,3 +7,4 @@ generated_files/
 _test_chroma_db_*/
 tests/e2e/test-results/
 tests/e2e/playwright-report/
+benchmark_results/

@@ -62,9 +62,23 @@ def retrieve_and_generate(
     db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
     model: Optional[str] = None,
-    k_per_query: int = 5,
+    k_per_query: int = 10,
 ) -> Tuple[SpecificationSchema, ValidationResult, List[Document]]:
-    """SpecRetriever -> SpecificationGenerator -> SpecificationValidator."""
+    """
+    SpecRetriever -> SpecificationGenerator -> SpecificationValidator.
+
+    k_per_query 기본값 10(이전 5): 실제 Ollama bge-m3 임베딩 + 실제 ChromaDB(52
+    SPEC, 383 chunk)로 5개 대표 질의(R1~R5)를 k=[3,5,10,20,30,50,100]로 스윕한
+    결과, k<=5에서는 정답 후보 문서가 최초 top-k 검색에서 아예 누락되어(예:
+    "정확도 미지정 + 두께/표면결함 동시 검사" 질의에서 SPEC-051 누락) 최종
+    candidate pool 자체에 들지 못하는 사례가 있었다. k=10부터는 5개 질의 전부
+    기대 후보가 검색되었고, k>=20에서는 오히려 관련 없는 대형 후보(SPEC-052 등)가
+    함께 유입되며 기존에 정답으로 확인된 후보(SPEC-013/SPEC-039 등)를 밀어내는
+    부작용이 관찰되었다 — k=10이 "recall 확보"와 "불필요한 후보 유입 최소화"
+    사이의 가장 작은 안전한 값이다. retrieval 소요 시간은 k=5→10에서 통계적으로
+    유의미한 차이가 없었다(임베딩 호출 횟수는 k와 무관하게 확장 질의 개수에만
+    비례하고, ChromaDB 유사도 검색 자체는 383개 규모에서 k 증가 비용이 미미함).
+    """
     host = ollama_host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
     retrieved_docs = spec_retriever.retrieve_for_requirement(

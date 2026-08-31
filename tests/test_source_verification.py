@@ -120,16 +120,25 @@ def test_reported_query_pulls_identity_chunk_for_matched_source(db):
     assert 0 in spec001_chunk_ids, f"SPEC-001.md의 식별 정보 chunk(id=0)가 결과에 없습니다: {spec001_chunk_ids}"
 
 
-def test_default_k_per_query_is_5_not_3():
+def test_default_k_per_query_is_10_not_3_or_5():
+    """
+    k_per_query 기본값 회귀 가드. 원래 3(버그)에서 5로 올린 이력을 5→3 재발
+    방지로만 지키던 테스트였으나, 실제 Ollama bge-m3 임베딩 + 실제 ChromaDB(52
+    SPEC/383 chunk)로 R1~R5를 k=[3,5,10,20,30,50,100]으로 스윕한 결과 k=5에서도
+    특정 질의(측정 원리/범위 조건이 전혀 없는 "두께+표면결함, 정확도 미지정"
+    유형)의 정답 후보가 top-k 검색에서 누락되는 사례가 실측되어(agent/pipeline.py
+    retrieve_and_generate() docstring 참고) 10으로 다시 올렸다. 3과 5 둘 다로
+    되돌아가지 않는지 함께 확인한다.
+    """
     import inspect
 
     sig = inspect.signature(spec_retriever.retrieve_for_requirement)
-    assert sig.parameters["k_per_query"].default == 5
+    assert sig.parameters["k_per_query"].default == 10
 
     from agent.pipeline import retrieve_and_generate
 
     sig2 = inspect.signature(retrieve_and_generate)
-    assert sig2.parameters["k_per_query"].default == 5
+    assert sig2.parameters["k_per_query"].default == 10
 
 
 # ---------------------------------------------------------------
