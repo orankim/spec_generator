@@ -1,3 +1,5 @@
+https://drive.google.com/file/d/1iQI8w0GjRWyynP7CjK7Lri_oey_t5Ds1/view
+
 # ⚙️ 전극 검사기 사양서 자동 생성 AI (전극검사기 AI)
 
 > 이 문서는 **컴퓨터/개발 지식이 전혀 없는 분**도 처음부터 끝까지 따라 할 수 있도록,
