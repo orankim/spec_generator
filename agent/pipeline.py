@@ -62,22 +62,23 @@ def retrieve_and_generate(
     db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
     model: Optional[str] = None,
-    k_per_query: int = 10,
+    k_per_query: int = 15,
 ) -> Tuple[SpecificationSchema, ValidationResult, List[Document]]:
     """
     SpecRetriever -> SpecificationGenerator -> SpecificationValidator.
 
-    k_per_query 기본값 10(이전 5): 실제 Ollama bge-m3 임베딩 + 실제 ChromaDB(52
-    SPEC, 383 chunk)로 5개 대표 질의(R1~R5)를 k=[3,5,10,20,30,50,100]로 스윕한
-    결과, k<=5에서는 정답 후보 문서가 최초 top-k 검색에서 아예 누락되어(예:
-    "정확도 미지정 + 두께/표면결함 동시 검사" 질의에서 SPEC-051 누락) 최종
-    candidate pool 자체에 들지 못하는 사례가 있었다. k=10부터는 5개 질의 전부
-    기대 후보가 검색되었고, k>=20에서는 오히려 관련 없는 대형 후보(SPEC-052 등)가
-    함께 유입되며 기존에 정답으로 확인된 후보(SPEC-013/SPEC-039 등)를 밀어내는
-    부작용이 관찰되었다 — k=10이 "recall 확보"와 "불필요한 후보 유입 최소화"
-    사이의 가장 작은 안전한 값이다. retrieval 소요 시간은 k=5→10에서 통계적으로
-    유의미한 차이가 없었다(임베딩 호출 횟수는 k와 무관하게 확장 질의 개수에만
-    비례하고, ChromaDB 유사도 검색 자체는 383개 규모에서 k 증가 비용이 미미함).
+    k_per_query 기본값 15(이전 10): 5개 대표 질의(R1~R5) 스윕으로 5->10을 결정한
+    이력에 이어, 이번에는 Ground Truth 전체 56케이스(T001~T027, QA001~QA029,
+    evaluable 43케이스)를 실제 Ollama bge-m3 임베딩 + 실제 ChromaDB(52 SPEC,
+    383 chunk)로 k=[5,10,15,20] 전부 재현했다. k=10에서 Retrieval Recall
+    86.0%(37/43), MISS 6건이 지속됐고, MISS 6건 전부를 k=50까지 넓혀 재검색한
+    결과 전부 "정답 문서가 실제로는 순위 11~19위로 이미 검색되고 있었으나
+    production top-10 컷오프 바로 밖으로 밀린" 순위 경쟁 문제로 확인됐다(어휘
+    불일치/질의 확장 부족/corpus 표현 문제 등 다른 원인은 0건). k=15로 올리면
+    Recall이 97.7%(42/43, MISS 6건 중 5건 해소)로 개선되고, No-Match 13개 중
+    설계상 PASS 의도인 QA026을 제외한 12개 전부에서 False PASS가 0건으로
+    유지됨을 실측으로 확인했다 — k=20(Recall 100%)은 Candidate Pool 증가폭이
+    더 커(avg 31.4 vs k=15의 27.0) 이번에는 채택하지 않았다.
     """
     host = ollama_host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 

@@ -205,14 +205,18 @@ def retrieve_for_requirement(
     requirement: RequirementSchema,
     db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
-    k_per_query: int = 10,
+    k_per_query: int = 15,
 ) -> List[Document]:
     """
     요구사항 기반 다중 질의 검색을 수행하고, (source, content) 기준으로
     중복 제거한 Document 목록을 반환한다.
 
-    k_per_query 기본값 10(이전 5) — agent/pipeline.py retrieve_and_generate()의
-    docstring에 근거(실제 bge-m3 임베딩 기반 recall 실험) 기록.
+    k_per_query 기본값 15(이전 10) — agent/pipeline.py retrieve_and_generate()의
+    docstring에 근거(실제 bge-m3 임베딩 기반 k=[5,10,15,20] 전체 56케이스 재현
+    실험) 기록. k=10에서는 Retrieval Recall이 86.0%(6/43 MISS)였고, MISS 6건
+    전부 순위 경쟁(정답 문서가 실제로는 순위 11~19위로 검색됐으나 top-10 밖으로
+    밀림)으로 확인됐다 — k=15에서 Recall 97.7%(42/43, MISS 6건 중 5건 해소),
+    No-Match 안전성(False PASS 0건)은 그대로 유지됨을 실측으로 확인한 뒤 올렸다.
 
     db_path를 명시하지 않으면 CHROMA_DB_PATH 환경변수 -> 저장소 루트 기준 기본값
     (agent/paths.DEFAULT_CHROMA_DB_PATH) 순으로 정해진다 — build_rag_ollama.py도
