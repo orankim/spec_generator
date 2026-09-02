@@ -200,3 +200,69 @@ def compute_recall_at_k(k: int, evaluations: List[Tuple[str, RecallEvaluation]])
         worst_rank=max(scored_ranks) if scored_ranks else None,
         mrr=(sum(1.0 / r for r in scored_ranks) / len(scored_ranks)) if scored_ranks else None,
     )
+
+
+# ==========================================
+# 4. Pipeline Funnel 요약 — Retrieval 단계를 넘어 Candidate Extraction/Final
+# Recommendation까지 단계별로 분리해 집계한다(요청서 7/8/10절). compute_recall_at_k()는
+# 그대로 두고(기존 unit test가 이미 그 함수의 정확한 동작을 보증) 별도 함수로 추가한다.
+#
+# 이 함수가 기대하는 row 형태는 scripts/full_retrieval_recall_benchmark.py가 만드는
+# per-case 결과 dict다(evaluable/hit/rank/rank_kind/candidate_extraction_hit/
+# retrieved_unique_doc_count/candidate_count/final_status/final_matches_expected).
+# ==========================================
+@dataclass
+class FunnelSummary:
+    k: int
+    n_total_cases: int
+    n_evaluable: int  # Expected Candidate가 존재하는 케이스 수
+    n_no_expected: int  # Expected Candidate가 없는(존재하지 않는 조건 등) 케이스 수
+    retrieval_recall: Optional[float]  # Expected Candidate가 retrieved_docs에 있었는가
+    candidate_extraction_hit_rate: Optional[float]  # 그 중 build_candidates() 결과 candidate로도 존재했는가
+    final_pass_rate: Optional[float]  # evaluable 케이스 중 최종 status==PASS 비율
+    expected_candidate_top1_rate: Optional[float]  # evaluable 케이스 중 최종 추천이 실제로 Expected와 일치하는 비율
+    avg_retrieved_documents: float  # 전체 케이스 기준, retrieval 후 중복제거된 문서(candidate) 평균 개수
+    avg_candidate_pool_size: float  # 전체 케이스 기준, build_candidates() 결과 후보 평균 개수
+    no_match_safety_rate: Optional[float]  # Expected Candidate 없음 케이스 중 최종 status가 PASS로 잘못 나오지 않은 비율
+
+
+def compute_funnel_summary(k: int, rows: List[Dict[str, Any]]) -> FunnelSummary:
+    """rows: scripts/full_retrieval_recall_benchmark.py::run_benchmark()이 만든 특정
+    k값의 per-case 결과 dict 목록. Production 코드(retrieve_for_requirement/
+    build_candidates/select_best_candidate)가 이미 계산해 넘겨준 값만 집계하며, 이
+    함수 자체는 재검색/재계산을 하지 않는다(순수 집계)."""
+    total = len(rows)
+    evaluable = [r for r in rows if r["evaluable"]]
+    no_expected = [r for r in rows if not r["evaluable"]]
+
+    hits = [r for r in evaluable if r["hit"]]
+    retrieval_recall = (len(hits) / len(evaluable)) if evaluable else None
+
+    cand_hits = [r for r in evaluable if r.get("candidate_extraction_hit")]
+    candidate_extraction_hit_rate = (len(cand_hits) / len(evaluable)) if evaluable else None
+
+    final_pass = [r for r in evaluable if r["final_status"] == "PASS"]
+    final_pass_rate = (len(final_pass) / len(evaluable)) if evaluable else None
+
+    top1 = [r for r in evaluable if r["final_matches_expected"]]
+    expected_candidate_top1_rate = (len(top1) / len(evaluable)) if evaluable else None
+
+    avg_retrieved_documents = (sum(r["retrieved_unique_doc_count"] for r in rows) / total) if total else 0.0
+    avg_candidate_pool_size = (sum(r["candidate_count"] for r in rows) / total) if total else 0.0
+
+    safety_ok = [r for r in no_expected if r["final_status"] != "PASS"]
+    no_match_safety_rate = (len(safety_ok) / len(no_expected)) if no_expected else None
+
+    return FunnelSummary(
+        k=k,
+        n_total_cases=total,
+        n_evaluable=len(evaluable),
+        n_no_expected=len(no_expected),
+        retrieval_recall=retrieval_recall,
+        candidate_extraction_hit_rate=candidate_extraction_hit_rate,
+        final_pass_rate=final_pass_rate,
+        expected_candidate_top1_rate=expected_candidate_top1_rate,
+        avg_retrieved_documents=avg_retrieved_documents,
+        avg_candidate_pool_size=avg_candidate_pool_size,
+        no_match_safety_rate=no_match_safety_rate,
+    )

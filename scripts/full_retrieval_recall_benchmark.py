@@ -50,6 +50,7 @@ from tests.regression_lib import RegressionRunResult, candidate_name, check_requ
 from scripts.full_retrieval_recall_benchmark_lib import (  # noqa: E402
     build_equipment_name_to_spec_ids,
     candidate_level_documents,
+    compute_funnel_summary,
     compute_recall_at_k,
     discover_benchmark_cases,
     discover_sample_spec_files,
@@ -170,6 +171,13 @@ def run_benchmark(k_values: List[int], case_ids: Optional[List[str]] = None) -> 
             else:
                 final_matches_expected = final_status == case.get("expected_final_status")
 
+            # Candidate Extraction 단계 hit 여부 — Retrieval에는 있었지만 build_candidates()
+            # 결과 candidate로 그룹화되지 않은 경우를 Retrieval HIT과 분리해서 본다(요청서 7-4/8절).
+            candidate_sources = {c.source_document for c in candidates}
+            candidate_extraction_hit = (
+                bool(expected_spec_ids & candidate_sources) if recall_eval.evaluable else None
+            )
+
             miss_stage, miss_evidence = (None, None)
             if recall_eval.evaluable and not recall_eval.hit:
                 miss_stage, miss_evidence = _classify_miss_stage(case, requirement, doc_scores, candidates, expected_spec_ids)
@@ -185,6 +193,7 @@ def run_benchmark(k_values: List[int], case_ids: Optional[List[str]] = None) -> 
                 "rank": recall_eval.rank,
                 "rank_kind": recall_eval.rank_kind,
                 "matched_spec": recall_eval.matched_spec,
+                "candidate_extraction_hit": candidate_extraction_hit,
                 "retrieved_chunk_count": len(retrieved_docs),
                 "retrieved_unique_doc_count": len(doc_scores),
                 "candidate_count": len(candidates),
@@ -205,15 +214,37 @@ def run_benchmark(k_values: List[int], case_ids: Optional[List[str]] = None) -> 
     print("k별 Recall@K 요약")
     print("=" * 90)
     summaries = {}
+    funnel_summaries = {}
     for k in k_values:
         evals = [(r["test_id"], _row_to_eval(r)) for r in per_k_rows[k]]
         summary = compute_recall_at_k(k, evals)
         summaries[k] = summary
+        funnel = compute_funnel_summary(k, per_k_rows[k])
+        funnel_summaries[k] = funnel
         print(
             f"  k={k:3d}  recall={_fmt(summary.recall)}  hit={summary.n_hit}/{summary.n_evaluable}  "
             f"miss={summary.n_miss}  avg_rank={_fmt(summary.avg_rank)}  median_rank={_fmt(summary.median_rank)}  "
             f"worst_rank={summary.worst_rank}  mrr={_fmt(summary.mrr)}  boost_only_hit={summary.n_boost_only_hit}"
         )
+        print(
+            f"         candidate_extraction_hit_rate={_fmt(funnel.candidate_extraction_hit_rate)}  "
+            f"final_pass_rate={_fmt(funnel.final_pass_rate)}  expected_top1_rate={_fmt(funnel.expected_candidate_top1_rate)}  "
+            f"avg_retrieved_docs={funnel.avg_retrieved_documents:.1f}  avg_candidate_pool={funnel.avg_candidate_pool_size:.1f}  "
+            f"no_match_safety_rate={_fmt(funnel.no_match_safety_rate)}"
+        )
+
+    # k_per_query(각 확장 질의당 top-k)와 실제 중복제거된 검색 문서 수는 다른 개념이다
+    # (여러 확장 질의 + range_boost + inspection_item_boost + 후보 확정 후 전체 문서
+    # pull이 합쳐지므로, 최종 결과는 k_per_query보다 훨씬 많아진다) — 요청서 7-2절이
+    # 명시적으로 요구한 구분을 raw 데이터에도 남긴다.
+    k_vs_retrieved: Dict[int, Dict[str, float]] = {}
+    for k in k_values:
+        chunk_counts = [r["retrieved_chunk_count"] for r in per_k_rows[k]]
+        doc_counts = [r["retrieved_unique_doc_count"] for r in per_k_rows[k]]
+        k_vs_retrieved[k] = {
+            "avg_retrieved_chunk_count": sum(chunk_counts) / len(chunk_counts) if chunk_counts else 0.0,
+            "avg_retrieved_unique_doc_count": sum(doc_counts) / len(doc_counts) if doc_counts else 0.0,
+        }
 
     return {
         "environment": {
@@ -235,6 +266,8 @@ def run_benchmark(k_values: List[int], case_ids: Optional[List[str]] = None) -> 
         },
         "k_values": k_values,
         "summaries": {k: vars(s) for k, s in summaries.items()},
+        "funnel_summaries": {k: vars(s) for k, s in funnel_summaries.items()},
+        "k_vs_retrieved": k_vs_retrieved,
         "rows": per_k_rows,
     }
 
@@ -284,6 +317,39 @@ def write_reports(result: Dict[str, Any], output_dir: Path) -> None:
         )
     md_lines.append("")
 
+    md_lines.append("## K별 Pipeline Funnel 요약\n")
+    md_lines.append(
+        "| K | Retrieval Recall | Candidate Extraction Hit Rate | Final PASS Rate | "
+        "Expected Candidate Top1 Rate | Avg Retrieved Documents | Avg Candidate Pool Size | No-Match Safety Rate |"
+    )
+    md_lines.append("|--:|--:|--:|--:|--:|--:|--:|--:|")
+    for k, f in result["funnel_summaries"].items():
+        md_lines.append(
+            f"| {k} | {_fmt(f['retrieval_recall'])} | {_fmt(f['candidate_extraction_hit_rate'])} | "
+            f"{_fmt(f['final_pass_rate'])} | {_fmt(f['expected_candidate_top1_rate'])} | "
+            f"{f['avg_retrieved_documents']:.1f} | {f['avg_candidate_pool_size']:.1f} | "
+            f"{_fmt(f['no_match_safety_rate'])} |"
+        )
+    md_lines.append("")
+    md_lines.append(
+        "(Avg Retrieved Documents/Avg Candidate Pool Size는 전체 실행 케이스 기준. "
+        "Retrieval Recall/Candidate Extraction Hit Rate/Final PASS Rate/Expected Candidate Top1 Rate는 "
+        "Expected Candidate가 존재하는 케이스만 대상. No-Match Safety Rate는 Expected Candidate가 없는 "
+        "케이스 중 최종 status가 잘못 PASS로 나오지 않은 비율.)\n"
+    )
+
+    md_lines.append("## k_per_query vs 실제 검색된 문서 수\n")
+    md_lines.append(
+        "`k_per_query`는 확장 질의 1개당 semantic top-k 개수이고, 최종 `retrieved_docs`는 "
+        "여러 확장 질의 + range_boost + inspection_item_boost + 후보 확정 후 전체 문서 pull이 "
+        "합쳐진 결과라 항상 그보다 많다(agent/spec_retriever.py::retrieve_for_requirement 참고).\n"
+    )
+    md_lines.append("| k_per_query | Avg Retrieved Chunks | Avg Retrieved Unique Documents |")
+    md_lines.append("|--:|--:|--:|")
+    for k, v in result["k_vs_retrieved"].items():
+        md_lines.append(f"| {k} | {v['avg_retrieved_chunk_count']:.1f} | {v['avg_retrieved_unique_doc_count']:.1f} |")
+    md_lines.append("")
+
     md_lines.append("## Query별 결과 (production 기본값 기준 k만 발췌, 전체는 JSON 참고)\n")
     default_k = 10 if 10 in result["rows"] else result["k_values"][0]
     md_lines.append(f"(production default k={default_k})\n")
@@ -298,17 +364,36 @@ def write_reports(result: Dict[str, Any], output_dir: Path) -> None:
         )
     md_lines.append("")
 
-    md_lines.append(f"## MISS Cases (k={default_k})\n")
-    miss_rows = [r for r in result["rows"][default_k] if r["evaluable"] and not r["hit"]]
-    if not miss_rows:
-        md_lines.append("없음\n")
-    else:
+    md_lines.append("## MISS Cases (k별 전체)\n")
+    for k in result["k_values"]:
+        miss_rows = [r for r in result["rows"][k] if r["evaluable"] and not r["hit"]]
+        md_lines.append(f"### k={k} ({len(miss_rows)}건)\n")
+        if not miss_rows:
+            md_lines.append("없음\n")
+            continue
         for row in miss_rows:
-            md_lines.append(f"### {row['test_id']} — {row['name']}\n")
+            md_lines.append(f"#### {row['test_id']} — {row['name']}\n")
             md_lines.append(f"- Original Query: {row['user_query']}")
             md_lines.append(f"- Expected: {row['expected_pass_candidates']} (SPEC: {row['expected_spec_ids']})")
             md_lines.append(f"- MISS Stage Classification: {row['miss_stage']}")
             md_lines.append(f"- Evidence: {row['miss_evidence']}\n")
+
+    md_lines.append(f"## Pipeline Funnel 분석 (k={default_k} 대표 사례)\n")
+    default_rows = result["rows"][default_k]
+    hit_example = next((r for r in default_rows if r["evaluable"] and r["hit"]), None)
+    miss_example = next((r for r in default_rows if r["evaluable"] and not r["hit"]), None)
+    no_match_example = next((r for r in default_rows if not r["evaluable"]), None)
+    for label, row in (("HIT", hit_example), ("MISS", miss_example), ("No-Match(Expected Candidate 없음)", no_match_example)):
+        md_lines.append(f"### {label} 사례: {row['test_id'] if row else '(해당 없음)'}\n")
+        if row is None:
+            md_lines.append("해당 유형의 케이스가 없습니다.\n")
+            continue
+        md_lines.append(f"- Expected: {row['expected_pass_candidates'] or '(N/A)'} (SPEC: {row['expected_spec_ids'] or '(N/A)'})")
+        md_lines.append(f"- Retrieved? {'HIT' if row['evaluable'] and row['hit'] else ('N/A' if not row['evaluable'] else 'MISS')} (rank={row['rank']}, {row['rank_kind']})")
+        md_lines.append(f"- Candidate Extracted? {row['candidate_extraction_hit']}")
+        md_lines.append(f"- Candidate Pool Size: {row['candidate_count']}")
+        md_lines.append(f"- Final Recommendation: {row['final_recommendation']} / status={row['final_status']}")
+        md_lines.append(f"- Matches Expected(Top1)? {row['final_matches_expected']}\n")
 
     (output_dir / "full_retrieval_recall_latest.md").write_text("\n".join(md_lines), encoding="utf-8")
     print(f"\n결과 저장됨: {json_path}")

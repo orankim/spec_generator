@@ -27,6 +27,7 @@ from scripts.full_retrieval_recall_benchmark_lib import (  # noqa: E402
     RecallEvaluation,
     build_equipment_name_to_spec_ids,
     candidate_level_documents,
+    compute_funnel_summary,
     compute_recall_at_k,
     discover_benchmark_cases,
     discover_sample_spec_files,
@@ -203,6 +204,80 @@ def test_compute_recall_at_k_handles_no_evaluable_cases():
 
 
 # ==========================================
+# 18-1. Pipeline Funnel Metric 계산 (Synthetic Data)
+# ==========================================
+def _make_row(
+    test_id,
+    evaluable=True,
+    hit=True,
+    candidate_extraction_hit=True,
+    final_status="PASS",
+    final_matches_expected=True,
+    retrieved_unique_doc_count=10,
+    candidate_count=8,
+):
+    return {
+        "test_id": test_id,
+        "evaluable": evaluable,
+        "hit": hit,
+        "candidate_extraction_hit": candidate_extraction_hit if evaluable else None,
+        "final_status": final_status,
+        "final_matches_expected": final_matches_expected,
+        "retrieved_unique_doc_count": retrieved_unique_doc_count,
+        "candidate_count": candidate_count,
+    }
+
+
+def test_compute_funnel_summary_basic_rates():
+    rows = [
+        _make_row("T1", evaluable=True, hit=True, candidate_extraction_hit=True, final_status="PASS", final_matches_expected=True),
+        _make_row("T2", evaluable=True, hit=True, candidate_extraction_hit=True, final_status="PARTIAL", final_matches_expected=False),
+        _make_row("T3", evaluable=True, hit=False, candidate_extraction_hit=False, final_status="PARTIAL", final_matches_expected=False),
+        _make_row("T4", evaluable=False, final_status="PARTIAL"),  # 존재하지 않는 조건, 안전하게 PARTIAL
+        _make_row("T5", evaluable=False, final_status="PASS"),  # 존재하지 않는 조건인데 잘못 PASS(safety 위반)
+    ]
+    summary = compute_funnel_summary(10, rows)
+    assert summary.n_total_cases == 5
+    assert summary.n_evaluable == 3
+    assert summary.n_no_expected == 2
+    assert summary.retrieval_recall == pytest.approx(2 / 3)  # T1,T2 hit / T1,T2,T3
+    assert summary.candidate_extraction_hit_rate == pytest.approx(2 / 3)
+    assert summary.final_pass_rate == pytest.approx(1 / 3)  # T1만 PASS
+    assert summary.expected_candidate_top1_rate == pytest.approx(1 / 3)  # T1만 매치
+    assert summary.avg_retrieved_documents == pytest.approx(10.0)
+    assert summary.avg_candidate_pool_size == pytest.approx(8.0)
+    # no_match_safety: T4(PARTIAL, 안전) OK, T5(PASS, 위반) NOT OK -> 1/2
+    assert summary.no_match_safety_rate == pytest.approx(0.5)
+
+
+def test_compute_funnel_summary_retrieval_hit_but_candidate_extraction_miss():
+    """Retrieval에는 있었지만 build_candidates()에서 후보로 그룹화되지 않은 경우(이론상
+    production 코드 구조상 불가능하지만, 만약 그런 버그가 생기면 이 두 지표가 갈라져야
+    한다는 것을 검증) — Retrieval Recall과 Candidate Extraction Hit Rate가 서로 다른
+    값이 될 수 있음을 보장하는 회귀 테스트."""
+    rows = [_make_row("T1", evaluable=True, hit=True, candidate_extraction_hit=False, final_status="FAIL", final_matches_expected=False)]
+    summary = compute_funnel_summary(10, rows)
+    assert summary.retrieval_recall == 1.0
+    assert summary.candidate_extraction_hit_rate == 0.0  # 완전히 분리되어 계산됨
+
+
+def test_compute_funnel_summary_no_evaluable_cases():
+    rows = [_make_row("T1", evaluable=False, final_status="FAIL")]
+    summary = compute_funnel_summary(10, rows)
+    assert summary.retrieval_recall is None
+    assert summary.candidate_extraction_hit_rate is None
+    assert summary.final_pass_rate is None
+    assert summary.expected_candidate_top1_rate is None
+    assert summary.no_match_safety_rate == 1.0  # FAIL이므로 안전
+
+
+def test_compute_funnel_summary_no_no_expected_cases():
+    rows = [_make_row("T1", evaluable=True)]
+    summary = compute_funnel_summary(10, rows)
+    assert summary.no_match_safety_rate is None  # 분모가 0이면 None(억지로 100%/0% 주장하지 않음)
+
+
+# ==========================================
 # 18-2. Real RAG Smoke Test — real_rag 마커 재사용, 새 마커 없음. Ollama 없으면 자동 SKIP.
 # ==========================================
 _SMOKE_CASE_IDS = ["T001", "T003", "T004", "T005", "T009"]
@@ -235,6 +310,15 @@ def test_full_benchmark_smoke_with_real_ollama():
     assert summary["n_evaluable"] > 0
     assert summary["recall"] is not None
     print(f"\n[smoke] k=10 recall={summary['recall']:.2f} hit={summary['n_hit']}/{summary['n_evaluable']}")
+
+    funnel = result["funnel_summaries"][10]
+    assert funnel["n_evaluable"] == summary["n_evaluable"]
+    # 이 프로젝트의 build_candidates()는 retrieved_docs의 모든 unique source를 무조건
+    # candidate로 그룹화하므로(코드 구조상 보장), Retrieval HIT인 케이스는 항상 Candidate
+    # Extraction HIT이기도 해야 한다 — 실제로 그런지 재확인.
+    if funnel["retrieval_recall"] is not None:
+        assert funnel["candidate_extraction_hit_rate"] == funnel["retrieval_recall"]
+    print(f"[smoke] candidate_extraction_hit_rate={funnel['candidate_extraction_hit_rate']} final_pass_rate={funnel['final_pass_rate']}")
 
     import shutil
 
