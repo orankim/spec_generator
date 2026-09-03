@@ -250,11 +250,16 @@ python build_rag_ollama.py --rebuild
      다른 장비인 경우), 화면에 구분 정보와 함께 "이전 추천과 이름은 같지만,
      서로 다른 장비입니다."라는 안내가 표시됩니다.
 4. 카드 아래의 **"📄 Markdown 다운로드"** 또는 **"📝 Word 다운로드"** 버튼을
-   누르면 그 장비의 사양서 파일이 만들어지고, 잠시 후 실제 다운로드 링크로
-   바뀝니다. 링크를 다시 클릭하면 PC에 파일이 저장됩니다.
+   누르면 그 장비의 사양서 파일이 자동으로 만들어지고, 클릭 한 번으로 바로 PC에
+   다운로드됩니다(따로 다시 클릭할 필요가 없습니다). 같은 결과를 다시 받고
+   싶으면 버튼이 바뀐 다운로드 링크를 다시 눌러도 되고, 이때는 파일을 새로
+   만들지 않고 이미 만든 파일을 그대로 다시 받습니다.
 5. 왼쪽 사이드바에서 "새로운 대화 시작"을 누르면 새 조건으로 처음부터 다시
    검색할 수 있고, "지난 대화 검색"으로 이전에 찾아봤던 대화를 다시 볼 수
-   있습니다(대화 내용은 이 컴퓨터의 이 브라우저 안에만 저장됩니다).
+   있습니다. 대화 내용은 서버가 아니라 **이 브라우저 탭 안에만** 저장되며,
+   같은 탭에서 새로고침해도 유지되지만 탭이나 브라우저를 닫으면(또는 8시간
+   이상 사용하지 않으면) 자동으로 사라집니다 — 다른 사람 PC에 이전 대화가
+   남지 않습니다.
 
 ---
 
@@ -301,8 +306,15 @@ python build_rag_ollama.py --rebuild
   조작을 지원합니다.
 - **폐쇄망(사내망) 전용 동작**: 외부 인터넷 연결 없이 사내 PC의 Ollama만으로
   전부 동작합니다.
+- **클릭 한 번으로 생성+다운로드**: 사양서 다운로드 버튼은 누르는 즉시 파일을
+  만들고 바로 저장까지 끝냅니다(생성 따로, 다운로드 따로 다시 누를 필요 없음).
+  이미 만든 파일은 다시 생성하지 않고 그대로 재사용합니다.
+- **브라우저 탭 한정 대화 기록**: 대화 목록은 서버 DB가 아니라 브라우저
+  탭에만 저장되어, 탭/브라우저를 닫으면 자동으로 사라집니다 — 같은 PC를
+  여러 사람이 쓰더라도 이전 대화가 남지 않습니다.
 - **자동 검증 도구**: `scripts/audit_sample_specs.py`로 사양서 데이터의
-  중복/누락 여부를 자동으로 점검할 수 있습니다.
+  중복/누락 여부를, RAG coverage 테스트로 `sample_specs/`의 모든 문서가
+  실제로 검색 색인에 빠짐없이 포함됐는지 자동으로 점검할 수 있습니다.
 
 ---
 
@@ -389,7 +401,8 @@ spec_generator/
 │   ├── html_renderer.py
 │   └── pptx_renderer.py
 ├── docs/                        # 상세 스키마 및 포맷 명세서
-├── tests/                       # pytest 자동화 테스트 (Backend + tests/e2e/ Playwright, 총 650개 이상)
+├── tests/                       # pytest 자동화 테스트 (Backend + tests/e2e/ Playwright, 총 890개 이상)
+│   └── ground_truth/regression_cases.json   # 실제 corpus 기반 종단 회귀 Ground Truth(T001~/QA001~)
 ├── requirements.txt             # 의존성 패키지 목록
 ├── .env.example                 # 환경변수 설정 예시 (복사해서 .env로 사용)
 └── README.md
@@ -427,14 +440,17 @@ python -m pytest tests -v
 ```
 
 - Backend(순수 로직/HTTP 계층) 테스트와 `tests/e2e/`의 실제 Chromium 브라우저
-  기반 E2E(UX) 테스트를 합쳐 **650개 이상**을 실행합니다.
+  기반 E2E(UX) 테스트를 합쳐 **890개 이상**을 실행합니다. 이 중 일부는 실제
+  Ollama 서버가 켜져 있어야만 실행되는 테스트라 Ollama 없이 돌리면 자동으로
+  `SKIPPED`(실패 아님)로 표시됩니다.
 - 마커로 원하는 그룹만 골라 실행할 수도 있습니다.
 
   ```powershell
-  python -m pytest -m regression -v      # Ground Truth 기반 종단 회귀 테스트
+  python -m pytest -m regression -v      # Ground Truth 기반 종단 회귀 테스트(fake embedding, 빠름)
   python -m pytest -m e2e -v             # 실제 브라우저 E2E 테스트
   python -m pytest -m specification -v   # Markdown/Word 사양서 렌더링 테스트
   python -m pytest -m download -v        # 사양서 다운로드 API/E2E 테스트
+  python -m pytest -m real_rag -v        # 실제 Ollama(bge-m3) 임베딩으로 RAG 전체 경로 검증(Ollama 필요, 없으면 SKIPPED)
   ```
 
 - 테스트 체계와 각 테스트가 무엇을 검증하는지 자세한 설명은 `TESTING.md`를
