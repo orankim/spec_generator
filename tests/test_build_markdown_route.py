@@ -11,7 +11,6 @@ build-markdown"으로 대체했다 — 새 렌더러를 만들지 않고 기존 
 from fastapi.testclient import TestClient
 
 import main
-from agent.pptx_electrode_builder import ElectrodeSpecPPTXBuilder  # noqa: F401  (기존 모듈은 삭제하지 않았음을 명시)
 
 _SAMPLE_SPEC = {
     "equipment": {"name": "OptiScan ES-200", "manufacturer": "OptiScan", "model": "ES-200"},

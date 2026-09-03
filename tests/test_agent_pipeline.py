@@ -3,8 +3,8 @@
 
 Ollama가 실행 중인 사내 서버가 아니면 LLM 추론 자체는 검증할 수 없으므로,
 `agent.ollama_client.parse_structured` / `OllamaEmbeddings.embed_*` 만 스텁으로
-대체하고 나머지(파싱 결과 검증, RAG 인덱싱/검색, 병합 로직, 검증 규칙, PPTX 생성)는
-실제 코드 경로를 그대로 실행해서 검증한다.
+대체하고 나머지(파싱 결과 검증, RAG 인덱싱/검색, 병합 로직, 검증 규칙)는 실제
+코드 경로를 그대로 실행해서 검증한다.
 
 실행 방법:
     pip install pytest numpy
@@ -12,9 +12,7 @@ Ollama가 실행 중인 사내 서버가 아니면 LLM 추론 자체는 검증�
 """
 import hashlib
 import shutil
-import tempfile
 import unittest.mock as mock
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,7 +20,6 @@ from langchain_community.embeddings import OllamaEmbeddings
 
 from agent import spec_retriever
 from agent.pipeline import analyze_requirement, retrieve_and_generate
-from agent.pptx_electrode_builder import ElectrodeSpecPPTXBuilder
 from agent.requirement_validator import validate_requirement
 from agent.schemas import (
     RequirementSchema,
@@ -161,17 +158,6 @@ def _run_case(stub_requirement: RequirementSchema, followup: dict, stub_llm_spec
         specification, spec_validation, retrieved_docs = retrieve_and_generate(requirement, db_path=TEST_DB_PATH)
 
     assert len(retrieved_docs) > 0
-    from make_electrode_template import build_electrode_template
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        template_path = str(Path(tmp_dir) / "template_electrode.pptx")
-        build_electrode_template(template_path)
-        builder = ElectrodeSpecPPTXBuilder(template_path=template_path)
-        output_path = builder.build(specification, output_path=str(Path(tmp_dir) / "test_output.pptx"))
-
-        from pptx import Presentation
-        prs = Presentation(output_path)
-        assert len(prs.slides) == 9
     return specification, spec_validation
 
 
