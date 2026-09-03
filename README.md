@@ -365,17 +365,13 @@ Hard Requirement 결과 등)가 항상 일치합니다.
 ```
 spec_generator/
 ├── sample_specs/               # [입력] RAG 표준 Markdown 사양서 (SPEC-001.md ~ SPEC-052.md)
-├── sample_specs_original/      # [백업] 원본 사양서 데이터 보존 백업 폴더
 ├── chroma_db_specs/            # [생성] RAG용 Vector DB 저장 폴더 (build_rag_ollama.py가 생성)
 ├── generated_files/            # [생성] 다운로드용 Markdown/Word 사양서 저장 폴더
 ├── ground_truth/               # 사양서 정답지(사람이 확인용, RAG 색인 대상 아님)
 ├── build_rag_ollama.py         # RAG Vector DB 구축 및 재색인 스크립트 (--rebuild 지원)
 ├── scripts/
 │   ├── audit_sample_specs.py                 # sample_specs 데이터 무결성(중복 이름/필수 필드 누락 등) 감사 도구
-│   ├── migrate_specs_to_standard_schema.py   # 원본 사양서 -> 표준 마크다운 변환 스크립트
-│   ├── generate_ground_truth_dataset.py      # Ground Truth 데이터 세팅
 │   ├── validate_spec_schema.py               # Schema 검증 스크립트
-│   ├── verify_no_data_loss.py                # 데이터 누락 여부 검증 스크립트
 │   ├── validate_ground_truth.py              # Ground Truth 무결성 검증
 │   └── rag_diagnostics.py                    # RAG 색인 진단 CLI
 ├── main.py                     # FastAPI 웹 서버 + 채팅 UI (/agent 단일 기능)
