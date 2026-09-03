@@ -1670,6 +1670,28 @@ async def agent_page():
                     });
                 }
 
+                // 생성 완료 직후 실제 파일 다운로드를 코드로 트리거한다 — 사용자가
+                // "생성" 버튼을 누른 뒤 화면에 나타난 다운로드 링크를 다시 한 번
+                // 클릭해야 하는 2단계 흐름(버그 리포트)을 없애고, 한 번의 클릭으로
+                // 생성과 다운로드가 모두 끝나도록 한다. 서버(main.py:/api/download/
+                // {file_name})가 FileResponse(filename=...)로 Content-Disposition:
+                // attachment를 이미 보내므로 파일명은 서버가 결정한 값을 그대로
+                // 따른다 — 여기서는 클릭을 대신 발생시키는 역할만 한다.
+                function triggerDownload(url) {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.rel = 'noopener';
+                    // download 속성이 없으면 서버가 Content-Disposition: attachment를
+                    // 보내지 않는 응답(예: 오류 페이지)에서 브라우저가 다운로드 대신
+                    // 그 URL로 페이지 전체를 이동시켜버린다(SPA 상태 소실). 기존에
+                    // 렌더링되던 정적 <a ... download> 링크와 동일하게 download 속성을
+                    // 붙여, 같은 출처 링크는 항상 다운로드로 처리되도록 강제한다.
+                    a.download = '';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+
                 // 요청서 흐름의 마지막 단계(최종 사양서 다운로드) — EquipmentCard에 심은
                 // Markdown/Word 버튼 둘 다 이 함수 하나로 처리한다(format 인자로 분기).
                 // 그 검색을 만든 시점의 requirement/hardRequirementReport를 그대로 함께
@@ -1683,6 +1705,15 @@ async def agent_page():
                     const conv = getActiveConversation();
                     const msg = conv && conv.messages.find(m => m.id === msgId);
                     if (!msg || !msg.content.chosenCandidate) return;
+                    // 이미 생성되어 다운로드 URL이 있으면(예: 재렌더링 사이에 같은 버튼이
+                    // 다시 클릭된 경우) API를 다시 호출하지 않고 있는 파일을 그대로
+                    // 다시 내려받는다 — "한 번 생성되면 그 다음부터는 생성 없이 다운로드만"
+                    // 정책. 평소에는 생성이 끝나는 즉시 렌더링이 실제 <a href download>
+                    // 링크로 바뀌어 이 함수 자체가 다시 호출되지 않지만, 방어적으로 남겨둔다.
+                    if (msg.content[spec.urlField]) {
+                        triggerDownload(msg.content[spec.urlField]);
+                        return;
+                    }
                     // 이미 생성 중이면 같은 버튼을 다시 눌러도 무시한다 — 클릭과 renderAll()
                     // 재렌더링(버튼 disabled 반영) 사이의 짧은 틈에 빠르게 여러 번 누르면
                     // 중복 API 요청/중복 파일 생성이 발생하는 문제를 막는다(요청서 14절).
@@ -1706,6 +1737,11 @@ async def agent_page():
                         msg.content[spec.generatingField] = false;
                         saveConversations();
                         renderAll();
+                    }
+                    // 생성이 실제로 성공했을 때만(URL이 채워졌을 때만) 자동으로 다운로드를
+                    // 시작한다 — 실패 시에는 오류 배너 + "다시 시도" 버튼만 보여준다.
+                    if (msg.content[spec.urlField]) {
+                        triggerDownload(msg.content[spec.urlField]);
                     }
                 }
 
