@@ -10,15 +10,15 @@ Requirement (사용자 요구사항)
     -> RequirementSchema
     -> RAG(과거 사양서 검색) + Candidate Equipment
     -> SpecificationSchema (Specification JSON, single source of truth)
-    -> {Markdown, HTML, PPTX}  (표현 계층 — 서로 변환하지 않고 각자 JSON에서 독립 생성)
+    -> {Markdown, HTML}  (표현 계층 — 서로 변환하지 않고 각자 JSON에서 독립 생성)
 ```
 
 ## Design Principles
 
-1. **Schema는 데이터 구조, 렌더링은 표현이다.** Markdown/HTML/PPTX의 디자인 편의
-   때문에 `SpecificationSchema`의 필드를 바꾸지 않는다. 반대로 세 포맷은 전부
+1. **Schema는 데이터 구조, 렌더링은 표현이다.** Markdown/HTML의 디자인 편의
+   때문에 `SpecificationSchema`의 필드를 바꾸지 않는다. 반대로 두 포맷은 전부
    `renderers/common.py`의 `build_sections()`가 만드는 동일한 중간 모델(`RenderSection`/
-   `RenderRow`)만 소비하므로 세 포맷 사이에 내용이 어긋나지 않는다.
+   `RenderRow`)만 소비하므로 두 포맷 사이에 내용이 어긋나지 않는다.
 2. **Requirement와 Specification은 절대 같은 모델에 섞지 않는다.** "사용자가 원하는 것"과
    "장비가 실제로 제공하는 것"은 서로 다른 생명주기를 갖는다 — Requirement는 대화 초기에
    고정되고, Specification은 RAG/LLM 생성 후에도 검증 단계에서 계속 다듬어진다. 둘을
@@ -361,7 +361,6 @@ Schema를 변경해야 할 때는 항상 아래 순서로 진행한다:
 ## 관련 문서
 
 - `docs/SPECIFICATION_MARKDOWN_FORMAT.md` — Markdown 렌더링/파싱 포맷 상세
-- `docs/PPT_SLIDE_STRUCTURE.md` — PPTX 논리 슬라이드 구조
 - `docs/examples/example_specification.json` — 공개 가능한 예시 Specification JSON 1건
 - `templates/specification.md` — 빈 Markdown 스켈레톤
 - `IMPLEMENTATION_PLAN.md` — Agent 파이프라인 전체 아키텍처

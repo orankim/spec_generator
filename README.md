@@ -393,13 +393,12 @@ spec_generator/
 │   ├── spec_validator.py          # 자동 사양 검증 및 Hard Requirement Report 출력
 │   ├── pipeline.py                # 파이프라인 오케스트레이터
 │   └── routes.py                  # /api/agent/* 라우터
-├── renderers/                   # Markdown/HTML/PPTX/Word 출력 렌더러
+├── renderers/                   # Markdown/HTML/Word 출력 렌더러
 │   ├── common.py                     # SpecificationSchema 기반 공통 섹션 빌더
 │   ├── candidate_specification.py    # CandidateEquipment 기반 Markdown/Word 공통 Structured Data
 │   ├── markdown_renderer.py
 │   ├── docx_renderer.py              # Word(.docx) 렌더러
-│   ├── html_renderer.py
-│   └── pptx_renderer.py
+│   └── html_renderer.py
 ├── docs/                        # 상세 스키마 및 포맷 명세서
 ├── tests/                       # pytest 자동화 테스트 (Backend + tests/e2e/ Playwright, 총 890개 이상)
 │   └── ground_truth/regression_cases.json   # 실제 corpus 기반 종단 회귀 Ground Truth(T001~/QA001~)
@@ -419,7 +418,6 @@ spec_generator/
 | `AGENT_PORT` | `8000` | `python main.py`로 직접 실행할 때 쓰는 포트 |
 | `LOG_LEVEL` | `INFO` | 로그 상세도 |
 | `CHROMA_DB_PATH` | 저장소 루트의 `chroma_db_specs/` | Vector DB 경로 오버라이드(선택) |
-| `PPT_TEMPLATE_PATH` | (없음) | 회사 PPT 템플릿 경로(선택, 커밋 금지) |
 
 `main.py`(웹 서버)는 `.env`를 자동으로 읽습니다. 다만 `build_rag_ollama.py`를
 **직접** 실행할 때는 `.env`를 자동으로 읽지 않으므로, `OLLAMA_HOST` 등을

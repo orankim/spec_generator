@@ -8,8 +8,6 @@ main.py는 FastAPI 웹 서버 진입점이므로(기존 `python main.py`는 그�
 지원 명령:
     python main.py render-md specification.json [-o out.md]
     python main.py render-html specification.json [-o out.html]
-    python main.py render-pptx specification.json [-o out.pptx] [--template path.pptx]
-    python main.py pptx-to-md input.pptx [-o out.md]
     python main.py md-to-spec input.md [-o out.json]
 """
 from __future__ import annotations
@@ -20,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-KNOWN_COMMANDS = {"render-md", "render-html", "render-pptx", "pptx-to-md", "md-to-spec"}
+KNOWN_COMMANDS = {"render-md", "render-html", "md-to-spec"}
 
 
 def _load_specification(json_path: str):
@@ -50,24 +48,6 @@ def _cmd_render_html(args: argparse.Namespace) -> None:
     print(f"HTML 저장 완료: {out_path}")
 
 
-def _cmd_render_pptx(args: argparse.Namespace) -> None:
-    from renderers.pptx_renderer import render_pptx
-
-    spec = _load_specification(args.input)
-    out_path = args.output or str(Path(args.input).with_suffix(".pptx"))
-    render_pptx(spec, out_path, template_path=args.template)
-    print(f"PPTX 저장 완료: {out_path}")
-
-
-def _cmd_pptx_to_md(args: argparse.Namespace) -> None:
-    from converters.pptx_to_markdown import pptx_to_markdown
-
-    md = pptx_to_markdown(args.input)
-    out_path = args.output or str(Path(args.input).with_suffix(".md"))
-    Path(out_path).write_text(md, encoding="utf-8")
-    print(f"Markdown 저장 완료: {out_path}")
-
-
 def _cmd_md_to_spec(args: argparse.Namespace) -> None:
     from converters.markdown_to_spec import markdown_to_spec
 
@@ -81,8 +61,6 @@ def _cmd_md_to_spec(args: argparse.Namespace) -> None:
 _DISPATCH = {
     "render-md": _cmd_render_md,
     "render-html": _cmd_render_html,
-    "render-pptx": _cmd_render_pptx,
-    "pptx-to-md": _cmd_pptx_to_md,
     "md-to-spec": _cmd_md_to_spec,
 }
 
@@ -100,8 +78,6 @@ def run_cli(argv: List[str]) -> bool:
     parser = argparse.ArgumentParser(prog=f"main.py {command}")
     parser.add_argument("input")
     parser.add_argument("-o", "--output", default=None)
-    if command == "render-pptx":
-        parser.add_argument("--template", default=None, help="PPTX 템플릿 경로 (없으면 PPT_TEMPLATE_PATH 환경변수 또는 템플릿 없는 기본 렌더링)")
 
     args = parser.parse_args(argv[2:])
     _DISPATCH[command](args)

@@ -751,14 +751,18 @@ async def read_root():
 
 
 # ==========================================
-# 2. (제거됨) 사양서 제작하기 / 사양서 업로드하기
+# 2. (제거됨) 사양서 제작하기 / 사양서 업로드하기 / PPTX 변환
 # ==========================================
 # 기존에는 여기에 "/"(자연어 요구사항으로 PPTX 생성)와 "/upload"(RAG 학습용 PPTX
 # 업로드) 페이지가 있었다. 전극 검사기 AI(/agent)만 사용자 기능으로 남기기로 하여
 # UI/라우트를 제거했다. 이 기능들이 쓰던 generator.py(SpecGenerator)/pptx_builder.py
-# (PPTXBuilder) 모듈 자체는 삭제하지 않았다 — preprocess_specs.py가 계속
-# import하고, pptx_builder.py는 agent/pptx_electrode_builder.py(Agent의 PPTX 출력
-# 기능)가 재사용하는 공통 모듈이기 때문이다.
+# (PPTXBuilder)/agent/pptx_electrode_builder.py/renderers/pptx_renderer.py 등
+# PPTX 생성·변환 관련 모듈 전체를 이후 완전히 삭제했다(어떤 라이브 라우트에서도
+# 도달할 수 없었고, PPTX 변환 기능 자체를 걷어내기로 결정됨) — 사용자가 실제로
+# 접근 가능한 다운로드 형식은 Markdown(.md)/Word(.docx) 둘뿐이다. RAG가 sample_
+# specs/에 .pptx 원본 문서가 섞여 있어도 그대로 읽어 색인하는 입력 지원(build_rag_
+# ollama.py/agent/spec_retriever.py의 parse_pptx_file)은 이 기능과 무관한 별개
+# 경로라 그대로 남아있다.
 # ==========================================
 # 3. 전극 검사기 사양서 자동 생성 AI Agent 페이지
 # ==========================================
@@ -2230,7 +2234,6 @@ async def agent_page():
 # 폴더/엔드포인트).
 _DOWNLOAD_MEDIA_TYPES = {
     ".md": "text/markdown; charset=utf-8",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
