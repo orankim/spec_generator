@@ -179,6 +179,20 @@ def test_word_button_rapid_clicks_do_not_duplicate_requests(agent_page: Page, mo
     assert agent_page.locator("a.build-docx-btn-ready").count() == 1, "다운로드 링크가 중복 생성됨"
 
 
+def test_word_button_single_click_generates_and_downloads_immediately(agent_page: Page, mock_api):
+    """마크다운 버튼과 동일한 버그 리포트/수정 — Word 버튼도 클릭 한 번으로
+    생성과 다운로드가 모두 끝나야 한다(두 번째 클릭 불필요)."""
+    _send_and_get_equipment_card(agent_page, mock_api)
+
+    with agent_page.expect_download(timeout=10000) as download_info:
+        agent_page.locator(".build-docx-btn").click()
+    download = download_info.value
+    assert download.url.startswith("http") and "/api/download/" in download.url
+
+    expect(agent_page.locator("a.build-docx-btn-ready")).to_be_visible()
+    assert "생성 중..." not in agent_page.locator("#messages").inner_text()
+
+
 def test_download_buttons_do_not_overflow_on_mobile(page: Page, live_server: str, mock_api):
     """375px에서 두 다운로드 버튼이 가로 스크롤 없이 표시되어야 한다."""
     page.set_viewport_size({"width": 375, "height": 812})
