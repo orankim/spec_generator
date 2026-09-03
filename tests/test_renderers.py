@@ -1,23 +1,21 @@
 """
-Specification JSON을 단일 소스로 하는 3-way 렌더러(Markdown/HTML/PPTX)와
-PPTX <-> Markdown 변환기에 대한 테스트.
+Specification JSON을 단일 소스로 하는 렌더러(Markdown/HTML)와 Markdown ->
+Specification JSON 변환기에 대한 테스트.
 
 Ollama 호출이 전혀 없는 순수 변환 로직이므로, 이 테스트들은 모킹 없이
 실제 코드 경로 그대로 실행된다.
+
+(PPTX 렌더러/변환기(renderers/pptx_renderer.py, converters/pptx_to_markdown.py 등)는
+PPTX 변환 기능 전체와 함께 삭제되었다 — 이 파일에 있던 관련 테스트도 함께 제거했다.)
 """
 import json
-import tempfile
 from pathlib import Path
-
-from pptx import Presentation
 
 from agent.schemas import RequirementSchema, SourcedNumber, SourceRef, SpecificationSchema
 from agent.spec_validator import validate_specification
 from converters.markdown_to_spec import markdown_to_spec
-from converters.pptx_to_markdown import pptx_to_ir, pptx_to_markdown
 from renderers.html_renderer import render_html
 from renderers.markdown_renderer import render_markdown
-from renderers.pptx_renderer import render_pptx
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EXAMPLE_SPEC_PATH = _REPO_ROOT / "docs" / "examples" / "example_specification.json"
@@ -68,77 +66,7 @@ def test_spec_to_html():
 
 
 # ---------------------------------------------------------------
-# Test 3: Specification JSON -> PPTX (템플릿 없이도 동작해야 함)
-# ---------------------------------------------------------------
-def test_spec_to_pptx_without_template():
-    spec = _full_spec()
-    with tempfile.TemporaryDirectory() as tmp:
-        out = render_pptx(spec, str(Path(tmp) / "out.pptx"), template_path=None)
-        prs = Presentation(out)
-        assert len(prs.slides) > 1
-        all_text = "\n".join(
-            shape.text_frame.text
-            for slide in prs.slides
-            for shape in slide.shapes
-            if shape.has_text_frame
-        )
-        assert "전극 두께/표면결함 비접촉 검사기" in all_text
-
-
-def test_spec_to_pptx_with_template():
-    """
-    template_electrode.pptx는 회사 정책상 git에 커밋하지 않으므로(사내 PC에서
-    PPT_TEMPLATE_PATH로 지정), 테스트 자체가 make_electrode_template.build_electrode_template()로
-    임시 템플릿을 직접 생성해 자기완결적으로 검증한다 — 커밋된 바이너리 파일에 의존하지 않는다.
-    """
-    from make_electrode_template import build_electrode_template
-
-    spec = _full_spec()
-    with tempfile.TemporaryDirectory() as tmp:
-        template_path = str(Path(tmp) / "template_electrode.pptx")
-        build_electrode_template(template_path)
-        out = render_pptx(spec, str(Path(tmp) / "out.pptx"), template_path=template_path)
-        prs = Presentation(out)
-        assert len(prs.slides) == 9  # 기존 ElectrodeSpecPPTXBuilder 그대로 사용
-
-
-# ---------------------------------------------------------------
-# Test 4: PPTX -> Markdown
-# ---------------------------------------------------------------
-def _build_minimal_test_pptx(output_path: str) -> None:
-    """sample_specs/*.pptx 커밋 파일에 의존하지 않는 최소 2슬라이드(텍스트+표) PPTX."""
-    from pptx.util import Inches
-
-    prs = Presentation()
-    blank = prs.slide_layouts[6]
-    slide1 = prs.slides.add_slide(blank)
-    slide1.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(1)).text_frame.text = "테스트 장비 사양서"
-
-    slide2 = prs.slides.add_slide(blank)
-    table_shape = slide2.shapes.add_table(2, 2, Inches(1), Inches(1), Inches(4), Inches(2))
-    table_shape.table.cell(0, 0).text = "항목"
-    table_shape.table.cell(0, 1).text = "사양값"
-    table_shape.table.cell(1, 0).text = "정확도"
-    table_shape.table.cell(1, 1).text = "0.5um"
-    prs.save(output_path)
-
-
-def test_pptx_to_markdown_preserves_content():
-    with tempfile.TemporaryDirectory() as tmp:
-        pptx_path = str(Path(tmp) / "test.pptx")
-        _build_minimal_test_pptx(pptx_path)
-
-        md = pptx_to_markdown(pptx_path)
-        assert md.startswith("# ")
-        assert "## Slide 1" in md
-        assert "## Slide 2" in md
-        ir = pptx_to_ir(pptx_path)
-        assert len(ir.slides) == 2
-        assert len(ir.slides[1].tables) == 1  # 상세 사양 표가 있는 슬라이드
-
-
-# ---------------------------------------------------------------
-# Test 5: Markdown -> Specification JSON
+# Test 3: Markdown -> Specification JSON
 # ---------------------------------------------------------------
 def test_markdown_to_spec_roundtrip():
     original = _full_spec()
@@ -158,7 +86,7 @@ def test_markdown_to_spec_roundtrip():
 
 
 # ---------------------------------------------------------------
-# Test 6: UNKNOWN 값 보존
+# Test 4: UNKNOWN 값 보존
 # ---------------------------------------------------------------
 def test_unknown_values_preserved_through_markdown_roundtrip():
     spec = SpecificationSchema()  # 전부 비어있는 사양서
@@ -172,7 +100,7 @@ def test_unknown_values_preserved_through_markdown_roundtrip():
 
 
 # ---------------------------------------------------------------
-# Test 7: Source 정보 보존
+# Test 5: Source 정보 보존
 # ---------------------------------------------------------------
 def test_source_info_preserved_in_markdown_and_html():
     spec = _full_spec()
@@ -187,7 +115,7 @@ def test_source_info_preserved_in_markdown_and_html():
 
 
 # ---------------------------------------------------------------
-# Test 8: 단위 보존
+# Test 6: 단위 보존
 # ---------------------------------------------------------------
 def test_units_preserved():
     spec = _full_spec()
@@ -199,7 +127,7 @@ def test_units_preserved():
 
 
 # ---------------------------------------------------------------
-# Test 9: Optional Field 보존 (예: Optical System 정보가 전혀 없는 장비)
+# Test 7: Optional Field 보존 (예: Optical System 정보가 전혀 없는 장비)
 # ---------------------------------------------------------------
 def test_optional_optical_system_absent_does_not_break_rendering():
     spec = _full_spec()
@@ -207,10 +135,6 @@ def test_optional_optical_system_absent_does_not_break_rendering():
 
     md = render_markdown(spec)
     html = render_html(spec)
-    with tempfile.TemporaryDirectory() as tmp:
-        pptx_path = render_pptx(spec, str(Path(tmp) / "out.pptx"))
-        prs = Presentation(pptx_path)
-        assert len(prs.slides) > 1  # optical system이 비어 있어도 생성 자체는 성공
 
     assert "## 6. Optical System" in md
     assert "Light Source" in md
@@ -219,7 +143,7 @@ def test_optional_optical_system_absent_does_not_break_rendering():
 
 
 # ---------------------------------------------------------------
-# Test 10: 긴 텍스트 처리
+# Test 8: 긴 텍스트 처리
 # ---------------------------------------------------------------
 def test_long_text_handling():
     spec = SpecificationSchema()
@@ -235,11 +159,6 @@ def test_long_text_handling():
 
     html = render_html(spec)
     assert "A" * 500 in html
-
-    with tempfile.TemporaryDirectory() as tmp:
-        out = render_pptx(spec, str(Path(tmp) / "out.pptx"))
-        prs = Presentation(out)
-        assert len(prs.slides) > 1  # 긴 텍스트로도 생성 자체가 실패하지 않음
 
 
 # ---------------------------------------------------------------
@@ -334,8 +253,8 @@ def test_specification_schema_has_expected_top_level_sections():
 def test_example_specification_json_is_valid_and_renders_cleanly():
     """
     docs/examples/example_specification.json(공개 가능한 예시 1건)이 SpecificationSchema로
-    파싱되고, 검증을 통과하며(is_valid=True), 세 포맷 모두 예외 없이 렌더링되는지 확인한다.
-    스키마가 바뀔 때 이 예시 파일이 조용히 깨지는 것을 막기 위한 회귀 테스트다.
+    파싱되고, 검증을 통과하며(is_valid=True), Markdown/HTML 모두 예외 없이 렌더링되는지
+    확인한다. 스키마가 바뀔 때 이 예시 파일이 조용히 깨지는 것을 막기 위한 회귀 테스트다.
     """
     data = json.loads(_EXAMPLE_SPEC_PATH.read_text(encoding="utf-8"))
     spec = SpecificationSchema(**data)
@@ -348,39 +267,3 @@ def test_example_specification_json_is_valid_and_renders_cleanly():
     assert "전극 코팅 두께" in md
     html = render_html(spec)
     assert "<html" in html
-    with tempfile.TemporaryDirectory() as tmp:
-        out_path = str(Path(tmp) / "example.pptx")
-        render_pptx(spec, out_path)
-        assert Path(out_path).exists()
-
-
-def test_ppt_template_adapter_default_renders_without_template():
-    """
-    PPTTemplateAdapter(요청서 23절, render(specification, template_path, output_path) 시그니처)의
-    기본 구현이 템플릿 없이도(=존재하지 않는 경로) 동작해야 한다 — 회사 템플릿이 없는
-    환경에서도 파이프라인이 항상 PPTX 한 장을 만들어낼 수 있어야 하기 때문이다.
-    """
-    from templates.adapters.ppt_template_adapter import DefaultPPTTemplateAdapter, PPTTemplateAdapter
-
-    spec = _full_spec()
-    adapter: PPTTemplateAdapter = DefaultPPTTemplateAdapter()
-    with tempfile.TemporaryDirectory() as tmp:
-        out_path = str(Path(tmp) / "out.pptx")
-        result_path = adapter.render(spec, template_path="/no/such/template.pptx", output_path=out_path)
-        assert result_path == out_path
-        assert Path(out_path).exists()
-        prs = Presentation(out_path)
-        assert len(prs.slides) > 0
-
-
-def test_pptx_electrode_builder_still_importable_and_usable():
-    """agent/pptx_electrode_builder.py(기존 PPTX Generator)를 삭제하지 않고 그대로 재사용 가능해야 한다."""
-    from agent.pptx_electrode_builder import ElectrodeSpecPPTXBuilder
-    from make_electrode_template import build_electrode_template
-
-    with tempfile.TemporaryDirectory() as tmp:
-        template_path = str(Path(tmp) / "template_electrode.pptx")
-        build_electrode_template(template_path)
-        builder = ElectrodeSpecPPTXBuilder(template_path=template_path)
-        out = builder.build(_full_spec(), output_path=str(Path(tmp) / "legacy.pptx"))
-        assert Path(out).exists()

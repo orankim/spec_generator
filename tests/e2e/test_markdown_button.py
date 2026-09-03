@@ -163,3 +163,45 @@ def test_markdown_button_rapid_clicks_do_not_duplicate_requests(agent_page: Page
     expect(agent_page.locator("a.download-btn")).to_be_visible(timeout=10000)
     assert len(requests_seen) == 1, f"빠른 연속 클릭으로 마크다운 생성 요청이 중복 발생함: {requests_seen}"
     assert agent_page.locator("a.download-btn").count() == 1, "다운로드 링크가 중복 생성됨"
+
+
+def test_markdown_button_single_click_generates_and_downloads_immediately(agent_page: Page, mock_api):
+    """
+    버그 리포트: 예전에는 버튼을 한 번 눌러야 사양서가 "생성"되고, 화면에 나타난
+    다운로드 링크를 다시(두 번째로) 눌러야 실제 파일 다운로드가 시작됐다. 이제는
+    "생성" 버튼 클릭 한 번으로 생성과 다운로드가 모두 끝나야 한다 —
+    Playwright의 page.expect_download()로 같은 클릭 안에서 실제 다운로드
+    이벤트가 발생하는지 직접 검증한다(두 번째 클릭 없이).
+    """
+    _send_and_get_equipment_card(agent_page, mock_api)
+
+    with agent_page.expect_download(timeout=10000) as download_info:
+        agent_page.locator(".build-markdown-btn").click()
+    download = download_info.value
+    assert download.url.startswith("http") and "/api/download/" in download.url
+
+    # 다운로드가 끝난 뒤에는 버튼이 이미 완료 상태(ready 링크)로 바뀌어 있어야
+    # 한다 — "생성 중..."에 머물러 있거나 여전히 클릭을 기다리는 상태가 아니다.
+    expect(agent_page.locator("a.download-btn")).to_be_visible()
+    assert "생성 중..." not in agent_page.locator("#messages").inner_text()
+
+
+def test_markdown_ready_link_redownloads_without_regenerating(agent_page: Page, mock_api):
+    """한 번 생성된 뒤 완료 링크를 다시 클릭하면(예: 파일을 재차 저장하고 싶은 경우)
+    API를 다시 호출하지 않고 이미 만들어진 파일을 그대로 재다운로드해야 한다 —
+    "한 번 생성되면 그 다음부터는 생성 없이 다운로드만" 정책."""
+    _send_and_get_equipment_card(agent_page, mock_api)
+
+    requests_seen = []
+    agent_page.on(
+        "request",
+        lambda req: requests_seen.append(req.url) if "/api/agent/build-candidate-markdown" in req.url else None,
+    )
+
+    with agent_page.expect_download(timeout=10000):
+        agent_page.locator(".build-markdown-btn").click()
+    assert len(requests_seen) == 1
+
+    with agent_page.expect_download(timeout=10000):
+        agent_page.locator("a.download-btn").click()
+    assert len(requests_seen) == 1, "완료된 링크를 다시 눌렀는데 생성 API가 또 호출됨(재생성 발생)"
