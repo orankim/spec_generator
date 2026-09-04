@@ -242,10 +242,21 @@ python build_rag_ollama.py --rebuild
 1. 화면 가운데 입력창에 원하는 조건을 문장으로 입력합니다. 예:
    > 폭 800mm 이상, 두께를 측정할 수 있고 정확도 ±1μm 이하인 Inline 검사기를
    > 찾아줘.
-2. "전송" 버튼을 누르면 AI가 입력 내용을 이해한 결과("AI가 이해한 요구사항"
-   카드)를 먼저 보여줍니다. 조건이 부족하면 추가 질문을 하기도 합니다.
-3. 검색이 끝나면 추천 장비 카드가 나타나고, 그 아래에 각 요구조건이
-   PASS/FAIL/UNKNOWN(확인 불가) 중 무엇인지 표로 정리되어 나옵니다.
+2. "전송" 버튼을 누르면 **즉시 "답변을 생성하고 있습니다..." 로딩 표시**가
+   나타나 요청이 잘 접수되었음을 바로 알 수 있습니다(첫 응답이 오기 전까지
+   화면이 멈춘 것처럼 보이지 않도록 하는 장치입니다). 잠시 후 AI가 입력 내용을
+   이해한 결과("AI가 이해한 요구사항" 카드)를 보여줍니다. 조건이 부족하면
+   추가 질문을 하기도 합니다.
+3. 검색이 끝나면 추천 장비 카드가 나타나고, 그 아래에 각 요구조건이 **"필수
+   조건 충족" / "필수 조건 미충족" / "필수 조건 확인 불가"** 중 무엇인지 표로
+   정리되어 나옵니다.
+   - 값이 없어 "확인 불가"로 남은 일반 항목(정확도/분해능 등)은 기본
+     화면에서는 목록을 길게 늘어놓지 않고 **"확인되지 않은 사양 N개 보기"**로
+     접어 두며, 클릭하면 펼쳐서 볼 수 있습니다. 값 자체가 지워지는 것이
+     아니라 표시만 접어두는 것입니다.
+   - 이 카드가 근거로 삼은 사양서 문서도 기본은 **"근거 자료 N개 보기"**로
+     접혀 있고, 펼치면 파일명뿐 아니라 어떤 장비의 문서인지(장비명)도 함께
+     보여줍니다.
    - 만약 이름이 같은 장비가 대화 중 두 번 이상 다르게 추천되면(실제로 서로
      다른 장비인 경우), 화면에 구분 정보와 함께 "이전 추천과 이름은 같지만,
      서로 다른 장비입니다."라는 안내가 표시됩니다.
@@ -289,11 +300,21 @@ python build_rag_ollama.py --rebuild
 
 - **자연어 대화형 검색**: 조건을 문장으로 입력하면 AI가 이해한 내용을 먼저
   보여주고, 부족한 정보는 되물어 확인합니다(추측해서 진행하지 않습니다).
-- **결정론적 Hard Requirement 판정**: 전극 폭·측정 범위·정확도·검사
+- **답변 생성 중 표시**: 메시지를 전송하면 첫 API 응답이 오기 전부터 즉시
+  "답변을 생성하고 있습니다..." 하나의 로딩 상태를 보여줘, 첫 질문 처리
+  시간이 길어져도 화면이 멈춘 것처럼 오해하지 않도록 합니다("검색 중...",
+  "분석 중..." 같은 가짜 다단계 연출은 쓰지 않습니다).
+- **결정론적 필수 조건(Hard Requirement) 판정**: 전극 폭·측정 범위·정확도·검사
   속도·최소 검출 결함 크기·검사 모드(Inline/Offline)·측정 방식·측정
   원리·검사 항목(두께/표면 결함/3D 프로파일 등) 충족 여부를 AI의 판단이 아닌
-  **코드 규칙**으로 PASS/FAIL/UNKNOWN 판정합니다. 근거가 없는 값은 절대
-  추측해서 채우지 않고 정직하게 "UNKNOWN"으로 남깁니다.
+  **코드 규칙**으로 판정합니다(내부적으로는 PASS/FAIL/UNKNOWN). 화면에는
+  개발자 용어 대신 "필수 조건 충족/미충족/확인 불가"로 표시하며, 근거가
+  없는 값은 절대 추측해서 채우지 않고 정직하게 "확인 불가"로 남깁니다.
+- **UNKNOWN 항목/근거 자료 접이식 표시**: 근거 문서에 값이 없는 일반 사양
+  항목은 기본 화면에서 "확인되지 않은 사양 N개 보기"로 접어두어(데이터는
+  삭제되지 않고 클릭하면 펼쳐볼 수 있음) UNKNOWN이 과도하게 나열되어 신뢰도가
+  떨어져 보이는 문제를 줄입니다. 근거 문서 목록도 마찬가지로 "근거 자료 N개
+  보기"로 접고, 펼치면 파일명 대신(또는 함께) 실제 장비명을 보여줍니다.
 - **동일 이름 장비 구분(Disambiguation)**: 서로 다른 두 장비가 우연히 같은
   이름을 쓰는 경우에도, 실제로 다른 장비임을 사용자가 알 수 있도록 구분
   정보와 안내 문구를 자동으로 보여줍니다. 이름이 같고 실제로도 같은 장비라면
@@ -396,7 +417,7 @@ spec_generator/
 │   ├── docx_renderer.py              # Word(.docx) 렌더러
 │   └── html_renderer.py
 ├── docs/                        # 상세 스키마 및 포맷 명세서
-├── tests/                       # pytest 자동화 테스트 (Backend + tests/e2e/ Playwright, 총 890개 이상)
+├── tests/                       # pytest 자동화 테스트 (Backend + tests/e2e/ Playwright, 총 900개 이상)
 │   └── ground_truth/regression_cases.json   # 실제 corpus 기반 종단 회귀 Ground Truth(T001~/QA001~)
 ├── requirements.txt             # 의존성 패키지 목록
 ├── .env.example                 # 환경변수 설정 예시 (복사해서 .env로 사용)
@@ -434,14 +455,25 @@ python -m pytest tests -v
 ```
 
 - Backend(순수 로직/HTTP 계층) 테스트와 `tests/e2e/`의 실제 Chromium 브라우저
-  기반 E2E(UX) 테스트를 합쳐 **890개 이상**을 실행합니다. 이 중 일부는 실제
-  Ollama 서버가 켜져 있어야만 실행되는 테스트라 Ollama 없이 돌리면 자동으로
-  `SKIPPED`(실패 아님)로 표시됩니다.
+  기반 E2E(UX) 테스트를 합쳐 **900개 이상**을 실행합니다.
+- 테스트는 크게 두 단계로 나뉩니다.
+  - **Ollama 불필요(Level 1)**: Unit/HTTP 계층 테스트와 `tests/e2e/`의
+    Playwright 테스트 대부분은 Mock 응답(`fixtures.py`)이나 fake
+    embedding으로 동작하므로, **Ollama가 설치되어 있지 않아도 전부 실행되고
+    통과해야 합니다.** 답변 생성 중 로딩 표시(`tests/e2e/
+    test_ui_loading_state.py`)와 UNKNOWN/근거 자료 접이식 UI(`tests/e2e/
+    test_unknown_and_sources_disclosure.py`)처럼 이 화면 위주 기능도 이
+    단계에서 검증합니다.
+  - **Ollama 필요(Level 2, `real_rag` 마커)**: 실제 `qwen2.5`/`bge-m3` 모델과
+    실제 ChromaDB 검색까지 종단으로 검증하는 테스트입니다. Ollama가 켜져
+    있으면 실제로 실행되고, 꺼져 있으면 자동으로 `SKIPPED`(실패 아님)로
+    표시됩니다 — Fake embedding으로 몰래 대체되지 않습니다.
 - 마커로 원하는 그룹만 골라 실행할 수도 있습니다.
 
   ```powershell
+  python -m pytest tests --ignore=tests/e2e -m "not real_rag" -v   # Ollama 없이 실행 가능한 전체 테스트
   python -m pytest -m regression -v      # Ground Truth 기반 종단 회귀 테스트(fake embedding, 빠름)
-  python -m pytest -m e2e -v             # 실제 브라우저 E2E 테스트
+  python -m pytest -m e2e -v             # 실제 브라우저 E2E 테스트(Mock API, Ollama 불필요)
   python -m pytest -m specification -v   # Markdown/Word 사양서 렌더링 테스트
   python -m pytest -m download -v        # 사양서 다운로드 API/E2E 테스트
   python -m pytest -m real_rag -v        # 실제 Ollama(bge-m3) 임베딩으로 RAG 전체 경로 검증(Ollama 필요, 없으면 SKIPPED)
