@@ -57,15 +57,17 @@ def test_value_and_status_badge_are_visually_separated_not_concatenated(agent_pa
 
 def test_unknown_fields_are_hidden_in_equipment_card_but_explicit_in_hard_requirement(agent_page: Page, mock_api):
     """일반 EquipmentCard 항목은 근거 없는 값을 "미정"으로 채우지 않고 행 자체를
-    숨긴다(화면이 UNKNOWN 투성이로 길어지지 않음) — 반면 Hard Requirement 비교
-    영역은 항상 PASS/FAIL/UNKNOWN을 명시적으로 보여줘야 한다."""
+    숨긴다(화면이 UNKNOWN 투성이로 길어지지 않음) — 반면 필수 조건(Hard Requirement)
+    비교 영역은 항상 충족/미충족/확인 불가(PASS/FAIL/UNKNOWN)를 명시적으로 보여줘야
+    한다. "UNKNOWN"이라는 시스템 용어 자체는 UX 개선으로 "확인 불가"로 바뀌었다."""
     _send(agent_page, mock_api, "unknown")
     full_text = agent_page.locator("#messages").inner_text()
 
-    # Hard Requirement 비교 영역에는 UNKNOWN이 명시적으로 있어야 한다.
+    # 필수 조건 비교 영역에는 "확인 불가"가 명시적으로 있어야 한다(내부적으로는
+    # ComplianceRecord.result == "UNKNOWN").
     comparison_card = agent_page.locator(".hard-req-list")
     expect(comparison_card).to_be_visible()
-    assert "UNKNOWN" in comparison_card.inner_text()
+    assert "확인 불가" in comparison_card.inner_text()
 
     # 일반 EquipmentCard 쪽에는 "정확도" 행 자체가 UNKNOWN 값으로 채워져 길게
     # 나열되지 않아야 한다(fmtSourcedCell이 value=None이면 행을 숨김).
@@ -82,7 +84,7 @@ def test_pass_badge_shown_with_green_success_class(agent_page: Page, mock_api):
     pass_badges = agent_page.locator(".hard-req-list .badge-pass")
     assert pass_badges.count() > 0
     for i in range(pass_badges.count()):
-        expect(pass_badges.nth(i)).to_have_text("PASS")
+        expect(pass_badges.nth(i)).to_have_text("필수 조건 충족")
 
 
 def test_fail_badge_is_visually_distinct_from_pass(agent_page: Page, mock_api):
@@ -90,7 +92,7 @@ def test_fail_badge_is_visually_distinct_from_pass(agent_page: Page, mock_api):
     fail_badges = agent_page.locator(".hard-req-list .badge-fail")
     assert fail_badges.count() > 0
     for i in range(fail_badges.count()):
-        expect(fail_badges.nth(i)).to_have_text("FAIL")
+        expect(fail_badges.nth(i)).to_have_text("필수 조건 미충족")
     # FAIL 항목에는 "왜 실패했는지" 확인 가능한 이유 텍스트가 함께 있어야 한다.
     reason_texts = agent_page.locator(".hard-req-list li .reason").all_inner_texts()
     assert all(len(r.strip()) > 5 for r in reason_texts), f"실패 이유 텍스트가 비어있거나 너무 짧음: {reason_texts}"
@@ -105,7 +107,7 @@ def test_unknown_result_never_rendered_as_pass_badge(agent_page: Page, mock_api)
         item = hard_req_items.nth(i)
         text = item.inner_text()
         if "Accuracy" in text:
-            assert "UNKNOWN" in text
+            assert "확인 불가" in text
             assert item.locator(".badge-pass").count() == 0, "UNKNOWN 항목이 PASS 배지로 잘못 렌더링됨"
             found_unknown = True
     assert found_unknown, "테스트 전제(Accuracy=UNKNOWN)가 화면에 반영되지 않음"
