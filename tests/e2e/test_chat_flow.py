@@ -83,8 +83,12 @@ def test_loading_indicator_shown_then_input_disabled_then_reenabled(agent_page: 
 
 
 def test_ai_response_contains_core_ui_elements(agent_page: Page, mock_api):
-    """AI 응답의 정확한 문장이 아니라, 요구사항 요약/검색 완료/추천 장비/Hard Requirement
-    핵심 요소가 존재하는지만 검증한다(요청서 지시사항 — LLM/RAG 변동성 대비)."""
+    """AI 응답의 정확한 문장이 아니라, 요구사항 요약/검색 완료/추천 장비/필수 조건
+    핵심 요소가 존재하는지만 검증한다(요청서 지시사항 — LLM/RAG 변동성 대비).
+
+    "Hard Requirement"라는 개발자 용어는 UX 개선으로 "필수 조건"으로 바뀌었다 —
+    내부 데이터(hard_requirement_report/ComplianceRecord)는 그대로이므로 화면
+    표현만 이 문구로 확인한다."""
     _mock_success_flow(mock_api)
     _send_via_button(agent_page, QUESTION)
     _wait_for_ai_response(agent_page)
@@ -93,7 +97,8 @@ def test_ai_response_contains_core_ui_elements(agent_page: Page, mock_api):
     assert "AI가 이해한 요구사항" in full_text
     assert "검색 완료" in full_text
     assert re.search(r"추천\s*장비|추천\s*후보|참고\s*후보", full_text)
-    assert "Hard Requirement" in full_text
+    assert "필수 조건" in full_text
+    assert "Hard Requirement" not in full_text, "개발자 용어 'Hard Requirement'가 그대로 노출됨"
 
 
 # ---------------------------------------------------------------

@@ -465,20 +465,54 @@ PAGE_STYLE = """
     .typing-dots span:nth-child(3) { animation-delay: .4s; }
     @keyframes typing-blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
 
-    /* ===== 참고 문서 / References(문서 14절) ===== */
+    /* ===== 답변 생성 중 상태(UX 개선 A) — 사용자가 메시지를 보낸 직후, 첫 API
+       응답이 오기 전까지 화면 변화가 없어 "멈췄다"고 오해하지 않도록 즉시 보여주는
+       단일하고 정직한 로딩 상태. 여러 단계를 시간 기반으로 지어내지 않고, 이
+       메시지가 실제로 떠 있는 동안(=요청이 실제로 진행 중인 동안)만 보인다. */
+    .thinking-indicator { color: var(--text-secondary); }
+
+    /* ===== 참고 문서 / References(문서 14절, UX 개선 D — 기본 접힘 + 장비 중심 표시) =====
+       document(파일명) 목록만 나열하던 방식 대신 <details>로 기본은 접어두고,
+       실제로 가진 정보(chosen_candidate)가 있을 때만 장비명을 함께 보여준다.
+       근거 데이터(파일명) 자체는 그대로 유지하고 표시 방식만 바꾼다. */
     .sources-block { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grey-300); }
-    .sources-title {
+    .sources-block > summary.sources-title {
+        cursor: pointer;
+        list-style: none;
         font-size: var(--font-heading-md-size); font-weight: var(--font-heading-md-weight);
         line-height: var(--line-height-heading);
         color: var(--grey-900); margin-bottom: 8px;
     }
-    .sources-list { display: flex; flex-direction: column; gap: 6px; }
+    .sources-block > summary.sources-title::-webkit-details-marker { display: none; }
+    .sources-block > summary.sources-title::after { content: " ▾"; color: var(--text-secondary); }
+    .sources-block[open] > summary.sources-title::after { content: " ▴"; }
+    .sources-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+    .source-item { font-size: var(--font-body-sm-size); }
+    .source-item .source-equipment { color: var(--grey-900); font-weight: 500; }
+    .source-item .source-doc { color: var(--text-secondary); font-size: var(--font-support-size); margin-top: 1px; }
     .source-row {
         display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
         font-size: var(--font-body-sm-size); font-weight: var(--font-body-sm-weight);
         color: var(--grey-900);
     }
     .source-row .source-meta { font-size: var(--font-support-size); font-weight: var(--font-support-weight); color: var(--grey-900); opacity: .5; }
+
+    /* ===== 확인되지 않은 사양(UX 개선 C) — 근거 문서에 값이 없어 UNKNOWN으로 남은
+       일반 항목을 기본 화면에서는 숨기고, 필요할 때만 펼쳐볼 수 있게 한다. 데이터
+       자체(UNKNOWN 항목 목록)는 삭제하지 않고 그대로 보존한다 — 표시 방식만 접는다.
+       .card-row가 아닌 별도 클래스를 써서, 기본으로 항상 보이는 일반 항목 목록
+       (.card-row)과 섞이지 않게 한다. */
+    .unknown-specs-detail { margin-top: 10px; font-size: var(--font-body-sm-size); }
+    .unknown-specs-detail summary { cursor: pointer; list-style: none; color: var(--text-secondary); }
+    .unknown-specs-detail summary::-webkit-details-marker { display: none; }
+    .unknown-specs-detail summary::before { content: "▸ "; }
+    .unknown-specs-detail[open] summary::before { content: "▾ "; }
+    .unknown-specs-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+    .unknown-spec-row {
+        display: flex; justify-content: space-between; gap: 10px;
+        font-size: var(--font-body-sm-size); color: var(--text-secondary);
+    }
+    .unknown-spec-row .label { color: var(--text-secondary); }
 
     /* ===== 추가 질문 제안 / Related Questions ===== */
     .related-block { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grey-300); }
@@ -962,6 +996,17 @@ async def agent_page():
                     return full;
                 }
 
+                // "답변을 생성하고 있습니다..." 같은 일시적 상태 메시지를 실제 응답이
+                // 도착하면 지우기 위한 헬퍼(UX 개선 A) — 대화 기록 자체(사용자 질문/AI
+                // 답변)는 건드리지 않고, id로 지정한 메시지 하나만 제거한다.
+                function removeMessageById(conv, id) {
+                    const idx = conv.messages.findIndex(m => m.id === id);
+                    if (idx !== -1) {
+                        conv.messages.splice(idx, 1);
+                        saveConversations();
+                    }
+                }
+
                 // ================================================================
                 // 렌더링 — 메시지 type별 Component(순수 함수, HTML 문자열 반환)
                 // ================================================================
@@ -1125,6 +1170,17 @@ async def agent_page():
                     return `<span class="msg-text">⚠️ ${escapeHtml(content.text)}</span>`;
                 }
 
+                // ----- 답변 생성 중 표시(UX 개선 A) -----
+                // 사용자가 메시지를 보낸 직후 첫 API 응답이 오기까지 화면 변화가 없어
+                // "멈췄다"고 오해하지 않도록, 단순하고 정직한 로딩 상태 하나만 보여준다.
+                // "검색 중...", "분석 중..." 처럼 실제 진행 단계와 연결되지 않은 가짜
+                // 다단계 문구는 쓰지 않는다 — handleUserMessage()가 실제 요청 시작
+                // 시점에 이 메시지를 추가하고, 첫 응답(성공/실패 상관없이)이 오면 즉시
+                // 제거한다(아래 removeMessageById 참고).
+                function renderThinkingMessage() {
+                    return `<span class="msg-text thinking-indicator">답변을 생성하고 있습니다...<span class="typing-dots"><span></span><span></span><span></span></span></span>`;
+                }
+
                 // ----- RequirementSummaryCard (요청서 6절) -----
                 // 정책: 사용자가 실제로 입력했거나 대화 중 확정된 값만 보여준다 — 값이
                 // 없는 항목은 "미정"으로 채워 넣지 않고 행 자체를 렌더링하지 않는다
@@ -1189,9 +1245,9 @@ async def agent_page():
                 // 낮춰서 표현한다 — 검색된 후보 중 상대적으로 나은 순위일 뿐, 요구조건을
                 // 전부 확인했다는 뜻이 아니기 때문이다.
                 function equipmentBanner(hasFail, hasUnknown, hasRecords) {
-                    if (hasFail) return '<div class="banner banner-fail">⚠️ 모든 Hard Requirement를 만족하는 장비를 찾지 못했습니다 — 참고 후보 장비입니다.</div>';
-                    if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 조건 일부 확인 필요 — 확인된 조건은 만족하지만, 사양서에서 확인되지 않은 조건이 있어 모든 요구조건을 충족한다고 단정할 수 없습니다.</div>';
-                    if (hasRecords) return '<div class="banner banner-pass">✅ Hard Requirement 조건을 모두 충족합니다.</div>';
+                    if (hasFail) return '<div class="banner banner-fail">⚠️ 모든 필수 조건을 만족하는 장비를 찾지 못했습니다 — 참고 후보 장비입니다.</div>';
+                    if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 필수 조건 일부 확인 필요 — 확인된 조건은 만족하지만, 사양서에서 확인되지 않은 조건이 있어 모든 요구조건을 충족한다고 단정할 수 없습니다.</div>';
+                    if (hasRecords) return '<div class="banner banner-pass">✅ 필수 조건을 모두 충족합니다.</div>';
                     return '';
                 }
 
@@ -1215,6 +1271,25 @@ async def agent_page():
                     if (failed.length) blocks.push(`<div class="confirm-block confirm-fail"><strong>미충족 조건</strong><br>${failed.map(x => '✗ ' + x).join('<br>')}</div>`);
                     if (unresolved.length) blocks.push(`<div class="confirm-block confirm-unknown"><strong>확인 필요</strong><br>${unresolved.map(x => '? ' + x).join('<br>')}</div>`);
                     return blocks.join('');
+                }
+
+                // ----- 확인되지 않은 사양 접이식 목록(UX 개선 C) -----
+                // 정책: UNKNOWN 값을 "미정"으로 채워 넣거나 데이터 자체를 지우지 않는다
+                // (요청서: UNKNOWN 데이터를 결과/내부 데이터에서 삭제하지 않는다) — 다만
+                // 값이 있는 항목이 우선 보이도록, 값이 없는 항목은 기본 화면에서는 접어
+                // 두고 "확인되지 않은 사양 N개 보기"를 클릭해야 펼쳐지게 한다. "UNKNOWN"
+                // 이라는 시스템 용어 대신 "사양서에 정보 없음"으로 표현한다.
+                function renderUnknownFieldsBlock(labels) {
+                    if (!labels || labels.length === 0) return '';
+                    const items = labels
+                        .map(label => `<div class="unknown-spec-row"><span class="label">${escapeHtml(label)}</span><span>사양서에 정보 없음</span></div>`)
+                        .join('');
+                    return `
+                        <details class="unknown-specs-detail">
+                            <summary>확인되지 않은 사양 ${labels.length}개 보기</summary>
+                            <div class="unknown-specs-list">${items}</div>
+                        </details>
+                    `;
                 }
 
                 // 사양서 다운로드 포맷 정의 — Markdown/Word 버튼 렌더링과 생성 로직이
@@ -1285,27 +1360,44 @@ async def agent_page():
                     `;
                 }
 
-                // ----- 참고 문서 / References(문서 14절) — EquipmentCard 하단에 별도
-                // 영역으로 표시. 문서별 개별 "문서 보기" 링크는 만들지 않는다 — 이
-                // 서버에는 SPEC 원본 파일을 브라우저에서 열어보는 뷰어 라우트가 없어서,
-                // 실제로 동작하지 않는 링크를 화면에만 그려 넣는 것은 근거 없는 기능을
-                // 지어내는 것과 같기 때문이다(요청서 전반의 "근거 없는 정보를 만들지
-                // 않는다" 원칙). 대신 실제로 존재하는 정보(검색된 chunk 수)를 메타
-                // 정보로 보여준다.
-                function renderSourcesBlock(primarySources, retrievedSourcesCount) {
+                // ----- 근거 자료(UX 개선 D) — EquipmentCard 하단에 별도 영역으로 표시.
+                // 정책 변경(요청서 6절 개선사항 D):
+                //   1) 기본 화면에서는 접어둔다 — 파일명 목록을 항상 펼쳐 나열하면 화면이
+                //      복잡해지고 "SPEC-013.md" 같은 내부 파일명이 그대로 노출되어 사용자
+                //      에게는 기술적으로 보인다. <details>로 감싸 "근거 자료 N개 보기"만
+                //      기본 표시하고, 클릭하면 펼쳐진다.
+                //   2) Document-centric(파일명만 나열)보다 Equipment-centric(장비명 +
+                //      파일명)을 우선한다 — 그 문서가 실제로 채택된 후보(chosenCandidate)의
+                //      근거 문서와 같으면, 이미 카드에 있는 장비명을 함께 보여준다. 근거가
+                //      없는 다른 문서까지 장비명을 지어내지 않는다(chosenCandidate와 일치
+                //      하지 않는 문서는 파일명만 그대로 보여준다 — 근거 없는 추측 금지).
+                // 문서별 개별 "문서 보기" 링크는 만들지 않는다 — 이 서버에는 SPEC 원본
+                // 파일을 브라우저에서 열어보는 뷰어 라우트가 없어서, 실제로 동작하지 않는
+                // 링크를 화면에만 그려 넣는 것은 근거 없는 기능을 지어내는 것과 같기
+                // 때문이다. 대신 실제로 존재하는 정보(검색된 chunk 수)를 메타 정보로
+                // 보여준다. primarySources(근거 데이터 자체)는 그대로 유지하고 표시
+                // 방식만 바꾼다 — 데이터를 삭제하거나 새로 만들지 않는다.
+                function renderSourcesBlock(primarySources, retrievedSourcesCount, equipmentName, chosenCandidate) {
                     if (!primarySources || primarySources.length === 0) return '';
                     const uniqueSources = Array.from(new Set(primarySources));
-                    const items = uniqueSources.map(s => `
-                        <div class="source-row">
-                            <span>📄 ${escapeHtml(s)}</span>
-                        </div>
-                    `).join('');
+                    const items = uniqueSources.map(s => {
+                        const isChosenDocument = !!(chosenCandidate && chosenCandidate.source_document === s);
+                        const equipmentLine = (isChosenDocument && equipmentName)
+                            ? `<div class="source-equipment">${escapeHtml(equipmentName)}</div>`
+                            : '';
+                        return `
+                            <div class="source-item">
+                                ${equipmentLine}
+                                <div class="source-doc">📄 ${escapeHtml(s)}</div>
+                            </div>
+                        `;
+                    }).join('');
                     return `
-                        <div class="sources-block">
-                            <div class="sources-title">참고 문서 / References</div>
+                        <details class="sources-block">
+                            <summary class="sources-title">근거 자료 ${uniqueSources.length}개 보기</summary>
                             <div class="sources-list">${items}</div>
                             <div class="source-row source-meta" style="margin-top:6px;">검색된 chunk ${escapeHtml(retrievedSourcesCount)}개</div>
-                        </div>
+                        </details>
                     `;
                 }
 
@@ -1486,24 +1578,36 @@ async def agent_page():
                     // (실사용자 보고 버그: Width/Speed hard requirement가 FAIL인데도
                     // 카드에는 요구값이 그대로 표시되어 통과한 것처럼 보였다).
                     //
-                    // 정책: 실제 장비 사양이 존재하는 항목만 보여준다 — None/빈 문자열/
-                    // "미정" 등은 행 자체를 감춘다(Hard Requirement 비교 영역만 예외로
-                    // 항상 PASS/FAIL/UNKNOWN을 명시한다).
+                    // 정책: 실제 장비 사양이 존재하는 항목만 기본 화면에 보여준다 —
+                    // None/빈 문자열/"미정" 등은 행 자체를 감춘다(Hard Requirement 비교
+                    // 영역만 예외로 항상 PASS/FAIL/UNKNOWN을 명시한다). 다만 값이 없다고
+                    // 해서 그 항목이 "확인되지 않았다"는 사실 자체를 완전히 숨기지는
+                    // 않는다(UX 개선 C) — 근거 문서 대비 값이 있는지(status 개념이 있는)
+                    // 수치 항목(sourcedFieldRows)만 "확인되지 않은 사양" 접이식 목록으로
+                    // 따로 모아 필요할 때 펼쳐볼 수 있게 한다. 검사 방식/검사 항목처럼
+                    // status 개념이 없는 일반 필드(plainFieldRows)는 애초에 "UNKNOWN"이
+                    // 아니라 "해당 없음"에 가까우므로 이 목록에 넣지 않는다.
                     const inspectionItemsText = (spec.inspection_items || []).join(', ');
-                    const rows = [
+                    const sourcedFieldRows = [
                         ['측정 범위', fmtSourcedRangeCell(mp.measurement_range_full)],
                         ['정확도', fmtSourcedCell(mp.equipment_accuracy_um)],
                         ['분해능', fmtSourcedCell(mp.resolution_um)],
                         ['최소 검출 결함 크기', fmtSourcedCell(dd.equipment_minimum_defect_size_um || dd.minimum_defect_size_um)],
                         ['대응 가능 폭', fmtSourcedCell(target.equipment_max_width_mm)],
                         ['검사 속도', fmtSourcedCell(ip.line_speed_mm_s)],
+                    ];
+                    const plainFieldRows = [
                         ['검사 방식', eq.inline_offline ? `<span class="value">${escapeHtml(eq.inline_offline)}</span>` : null],
                         ['검사 항목', inspectionItemsText ? `<span class="value">${escapeHtml(inspectionItemsText)}</span>` : null],
                     ];
-                    const rowsHtml = rows
+                    const rowsHtml = [...sourcedFieldRows, ...plainFieldRows]
                         .filter(([, valueHtml]) => valueHtml !== null && valueHtml !== undefined)
                         .map(([label, valueHtml]) => `<div class="card-row"><span class="label">${escapeHtml(label)}</span>${valueHtml}</div>`)
                         .join('');
+                    const unknownFieldLabels = sourcedFieldRows
+                        .filter(([, valueHtml]) => valueHtml === null || valueHtml === undefined)
+                        .map(([label]) => label);
+                    const unknownFieldsHtml = renderUnknownFieldsBlock(unknownFieldLabels);
 
                     const subtitleHtml = disambiguationLabel
                         ? `<div class="card-subtitle">${escapeHtml(disambiguationLabel)}</div>`
@@ -1526,7 +1630,8 @@ async def agent_page():
                                 ${noResults}
                                 ${confirmationSummaryHtml(content.hardRequirementReport)}
                                 ${rowsHtml}
-                                ${renderSourcesBlock(primarySources, content.retrievedSourcesCount)}
+                                ${unknownFieldsHtml}
+                                ${renderSourcesBlock(primarySources, content.retrievedSourcesCount, eq.name, content.chosenCandidate)}
                                 ${renderRelatedQuestionsBlock(content)}
                                 ${renderDownloadArea(content, msgId)}
                             </div>
@@ -1538,11 +1643,26 @@ async def agent_page():
                 // 정책: UNKNOWN을 PASS로 표시하지 않는다 — Backend(agent.candidate_matcher/
                 // agent.spec_validator)가 이미 PASS/FAIL/UNKNOWN을 코드로 확정해 보내주므로
                 // 여기서는 그 값을 그대로(재판단 없이) 배지로만 옮긴다.
+                // 개발자/AI 용어("Hard Requirement", "PASS"/"FAIL"/"UNKNOWN")를 현업
+                // 사용자가 이해하기 쉬운 한국어 표현으로 옮긴다(UX 개선 B) — 내부
+                // 값(ComplianceRecord.result/CandidateEquipment.status)이나 배지 CSS
+                // 클래스(badge-pass/badge-fail/badge-unknown)는 그대로 두고, 화면에
+                // 보이는 문구만 바꾼다. PARTIAL은 이 화면에서 별도 문자열로 노출되지
+                // 않지만(hasFail=false && hasUnknown=true 조합이 이미 그 의미를
+                // banner-unknown/"필수 조건 일부 확인 필요"로 표현한다), 다른 화면에서
+                // 후보 status를 그대로 문구로 옮겨야 할 때를 대비해 함께 정의해둔다.
+                const HARD_REQ_RESULT_LABEL = {
+                    PASS: '필수 조건 충족',
+                    FAIL: '필수 조건 미충족',
+                    UNKNOWN: '필수 조건 확인 불가',
+                    PARTIAL: '필수 조건 일부 확인 필요',
+                    'N/A': '해당 없음',
+                };
                 const RESULT_BADGE = {
-                    PASS: '<span class="badge badge-pass">PASS</span>',
-                    FAIL: '<span class="badge badge-fail">FAIL</span>',
-                    UNKNOWN: '<span class="badge badge-unknown">UNKNOWN</span>',
-                    'N/A': '<span class="badge badge-unknown" style="background:#e0e0e0; color:#555;">N/A</span>',
+                    PASS: `<span class="badge badge-pass">${HARD_REQ_RESULT_LABEL.PASS}</span>`,
+                    FAIL: `<span class="badge badge-fail">${HARD_REQ_RESULT_LABEL.FAIL}</span>`,
+                    UNKNOWN: `<span class="badge badge-unknown">${HARD_REQ_RESULT_LABEL.UNKNOWN}</span>`,
+                    'N/A': `<span class="badge badge-unknown" style="background:#e0e0e0; color:#555;">${HARD_REQ_RESULT_LABEL['N/A']}</span>`,
                 };
 
                 // Backend(agent.spec_validator/agent.candidate_matcher)가 만드는 reason
@@ -1560,7 +1680,7 @@ async def agent_page():
                     if (records.length === 0) {
                         return `
                             <div class="card">
-                                <div class="card-header">Hard Requirement 검증</div>
+                                <div class="card-header">필수 조건 검증</div>
                                 <div class="card-body"><span class="value muted">평가할 조건이 지정되지 않았습니다.</span></div>
                             </div>
                         `;
@@ -1573,7 +1693,7 @@ async def agent_page():
                     }).join('');
                     return `
                         <div class="card">
-                            <div class="card-header">사용자 요구조건 검증 (Hard Requirement)</div>
+                            <div class="card-header">사용자 요구조건 검증 (필수 조건)</div>
                             <div class="card-body"><ul class="hard-req-list">${itemsHtml}</ul></div>
                         </div>
                     `;
@@ -1591,6 +1711,7 @@ async def agent_page():
                         );
                         case 'comparison_result': return renderComparisonCard(msg.content);
                         case 'error': return renderErrorMessage(msg.content);
+                        case 'thinking': return renderThinkingMessage();
                         default: return '';
                     }
                 }
@@ -1840,7 +1961,7 @@ async def agent_page():
                     const unknownItems = records.filter(r => r.result === 'UNKNOWN').map(r => r.item);
 
                     if (records.length === 0) {
-                        return `${name}에 대해 평가된 Hard Requirement 항목이 없습니다(요구사항에 확인 가능한 조건이 지정되지 않았습니다).`;
+                        return `${name}에 대해 평가된 필수 조건 항목이 없습니다(요구사항에 확인 가능한 조건이 지정되지 않았습니다).`;
                     }
 
                     const hasFail = failItems.length > 0;
@@ -1963,11 +2084,18 @@ async def agent_page():
                     }
 
                     setInputDisabled(true);
+                    // 요청 시작 즉시(첫 API 호출을 걸기 전에) 단일 로딩 상태를 보여준다
+                    // (UX 개선 A) — Requirement Parsing처럼 첫 응답이 오기까지 시간이
+                    // 걸리는 구간에도 화면이 멈춘 것처럼 보이지 않게 하기 위함이다. 첫
+                    // 응답이 도착하는 즉시(성공/실패 모두) 지운다.
+                    const thinkingMsg = addMessage({ role: 'assistant', type: 'thinking', content: {} });
+                    renderAll();
                     try {
                         if (!conv.currentRequirement) {
                             // 최초 메시지 — 기존 LLM 기반 전체 파싱(agent.requirement_parser.
                             // parse_requirement_text)을 그대로 재사용한다.
                             const data = await postJSON('/api/agent/analyze-requirement', { user_text: text });
+                            removeMessageById(conv, thinkingMsg.id);
                             conv.currentRequirement = data.requirement;
                             addMessage({ role: 'assistant', type: 'requirement_summary', content: { requirement: data.requirement, validation: data.validation } });
                             if (!data.validation.is_valid) {
@@ -1980,6 +2108,7 @@ async def agent_page():
                             // (agent.requirement_parser.apply_conversational_patch, 요청서
                             // 22절 원칙 6).
                             const data = await postJSON('/api/agent/update-requirement', { current_requirement: conv.currentRequirement, message: text });
+                            removeMessageById(conv, thinkingMsg.id);
                             conv.currentRequirement = data.requirement;
                             const changedSummary = data.changed_summary || [];
                             if (changedSummary.length > 0) {
@@ -1993,6 +2122,7 @@ async def agent_page():
                         }
                         renderAll();
                     } catch (err) {
+                        removeMessageById(conv, thinkingMsg.id);
                         addMessage({ role: 'assistant', type: 'error', content: { text: err.message } });
                         renderAll();
                     } finally {
