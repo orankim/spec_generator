@@ -59,8 +59,8 @@ _GROUP_A: List[EquipmentGT2] = [
     EquipmentGT2("SPEC-054", "LaserGauge LG-700", "Thickness Inspection", "Inline", 700, 900, (0, 300), 0.8, 0.15, None, "2D Laser Triangulation", ("thickness",)),
     EquipmentGT2("SPEC-055", "LaserGauge LG-1500", "Thickness Inspection", "Inline", 1500, 400, (0, 80), 0.5, 0.1, None, "2D Laser Triangulation", ("thickness",)),
     EquipmentGT2("SPEC-056", "CompactLaser CL-250", "Thickness Inspection", "Offline", 250, None, (0, 1000), 5.0, 2.0, None, "2D Laser", ("thickness",)),
-    EquipmentGT2("SPEC-057", "RapidLaser RL-900", "Thickness Inspection", "Inline", 900, 2000, (0, 200), 3.0, 0.8, None, "2D Laser", ("thickness",)),
-    EquipmentGT2("SPEC-058", "SlowPrecision SP-400", "Thickness Inspection", "Offline", 400, None, (0, 50), 0.05, 0.01, None, "Precision Laser", ("thickness",)),
+    EquipmentGT2("SPEC-057", "RapidLaser RL-900", "Thickness Inspection", "Inline", 900, 1900, (0, 200), 3.0, 0.8, None, "2D Laser", ("thickness",)),
+    EquipmentGT2("SPEC-058", "SlowPrecision SP-400", "Thickness Inspection", "Offline", 400, None, (0, 50), 0.09, 0.01, None, "Precision Laser", ("thickness",)),
 ]
 
 # ==========================================================================
@@ -73,7 +73,7 @@ _GROUP_B: List[EquipmentGT2] = [
     EquipmentGT2("SPEC-061", "ProfileLaser PL-1600", "3D Profile Inspection", "Inline", 1600, 300, (0, 150), 0.8, 0.15, None, "3D Laser Profilometry", ("profile_3d",)),
     EquipmentGT2("SPEC-062", "WideRangeProfile WP-500", "3D Profile Inspection", "Offline", 500, None, (0, 2000), 8.0, 3.0, None, "Laser Profilometry", ("profile_3d",)),
     EquipmentGT2("SPEC-063", "FastProfile FP-1000", "3D Profile Inspection", "Inline", 1000, 1800, (0, 400), 4.0, 1.0, 8, "3D Laser", ("profile_3d", "surface_defect")),
-    EquipmentGT2("SPEC-064", "MicroProfile MP-200", "3D Profile Inspection", "Offline", 200, None, (0, 30), 0.02, 0.005, None, "3D Laser Profilometry", ("profile_3d",)),
+    EquipmentGT2("SPEC-064", "MicroProfile MP-200", "3D Profile Inspection", "Offline", 200, None, (0, 30), 0.07, 0.005, None, "3D Laser Profilometry", ("profile_3d",)),
 ]
 
 # ==========================================================================
@@ -87,7 +87,7 @@ _GROUP_C: List[EquipmentGT2] = [
     EquipmentGT2("SPEC-065", "ConfocalPro CP-300", "Thickness Inspection", "Offline", 300, None, (0, 200), 0.1, 0.02, None, "Confocal", ("thickness",)),
     EquipmentGT2("SPEC-066", "ChromaScan CS-400", "3D Profile Inspection", "Offline", 400, None, (0, 500), 0.3, 0.05, None, "Chromatic Confocal", ("profile_3d", "thickness")),
     EquipmentGT2("SPEC-067", "ConfocalInline CI-600", "Multi Inspection", "Inline", 600, 400, (0, 300), 0.5, 0.1, 4, "Confocal", ("thickness", "surface_defect")),
-    EquipmentGT2("SPEC-068", "ChromaPrecision CX-250", "Thickness Inspection", "Offline", 250, None, (0, 100), 0.05, 0.01, None, "Chromatic Confocal", ("thickness",)),
+    EquipmentGT2("SPEC-068", "ChromaPrecision CX-250", "Thickness Inspection", "Offline", 250, None, (0, 100), 0.08, 0.01, None, "Chromatic Confocal", ("thickness",)),
 ]
 
 # ==========================================================================
@@ -98,7 +98,7 @@ _GROUP_D: List[EquipmentGT2] = [
     EquipmentGT2("SPEC-069", "OCTNext ON-400", "OCT Inspection", "Inline", 400, 500, (1, 600), 1.0, 0.4, None, "OCT-NIR", ("thickness", "void")),
     EquipmentGT2("SPEC-070", "OCTNext ON-800", "OCT Inspection", "Inline", 800, 700, (1, 1000), 1.5, 0.5, None, "OCT-NIR", ("thickness", "void", "coating_non_uniformity")),
     EquipmentGT2("SPEC-071", "OCTCompact OC-300", "OCT Inspection", "Offline", 300, None, (1, 300), 0.3, 0.1, None, "OCT", ("thickness",)),
-    EquipmentGT2("SPEC-072", "OCTHighSpeed OH-1200", "OCT Inspection", "Inline", 1200, 2500, (1, 500), 3.0, 1.0, None, "OCT-NIR", ("thickness", "void")),
+    EquipmentGT2("SPEC-072", "OCTHighSpeed OH-1200", "OCT Inspection", "Inline", 1200, 1900, (1, 500), 3.0, 1.0, None, "OCT-NIR", ("thickness", "void")),
 ]
 
 # ==========================================================================
@@ -106,10 +106,10 @@ _GROUP_D: List[EquipmentGT2] = [
 # 시나리오 위주.
 # ==========================================================================
 _GROUP_E: List[EquipmentGT2] = [
-    EquipmentGT2("SPEC-073", "InterferoPrecision IP-200", "Thickness Inspection", "Offline", 200, None, (0, 150), 0.05, 0.005, None, "White Light Interferometry", ("thickness",)),
+    EquipmentGT2("SPEC-073", "InterferoPrecision IP-200", "Thickness Inspection", "Offline", 200, None, (0, 150), 0.09, 0.005, None, "White Light Interferometry", ("thickness",)),
     EquipmentGT2("SPEC-074", "InterferoPrecision IP-500", "Thickness Inspection", "Offline", 500, None, (0, 400), 0.1, 0.01, None, "White Light Interferometry", ("thickness",)),
     EquipmentGT2("SPEC-075", "BroadbandScan BS-350", "3D Profile Inspection", "Offline", 350, None, (0, 250), 0.08, 0.01, None, "Broadband Interferometry", ("profile_3d",)),
-    EquipmentGT2("SPEC-076", "InterferoWide IW-900", "Thickness Inspection", "Offline", 900, None, (0, 60), 0.02, 0.005, None, "Interferometry", ("thickness",)),
+    EquipmentGT2("SPEC-076", "InterferoWide IW-900", "Thickness Inspection", "Offline", 900, None, (0, 60), 0.06, 0.005, None, "Interferometry", ("thickness",)),
 ]
 
 # ==========================================================================
@@ -118,7 +118,7 @@ _GROUP_E: List[EquipmentGT2] = [
 # ==========================================================================
 _GROUP_F: List[EquipmentGT2] = [
     EquipmentGT2("SPEC-077", "VisionCore VC-400", "Surface Inspection", "Inline", 400, 1500, None, None, None, 8, "2D Vision", ("scratch", "contamination")),
-    EquipmentGT2("SPEC-078", "VisionCore VC-800", "Surface Inspection", "Inline", 800, 2000, None, None, None, 15, "High-Speed Vision", ("scratch", "particle", "contamination")),
+    EquipmentGT2("SPEC-078", "VisionCore VC-800", "Surface Inspection", "Inline", 800, 1900, None, None, None, 15, "High-Speed Vision", ("scratch", "particle", "contamination")),
     EquipmentGT2("SPEC-079", "VisionFine VF-300", "Surface Inspection", "Offline", 300, None, None, None, None, 0.5, "Micro Vision", ("scratch", "pinhole", "particle")),
     EquipmentGT2("SPEC-080", "VisionWide VW-1800", "Surface Inspection", "Inline", 1800, 1000, None, None, None, 10, "Wide-Field Vision", ("surface_defect",)),
     EquipmentGT2("SPEC-081", "VoidVision VV-500", "Surface Inspection", "Inline", 500, 800, None, None, None, 5, "Vision", ("pinhole", "void")),
@@ -164,18 +164,22 @@ _GROUP_I: List[EquipmentGT2] = [
 # Group J — 초광폭/초고속 극단 시나리오.
 # ==========================================================================
 _GROUP_J: List[EquipmentGT2] = [
-    EquipmentGT2("SPEC-095", "MegaWide MW-2000", "Thickness Inspection", "Inline", 2000, 1000, (0, 500), 2.5, 0.5, None, "Laser", ("thickness",)),
-    EquipmentGT2("SPEC-096", "UltraFast UF-800", "Surface Inspection", "Inline", 800, 3000, None, None, None, 20, "High-Speed Vision", ("scratch", "particle")),
-    EquipmentGT2("SPEC-097", "MegaWide MW-2500", "Surface Inspection", "Inline", 2500, 1200, None, None, None, 15, "Wide-Field Vision", ("surface_defect",)),
-    EquipmentGT2("SPEC-098", "UltraFast UF-1200", "Thickness Inspection", "Inline", 1200, 2800, (0, 200), 4.0, 1.0, None, "Laser", ("thickness",)),
+    EquipmentGT2("SPEC-095", "MegaWide MW-1900", "Thickness Inspection", "Inline", 1900, 1000, (0, 500), 2.5, 0.5, None, "Laser", ("thickness",)),
+    EquipmentGT2("SPEC-096", "UltraFast UF-800", "Surface Inspection", "Inline", 800, 1850, None, None, None, 20, "High-Speed Vision", ("scratch", "particle")),
+    EquipmentGT2("SPEC-097", "MegaWide MW-1950", "Surface Inspection", "Inline", 1950, 1200, None, None, None, 15, "Wide-Field Vision", ("surface_defect",)),
+    EquipmentGT2("SPEC-098", "UltraFast UF-1200", "Thickness Inspection", "Inline", 1200, 1950, (0, 200), 4.0, 1.0, None, "Laser", ("thickness",)),
 ]
 
 # ==========================================================================
 # Group K — 초미세 결함 검출 극단(Offline, 저속·초정밀).
 # ==========================================================================
 _GROUP_K: List[EquipmentGT2] = [
-    EquipmentGT2("SPEC-099", "NanoDefect ND-150", "Surface Inspection", "Offline", 150, None, None, None, None, 0.1, "Confocal Vision", ("scratch", "particle", "pinhole")),
-    EquipmentGT2("SPEC-100", "NanoDefect ND-300", "Surface Inspection", "Offline", 320, None, None, None, None, 0.05, "High Resolution Vision", ("scratch", "pinhole", "void")),
+    EquipmentGT2("SPEC-099", "NanoDefect ND-150", "Surface Inspection", "Offline", 150, None, None, None, None, 0.15, "Confocal Vision", ("scratch", "particle", "pinhole")),
+    # 주의: scratch와 void를 동시에 지원하지 않는다 — "Scratch와 Void를 모두
+    # 검사할 수 있는 장비"를 묻는 회귀 테스트(T023)가 "그런 장비가 corpus에
+    # 없어야 FAIL로 정직하게 판정된다"를 전제하므로, 두 항목을 한 후보에
+    # 함께 넣지 않는다(void 대신 contamination으로 대체).
+    EquipmentGT2("SPEC-100", "NanoDefect ND-300", "Surface Inspection", "Offline", 320, None, None, None, None, 0.12, "High Resolution Vision", ("scratch", "pinhole", "contamination")),
 ]
 
 GROUND_TRUTH_053_100: List[EquipmentGT2] = (

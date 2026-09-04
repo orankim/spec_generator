@@ -19,7 +19,7 @@
 | Item | Specification |
 |---|---|
 | Measurement Range (Z) | 0 ~ 150 μm |
-| Accuracy | ±0.05 μm |
+| Accuracy | ±0.09 μm |
 | Z Resolution | 0.005 μm |
 
 ## Defect Inspection

@@ -18,7 +18,7 @@
 
 | Item | Specification |
 |---|---|
-| Measurement Speed | 3000 mm/s |
+| Measurement Speed | 1850 mm/s |
 
 ## Defect Inspection
 

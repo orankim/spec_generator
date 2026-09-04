@@ -18,8 +18,8 @@
 
 | Item | Specification |
 |---|---|
-| Minimum Detectable Defect | 0.05 μm |
-| Defect Types | Scratch, Pin Hole, Void |
+| Minimum Detectable Defect | 0.12 μm |
+| Defect Types | Scratch, Pin Hole, Contamination |
 
 ## System
 

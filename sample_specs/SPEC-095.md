@@ -3,7 +3,7 @@
 ## General
 
 - Manufacturer: MegaWide
-- Model: MW-2000
+- Model: MW-1900
 - Equipment Type: Thickness Inspection
 - Measurement Principle: Laser
 - Inspection Mode: Inline
@@ -12,7 +12,7 @@
 ## Inspection Target
 
 - Target: Battery Electrode
-- Maximum Electrode Width: 2000 mm
+- Maximum Electrode Width: 1900 mm
 
 ## Measurement Performance
 

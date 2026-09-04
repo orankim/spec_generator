@@ -21,7 +21,7 @@
 | Measurement Range (Z) | 1 ~ 500 μm |
 | Accuracy | ±3 μm |
 | Z Resolution | 1 μm |
-| Measurement Speed | 2500 mm/s |
+| Measurement Speed | 1900 mm/s |
 
 ## Defect Inspection
 

@@ -18,7 +18,7 @@
 
 | Item | Specification |
 |---|---|
-| Minimum Detectable Defect | 0.1 μm |
+| Minimum Detectable Defect | 0.15 μm |
 | Defect Types | Scratch, Particle, Pin Hole |
 
 ## System

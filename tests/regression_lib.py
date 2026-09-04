@@ -141,7 +141,19 @@ class RegressionRunResult:
         return matches[0] if matches else None
 
 
-def run_case(case: Dict[str, Any], db_path: str, k_per_query: int = 100) -> RegressionRunResult:
+def run_case(case: Dict[str, Any], db_path: str, k_per_query: int = 1000) -> RegressionRunResult:
+    """
+    k_per_query 기본값 1000(이전 100) — 이 회귀 테스트는 실제 Recall(k=15,
+    agent/spec_retriever.py 프로덕션 기본값)을 검증하는 것이 아니라, corpus
+    전체에서 후보를 빠짐없이 찾았다는 가정 하에 Hard Requirement 판정/랭킹
+    로직만 독립적으로 검증하는 것이 목적이다. 100은 corpus가 52개 문서
+    (383 chunk)였을 때는 "사실상 전체"였지만, SPEC-100개 확장(100개 문서,
+    736 chunk) 이후에는 fake-hash 임베딩(patched_embeddings) 특유의 의미
+    없는 유사도 순위 때문에 일부 정답 문서가 top-100 밖으로 밀려날 수 있다
+    (실측: T022 "PrecisionGauge PG-100"). corpus 규모가 커져도 이 테스트의
+    원래 취지(=검색 범위를 랭킹 로직 검증의 변수로 만들지 않는다)를 유지하려면
+    k도 그만큼 올려야 한다 — 실제 Recall 재검증(Phase 2)과는 별개다.
+    """
     requirement = parse_with_empty_llm(case["user_query"])
     retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db_path, k_per_query=k_per_query)
     candidates = build_candidates(requirement, retrieved_docs)

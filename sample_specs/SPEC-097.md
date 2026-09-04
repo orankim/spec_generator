@@ -3,7 +3,7 @@
 ## General
 
 - Manufacturer: MegaWide
-- Model: MW-2500
+- Model: MW-1950
 - Equipment Type: Surface Inspection
 - Measurement Principle: Wide-Field Vision
 - Inspection Mode: Inline
@@ -12,7 +12,7 @@
 ## Inspection Target
 
 - Target: Battery Electrode Surface
-- Maximum Electrode Width: 2500 mm
+- Maximum Electrode Width: 1950 mm
 
 ## Measurement Performance
 
