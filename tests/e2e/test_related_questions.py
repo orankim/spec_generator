@@ -1,9 +1,17 @@
 """
-요청서 3절 섹션 8 — 추가 질문 제안 / Related Questions.
+'추가 질문 제안' / Related Questions 섹션 제거 회귀 테스트.
 
-main.py의 buildRelatedQuestions()는 LLM을 다시 호출하지 않고 hard_requirement_report의
-UNKNOWN 항목 + 고정 문구 2개로 결정론적으로 만든다(최대 3개). wireCardActions()가
-".related-item" 클릭 시 handleUserMessage(질문 텍스트)를 바로 호출하도록 연결한다.
+이 기능은 원래 main.py의 buildRelatedQuestions()/renderRelatedQuestionsBlock()
+(hard_requirement_report의 UNKNOWN 항목 + 고정 문구 2개로 결정론적으로 만든 제안
+버튼 목록)이었으나, UX 개선 작업에서 AI 답변 끝의 '추가 질문 제안' 섹션 자체를
+완전히 제거하기로 했다. 이 파일은 그 제거가 실제로 적용됐는지(그리고 이후 다시
+실수로 부활하지 않는지) 확인한다.
+
+주의: "왜 추천됐는지 설명해달라"는 질문에 답하는 isExplanationQuery()/
+buildExplanationMessage() 로직 자체는 이 제거 대상이 아니다 — 사용자가 직접
+채팅으로 물어보면 여전히 동작해야 한다(tests/test_conversational_patch.py 등
+기존 테스트가 별도로 커버). 이 파일은 오직 "AI 답변에 자동으로 붙는 제안 버튼
+UI"가 사라졌는지만 확인한다.
 """
 from playwright.sync_api import Page, expect
 
@@ -21,77 +29,32 @@ def _send(page: Page, mock_api, scenario: str = "pass"):
     page.wait_for_function("() => !document.getElementById('sendBtn').disabled", timeout=10000)
 
 
-def test_related_questions_are_shown_after_search(agent_page: Page, mock_api):
+def test_related_questions_section_no_longer_rendered_after_search(agent_page: Page, mock_api):
     _send(agent_page, mock_api, "pass")
-    related = agent_page.locator(".related-item")
-    assert related.count() > 0
-    expect(agent_page.locator(".related-title")).to_have_text("추가 질문 제안")
+    assert agent_page.locator(".related-item").count() == 0, "제거되었어야 할 추가 질문 제안 버튼이 여전히 렌더링됨"
+    assert agent_page.locator(".related-block").count() == 0, "제거되었어야 할 추가 질문 제안 블록이 여전히 렌더링됨"
+    full_text = agent_page.locator("#messages").inner_text()
+    assert "추가 질문 제안" not in full_text
 
 
-def test_unknown_items_produce_specific_followup_question(agent_page: Page, mock_api):
-    """UNKNOWN 항목이 있으면 그 항목을 확인하는 질문이 제안 목록에 포함되어야 한다."""
+def test_related_questions_section_absent_even_with_unknown_items(agent_page: Page, mock_api):
+    """UNKNOWN 항목이 있어 예전이라면 특히 더 많은 제안이 붙었을 시나리오에서도
+    섹션 자체가 나타나지 않아야 한다."""
     _send(agent_page, mock_api, "unknown")
-    related_texts = agent_page.locator(".related-item").all_inner_texts()
-    assert any("Accuracy" in t and "확인" in t for t in related_texts), (
-        f"UNKNOWN 항목(Accuracy)에 대한 확인 질문이 제안되지 않음: {related_texts}"
-    )
+    assert agent_page.locator(".related-item").count() == 0
+    assert agent_page.locator(".related-block").count() == 0
 
 
-def test_clicking_related_question_sends_it_and_keeps_context(agent_page: Page, mock_api):
-    """추가 질문 클릭은 dead UI가 아니라 실제로 대화창에 전송되어야 하고, 기존
-    Context(currentRequirement)를 그대로 유지해 후속 취급(update-requirement)되어야
-    한다."""
+def test_explanation_chat_query_still_works_without_the_suggestion_buttons(agent_page: Page, mock_api):
+    """제안 버튼 UI는 사라졌지만, 사용자가 채팅으로 직접 "이유를 설명해줘"라고
+    물어보는 기능(main.py의 isExplanationQuery/buildExplanationMessage)은 이번
+    제거 대상이 아니므로 그대로 동작해야 한다."""
     _send(agent_page, mock_api, "pass")
-    # .first는 "이유를 설명해주세요" 질문 — main.py의 isExplanationQuery() 정규식(왜|이유|
-    # 설명해|근거가|어째서)에 걸려 API 호출 없이 로컬에서 바로 답한다(의도된 동작).
-    # 이 테스트는 "실제 API를 호출하는" 다른 제안 질문을 클릭해야 한다.
-    related_btn = agent_page.locator(".related-item").nth(1)
-    question_text = related_btn.inner_text()
+    before = agent_page.locator(".msg-row.ai").count()
 
-    from fixtures import make_requirement, make_update_response
+    agent_page.fill("#chatInput", "이 장비가 추천된 이유가 뭐야?")
+    agent_page.click("#sendBtn")
 
-    mock_api.mock(
-        "**/api/agent/update-requirement",
-        make_update_response(make_requirement(), changed_summary=[]),
-    )
-    related_btn.click()
-
-    expect(agent_page.locator(".msg-row.user").last).to_contain_text(question_text)
-    agent_page.wait_for_function("() => !document.getElementById('sendBtn').disabled", timeout=10000)
-
-    # dead UI가 아님: 실제로 update-requirement가 호출됐다(새 대화로 오인해
-    # analyze-requirement가 다시 불리지 않았다 = context 유지).
-    assert mock_api.call_count("**/api/agent/update-requirement") == 1
-    assert mock_api.call_count("**/api/agent/analyze-requirement") == 1
-
-
-def test_clicking_related_question_does_not_duplicate_request_on_double_click(agent_page: Page, mock_api):
-    """실제로 겹치는 "빠른 연속 클릭"을 재현하려면 두 클릭 사이에 네트워크 왕복이
-    끼어들면 안 된다 — Python 쪽에서 여러 번 .click()을 호출하면 그 사이에 mock
-    응답이 이미 완료되어 다음 클릭이 (겹치는 클릭이 아니라) 새로 나타난 다음 질문
-    제안에 대한 정당한 클릭이 되어버릴 수 있다. 그래서 브라우저 안에서 순수 동기
-    JS로 여러 번 .click()을 연달아 호출한다 — handleUserMessage()가 async여도 첫
-    번째 await 이전(가드 플래그 설정 포함)까지는 동기 실행되므로, 같은 동기 스크립트
-    안에서 곧바로 이어지는 클릭들은 네트워크 지연 여부와 무관하게 진짜로 겹친다."""
-    _send(agent_page, mock_api, "pass")
-    from fixtures import make_requirement, make_update_response
-
-    mock_api.mock(
-        "**/api/agent/update-requirement",
-        make_update_response(make_requirement(), changed_summary=[]),
-    )
-    agent_page.evaluate(
-        """
-        () => {
-            const btn = () => document.querySelectorAll('.related-item')[1];
-            for (let i = 0; i < 4; i++) {
-                const el = btn();
-                if (el) el.click();
-            }
-        }
-        """
-    )
-    agent_page.wait_for_function("() => !document.getElementById('sendBtn').disabled", timeout=10000)
-    assert mock_api.call_count("**/api/agent/update-requirement") == 1, (
-        "추가 질문 제안을 짧은 시간 안에 여러 번 클릭하면 동일 질문이 중복 전송됨"
-    )
+    expect(agent_page.locator(".msg-row.ai")).to_have_count(before + 1, timeout=5000)
+    last_ai_text = agent_page.locator(".msg-row.ai").last.inner_text()
+    assert len(last_ai_text.strip()) > 0

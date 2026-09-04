@@ -110,10 +110,25 @@ def test_render_candidate_docx_includes_equipment_name_and_sections():
         "General Specification", "Inspection Target", "Inspection Requirements",
         "Measurement Performance", "Spatial Performance", "Optical System",
         "Defect Inspection", "Inspection Performance", "System Configuration",
-        "Interfaces / Data", "Environment", "Safety", "Requirement Compliance",
-        "Sources / Notes",
+        "Requirement Compliance", "Sources / Notes",
     ):
         assert expected in headings, f"'{expected}' 섹션(Heading)이 문서에 없음: {headings}"
+
+
+def test_render_candidate_docx_excludes_interfaces_environment_safety_sections():
+    """요청서: 전극 검사 핵심 비교와 무관하고(CandidateEquipmentFact가 애초에
+    추출하지 않아 항상 UNKNOWN뿐인) Interfaces/Data, Environment, Safety
+    섹션은 Word 사양서에서 제외한다. Markdown(render_candidate_markdown)은
+    이 변경의 영향을 받지 않고 기존처럼 13개 섹션을 그대로 유지한다
+    (tests/test_specification_consistency.py 및 아래 markdown 쪽 회귀 테스트로
+    별도 확인)."""
+    candidate = _full_candidate()
+    docx_bytes = render_candidate_docx(candidate, requirement=None, hard_requirement_report=None)
+    document = _open_docx(docx_bytes)
+
+    headings = [p.text for p in document.paragraphs if p.style.name.startswith("Heading")]
+    for excluded in ("Interfaces / Data", "Environment", "Safety"):
+        assert excluded not in headings, f"'{excluded}' 섹션이 Word 사양서에서 제외되지 않음: {headings}"
 
 
 def test_render_candidate_docx_requirement_compliance_shows_pass_fail_unknown_distinctly():
