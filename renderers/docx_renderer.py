@@ -81,6 +81,16 @@ def _add_compliance_table(document: Document, compliance) -> None:
     document.add_paragraph()
 
 
+# Word 사양서에서만 제외하는 섹션(요청서: "핵심 전극 검사 비교와 무관하고 항상
+# UNKNOWN뿐인 섹션이 여전히 노출된다") — CandidateEquipmentFact가 애초에 이
+# 영역을 추출하지 않아(candidate_specification.py 주석 참고) 실제 데이터로 채워질
+# 일이 없는 3개 섹션만 Word 출력에서 제외한다. candidate_specification.py의
+# 공통 Structured Data(sections) 자체는 건드리지 않는다 — Markdown 사양서
+# (render_candidate_markdown)는 지금처럼 13개 섹션을 그대로 유지해야 하므로,
+# 두 포맷이 공유하는 데이터가 아니라 Word 렌더러가 소비하는 시점에만 걸러낸다.
+_DOCX_EXCLUDED_SECTION_IDS = {"interfaces", "environment", "safety"}
+
+
 def _build_document(data: CandidateSpecificationData) -> Document:
     document = Document()
 
@@ -92,7 +102,7 @@ def _build_document(data: CandidateSpecificationData) -> Document:
     _add_section_table(document, general)
 
     for section in data.sections:
-        if section.id == "general":
+        if section.id == "general" or section.id in _DOCX_EXCLUDED_SECTION_IDS:
             continue
         _add_section_table(document, section)
 

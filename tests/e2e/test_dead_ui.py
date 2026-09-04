@@ -2,10 +2,12 @@
 요청서 3절 섹션 16 — Dead UI 탐지.
 
 이 파일은 다른 테스트 파일에 흩어져 있는 개별 시나리오(전송 버튼, 마크다운 버튼,
-추가 질문 제안 등)를 "클릭했을 때 실제로 기능하는가"라는 하나의 관점으로 모아
+대화 목록 등)를 "클릭했을 때 실제로 기능하는가"라는 하나의 관점으로 모아
 한 번에 훑는다 — element 존재 여부가 아니라 클릭 → 관찰 가능한 상태 변화
 (DOM 변경, 네트워크 요청, 또는 로컬 상태 변경)가 실제로 일어나는지를 각각
-확인한다.
+확인한다. ('추가 질문 제안' 버튼은 UX 개선으로 완전히 제거되어 더 이상 이 관점의
+테스트 대상이 아니다 — tests/e2e/test_related_questions.py가 제거 자체를
+검증한다.)
 """
 from playwright.sync_api import Page, expect
 
@@ -81,24 +83,6 @@ def test_send_button_actually_dispatches_request(agent_page: Page, mock_api):
     _send(agent_page, mock_api)
     assert mock_api.call_count("**/api/agent/analyze-requirement") == 1
     assert mock_api.call_count("**/api/agent/generate-spec") == 1
-
-
-def test_related_question_button_actually_sends_and_updates_dom(agent_page: Page, mock_api):
-    _send(agent_page, mock_api)
-    before = agent_page.locator("#messages").inner_html()
-
-    from fixtures import make_requirement, make_update_response
-
-    mock_api.mock(
-        "**/api/agent/update-requirement",
-        make_update_response(make_requirement(), changed_summary=[]),
-    )
-    agent_page.locator(".related-item").nth(1).click()
-    agent_page.wait_for_function("() => !document.getElementById('sendBtn').disabled", timeout=10000)
-
-    after = agent_page.locator("#messages").inner_html()
-    assert before != after, "추가 질문 제안 클릭 후 화면에 아무 변화가 없음(dead UI)"
-    assert mock_api.call_count("**/api/agent/update-requirement") == 1
 
 
 def test_markdown_button_actually_dispatches_request_and_changes_dom(agent_page: Page, mock_api):

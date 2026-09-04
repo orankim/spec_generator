@@ -175,8 +175,6 @@ PAGE_STYLE = """
         opacity: .65;
     }
     .icon-btn:hover:not(:disabled) { background: rgba(0,0,0,.06); opacity: 1; }
-    .icon-btn.icon-btn-active { background: transparent; color: var(--primary-600); opacity: 1; }
-    .icon-btn.icon-btn-active:hover { background: rgba(45,155,178,.12); }
     .icon-btn.icon-btn-ghost { color: var(--grey-900); opacity: .3; cursor: default; }
     .icon-sidebar-spacer { flex: 1; }
 
@@ -334,14 +332,27 @@ PAGE_STYLE = """
         /* 날짜/메타 정보 라벨 — --text-tertiary(grey-50 배경 기준 4.93:1). */
         color: var(--text-tertiary);
     }
+    /* .conv-item-row(대화 하나) = .conv-item(클릭해서 전환, flex:1로 남는 폭을
+       모두 차지) + .conv-item-menu-btn(⋯, 요청서 4절 대화 이름 변경/삭제 메뉴).
+       기존에는 .conv-item 버튼 혼자 전체 폭을 썼지만, ⋯ 버튼이 추가되며 flex
+       row 안에서 폭을 나눠 갖는다 — 그래도 여전히 border-left(active 표시)/
+       hover 배경은 행 전체(.conv-item-row)에 적용해야 기존과 같은 느낌을 준다. */
+    .conv-item-row {
+        display: flex;
+        align-items: stretch;
+        position: relative;
+        border-left: 3px solid transparent;
+    }
+    .conv-item-row:hover { background: rgba(0,0,0,.04); }
+    .conv-item-row.active { background: var(--primary-100); border-left-color: var(--primary-500); }
     .conv-item {
         display: block;
-        width: 100%;
+        flex: 1;
+        min-width: 0;
         border: none;
-        border-left: 3px solid transparent;
         background: transparent;
         text-align: left;
-        padding: 8px 18px 8px 15px;
+        padding: 8px 4px 8px 15px;
         font-size: var(--font-body-sm-size);
         font-weight: var(--font-body-sm-weight);
         color: var(--grey-900);
@@ -350,8 +361,131 @@ PAGE_STYLE = """
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .conv-item:hover { background: rgba(0,0,0,.04); }
-    .conv-item.active { background: var(--primary-100); border-left-color: var(--primary-500); font-weight: 500; }
+    .conv-item-row.active .conv-item { font-weight: 500; }
+    .conv-item-menu-btn {
+        flex-shrink: 0;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        width: 28px;
+        font-size: var(--font-body-md-size);
+        line-height: 1;
+        border-radius: 4px;
+    }
+    .conv-item-menu-btn:hover, .conv-item-menu-btn[aria-expanded="true"] { background: rgba(0,0,0,.08); color: var(--grey-900); }
+
+    /* ===== 대화 관리(⋯) 드롭다운 — 이름 변경 / 삭제 ===== */
+    .conv-item-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 10px;
+        z-index: 20;
+        min-width: 140px;
+        background: #ffffff;
+        border: 1px solid var(--grey-300);
+        border-radius: 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,.12);
+        padding: 4px;
+        display: flex;
+        flex-direction: column;
+    }
+    .conv-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: none;
+        background: transparent;
+        text-align: left;
+        padding: 7px 10px;
+        border-radius: 6px;
+        font-size: var(--font-body-sm-size);
+        color: var(--grey-900);
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .conv-menu-item:hover { background: var(--grey-50); }
+    .conv-menu-item.conv-menu-delete { color: #9b2c2c; }
+
+    /* ===== 대화 이름 인라인 변경 ===== */
+    .conv-rename-form {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 8px 6px 15px;
+        min-width: 0;
+    }
+    .conv-rename-input {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--primary-600);
+        border-radius: 5px;
+        padding: 4px 6px;
+        font-size: var(--font-body-sm-size);
+        font-family: inherit;
+        color: var(--grey-900);
+    }
+    .conv-rename-input:focus { outline: none; box-shadow: 0 0 0 2px var(--primary-100); }
+    .conv-rename-save, .conv-rename-cancel {
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 5px;
+        background: transparent;
+        cursor: pointer;
+        font-size: var(--font-label-size);
+        line-height: 1;
+    }
+    .conv-rename-save { color: var(--primary-600); }
+    .conv-rename-save:hover { background: var(--primary-100); }
+    .conv-rename-cancel { color: var(--text-secondary); }
+    .conv-rename-cancel:hover { background: var(--grey-200); }
+
+    /* ===== 대화 삭제 확인 모달 ===== */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        background: rgba(31, 31, 31, .4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    }
+    .modal-box {
+        background: #ffffff;
+        border-radius: 12px;
+        max-width: 360px;
+        width: 100%;
+        padding: 20px;
+        box-shadow: 0 12px 32px rgba(0,0,0,.2);
+    }
+    .modal-box h2 {
+        font-size: var(--font-heading-md-size); font-weight: var(--font-heading-md-weight);
+        line-height: var(--line-height-heading);
+        margin: 0 0 8px; color: var(--grey-900);
+    }
+    .modal-box p {
+        font-size: var(--font-body-sm-size); line-height: var(--line-height-body);
+        margin: 0 0 18px; color: var(--text-secondary);
+        word-break: break-word;
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .modal-actions button {
+        border: none;
+        border-radius: 6px;
+        padding: 8px 16px;
+        font-size: var(--font-body-sm-size);
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .modal-btn-cancel { background: var(--grey-200); color: var(--grey-900); }
+    .modal-btn-cancel:hover { background: var(--grey-300); }
+    .modal-btn-danger { background: #9b2c2c; color: #ffffff; }
+    .modal-btn-danger:hover { background: #822727; }
+
     /* opacity 기반 대비 축소를 텍스트 토큰으로 교체(요청서 5절). */
     .conv-empty { padding: 10px 18px; font-size: var(--font-label-size); color: var(--text-secondary); }
 
@@ -513,24 +647,6 @@ PAGE_STYLE = """
         font-size: var(--font-body-sm-size); color: var(--text-secondary);
     }
     .unknown-spec-row .label { color: var(--text-secondary); }
-
-    /* ===== 추가 질문 제안 / Related Questions ===== */
-    .related-block { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--grey-300); }
-    .related-title {
-        font-size: var(--font-heading-md-size); font-weight: var(--font-heading-md-weight);
-        line-height: var(--line-height-heading);
-        color: var(--grey-900); margin-bottom: 8px;
-    }
-    .related-list { display: flex; flex-direction: column; gap: 4px; }
-    .related-item {
-        display: block; width: 100%; text-align: left;
-        border: none; background: transparent; cursor: pointer;
-        padding: 6px 8px; margin: 0 -8px; border-radius: 6px;
-        font-size: var(--font-body-sm-size); font-weight: var(--font-body-sm-weight);
-        line-height: var(--line-height-body);
-        color: var(--grey-900);
-    }
-    .related-item:hover { background: var(--primary-100); }
 
     /* ===== Cards (used inside AI content) ===== */
     .card { background: #ffffff; border: 1px solid var(--grey-300); border-radius: 8px; overflow: hidden; }
@@ -825,7 +941,6 @@ async def agent_page():
             <div class="shell" id="appShell">
                 <div class="icon-sidebar">
                     <button type="button" id="hamburgerBtn" class="icon-btn" title="사이드바 접기/펼치기" aria-expanded="true" aria-controls="convSidebar">☰</button>
-                    <button type="button" class="icon-btn icon-btn-active" title="전극 검사기 AI">🔋</button>
                     <div class="icon-sidebar-spacer"></div>
                     <button type="button" class="icon-btn icon-btn-ghost" title="추가 AI 서비스(예정)" disabled>⚙</button>
                 </div>
@@ -834,6 +949,13 @@ async def agent_page():
                      (요청서 7~10절) — 데스크톱에서는 CSS 기본값(display:none)으로
                      완전히 비활성화된다. -->
                 <div class="mobile-backdrop" id="mobileBackdrop" aria-hidden="true"></div>
+
+                <!-- 대화 삭제 확인 모달(요청서 4-2절)이 렌더링되는 위치. 사이드바가
+                     접혀(width:0/opacity:0) 있어도 모달은 항상 화면 중앙에 정상적으로
+                     보여야 하므로, 사이드바 내부가 아니라 .shell 바로 아래(항상 표시되는
+                     레이어)에 별도 root를 둔다. renderConvDeleteModal()이 state.pendingDeleteId
+                     유무에 따라 내용을 채우거나 비운다. -->
+                <div id="convDeleteModalRoot"></div>
 
                 <div class="conv-sidebar" id="convSidebar" role="navigation" aria-label="대화 목록">
                     <div class="conv-sidebar-header">
@@ -888,6 +1010,13 @@ async def agent_page():
                     conversations: [],        // Conversation[] — 아래 getOrCreateActiveConversation() 참고
                     activeConversationId: null,
                     searchQuery: '',
+                    // 대화 이름 변경/삭제(요청서 4절) — 대화 데이터가 아니라 순수 UI 상태이므로
+                    // sessionStorage에 저장하지 않는다(새로고침하면 자연스럽게 닫힌 상태로
+                    // 돌아가는 것이 맞다). 한 번에 하나의 항목만 메뉴/편집/삭제확인 상태를
+                    // 가질 수 있다.
+                    convMenuOpenId: null,      // ⋯ 더보기 메뉴가 열려 있는 대화 id
+                    convRenamingId: null,      // 이름 변경 인라인 입력이 열려 있는 대화 id
+                    pendingDeleteId: null,     // 삭제 확인 모달이 떠 있는 대화 id
                 };
 
                 function loadConversations() {
@@ -973,6 +1102,17 @@ async def agent_page():
                     'OCT 기반 장비 찾기': 'OCT 기반으로 측정하는 전극 검사기를 찾아줘.',
                     '3D Profile 검사기 찾기': '전극의 3D 프로파일(형상)을 측정할 수 있는 검사기를 찾아줘.',
                 };
+
+                // 신규 대화 첫 화면 안내(UX 개선) — 어떤 질문을 입력할 수 있는지 예시를
+                // 입력창 placeholder로 보여준다. 반드시 value가 아니라 placeholder여야
+                // 한다: 실제 입력값이면 포커스/타이핑과 무관하게 전송 버튼을 누르는 순간
+                // 그대로 메시지로 전송될 위험이 있지만, placeholder는 네이티브 HTML
+                // 동작상 그 자체로는 절대 값이 되지 않고 사용자가 타이핑을 시작하면
+                // 자동으로 사라진다. 빈 대화(메시지 0개)일 때만 이 문구를 쓰고, 메시지가
+                // 하나라도 있는(기존 대화를 불러온) 상태에서는 원래 안내 문구로
+                // 되돌린다 — renderAll()이 매번 이 상태를 다시 계산해서 반영한다.
+                const NEW_CONVERSATION_PLACEHOLDER = '폭 800mm 이상의 전극을 Inline으로 검사하고, 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘.';
+                const DEFAULT_CHAT_PLACEHOLDER = '필요한 전극 검사 조건이나 궁금한 내용을 입력하세요.';
 
                 function escapeHtml(text) {
                     const div = document.createElement('div');
@@ -1375,8 +1515,11 @@ async def agent_page():
                 // 파일을 브라우저에서 열어보는 뷰어 라우트가 없어서, 실제로 동작하지 않는
                 // 링크를 화면에만 그려 넣는 것은 근거 없는 기능을 지어내는 것과 같기
                 // 때문이다. 대신 실제로 존재하는 정보(검색된 chunk 수)를 메타 정보로
-                // 보여준다. primarySources(근거 데이터 자체)는 그대로 유지하고 표시
-                // 방식만 바꾼다 — 데이터를 삭제하거나 새로 만들지 않는다.
+                // 보여준다 — 다만 "chunk"는 개발자 관점 용어라 사용자에게는 "참고한
+                // 사양서 내용 N개"로 순화해서 표시한다(내부 변수명/데이터 자체는 그대로
+                // retrievedSourcesCount다 — 표시 문구만 바꾼다). primarySources(근거
+                // 데이터 자체)는 그대로 유지하고 표시 방식만 바꾼다 — 데이터를 삭제하거나
+                // 새로 만들지 않는다.
                 function renderSourcesBlock(primarySources, retrievedSourcesCount, equipmentName, chosenCandidate) {
                     if (!primarySources || primarySources.length === 0) return '';
                     const uniqueSources = Array.from(new Set(primarySources));
@@ -1396,37 +1539,8 @@ async def agent_page():
                         <details class="sources-block">
                             <summary class="sources-title">근거 자료 ${uniqueSources.length}개 보기</summary>
                             <div class="sources-list">${items}</div>
-                            <div class="source-row source-meta" style="margin-top:6px;">검색된 chunk ${escapeHtml(retrievedSourcesCount)}개</div>
+                            <div class="source-row source-meta" style="margin-top:6px;">참고한 사양서 내용 ${escapeHtml(retrievedSourcesCount)}개</div>
                         </details>
-                    `;
-                }
-
-                // ----- 추가 질문 제안 / Related Questions -----
-                // Backend가 별도의 "관련 질문 추천" API를 제공하지 않으므로, 이미 확인된
-                // 이 검색 결과(hardRequirementReport)만 근거로 결정론적으로 만든다 —
-                // LLM을 다시 호출해 근거 없는 질문을 지어내지 않는다. UNKNOWN 항목이
-                // 있으면 그 항목을 확인하는 질문을, 없으면 일반적인 후속 질문만 제안한다.
-                function buildRelatedQuestions(content) {
-                    const records = content.hardRequirementReport || [];
-                    const unknownItems = records.filter(r => r.result === 'UNKNOWN').map(r => r.item);
-                    const questions = [];
-                    unknownItems.slice(0, 2).forEach(item => {
-                        questions.push(`${item} 항목은 어떻게 확인할 수 있나요?`);
-                    });
-                    questions.push('이 장비가 추천된 이유를 설명해주세요.');
-                    questions.push('조건에 맞는 다른 장비도 함께 비교해주세요.');
-                    return questions.slice(0, 3);
-                }
-
-                function renderRelatedQuestionsBlock(content) {
-                    const questions = buildRelatedQuestions(content);
-                    if (!questions.length) return '';
-                    const items = questions.map(q => `<button type="button" class="related-item" data-related-question="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('');
-                    return `
-                        <div class="related-block">
-                            <div class="related-title">추가 질문 제안</div>
-                            <div class="related-list">${items}</div>
-                        </div>
                     `;
                 }
 
@@ -1568,7 +1682,7 @@ async def agent_page():
                     const primarySources = (spec.primary_sources && spec.primary_sources.length > 0) ? spec.primary_sources : (spec.sources || []);
 
                     const noResults = content.retrievedSourcesCount === 0
-                        ? '<div class="banner banner-unknown">⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다(검색된 chunk 0개). 아래 값은 사용자가 입력한 요구사항 외에는 근거가 없습니다.</div>'
+                        ? '<div class="banner banner-unknown">⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다(참고한 사양서 내용 0개). 아래 값은 사용자가 입력한 요구사항 외에는 근거가 없습니다.</div>'
                         : '';
 
                     // 검사 폭/속도는 target.width_mm(요구값 echo)이 아니라 후보 문서에서
@@ -1632,7 +1746,6 @@ async def agent_page():
                                 ${rowsHtml}
                                 ${unknownFieldsHtml}
                                 ${renderSourcesBlock(primarySources, content.retrievedSourcesCount, eq.name, content.chosenCandidate)}
-                                ${renderRelatedQuestionsBlock(content)}
                                 ${renderDownloadArea(content, msgId)}
                             </div>
                         </div>
@@ -1751,8 +1864,10 @@ async def agent_page():
                     if (messages.length === 0) {
                         container.classList.add('is-empty');
                         container.appendChild(makeWelcomeBlock());
+                        chatInput.placeholder = NEW_CONVERSATION_PLACEHOLDER;
                     } else {
                         container.classList.remove('is-empty');
+                        chatInput.placeholder = DEFAULT_CHAT_PLACEHOLDER;
                         messages.forEach(msg => {
                             const isUser = msg.role === 'user';
                             const row = document.createElement('div');
@@ -1788,10 +1903,6 @@ async def agent_page():
                 function wireCardActions() {
                     document.querySelectorAll('.build-markdown-btn, .build-docx-btn').forEach(btn => {
                         btn.addEventListener('click', () => buildDocumentForMessage(btn.dataset.msgId, btn.dataset.format));
-                    });
-                    // 추가 질문 제안 클릭 시 바로 전송한다(문서 15절: "즉시 질문을 전송").
-                    document.querySelectorAll('.related-item').forEach(btn => {
-                        btn.addEventListener('click', () => handleUserMessage(btn.dataset.relatedQuestion));
                     });
                 }
 
@@ -1896,6 +2007,42 @@ async def agent_page():
                     return `${y}/${m}/${d}`;
                 }
 
+                // 대화 하나(.conv-item-row)를 상태(state.convRenamingId/convMenuOpenId)에 따라
+                // "일반 표시" 또는 "이름 변경 인라인 입력" 중 하나로 그린다(요청서 4-1절).
+                function renderConvItemRow(c) {
+                    const isActive = c.id === state.activeConversationId;
+                    const title = c.title || '새로운 대화';
+
+                    if (state.convRenamingId === c.id) {
+                        return `
+                            <div class="conv-item-row ${isActive ? 'active' : ''}" data-conv-id="${escapeHtml(c.id)}">
+                                <form class="conv-rename-form" data-conv-id="${escapeHtml(c.id)}">
+                                    <input type="text" class="conv-rename-input" value="${escapeHtml(title)}" maxlength="60" aria-label="대화 이름 변경">
+                                    <button type="submit" class="conv-rename-save" title="저장" aria-label="저장">✓</button>
+                                    <button type="button" class="conv-rename-cancel" title="취소" aria-label="취소">✕</button>
+                                </form>
+                            </div>
+                        `;
+                    }
+
+                    const isMenuOpen = state.convMenuOpenId === c.id;
+                    const dropdownHtml = isMenuOpen ? `
+                        <div class="conv-item-dropdown" role="menu">
+                            <button type="button" class="conv-menu-item conv-menu-rename" data-conv-id="${escapeHtml(c.id)}" role="menuitem">✏️ 이름 변경</button>
+                            <button type="button" class="conv-menu-item conv-menu-delete" data-conv-id="${escapeHtml(c.id)}" role="menuitem">🗑 대화 삭제</button>
+                        </div>
+                    ` : '';
+                    return `
+                        <div class="conv-item-row ${isActive ? 'active' : ''}" data-conv-id="${escapeHtml(c.id)}">
+                            <button type="button" class="conv-item" data-conv-id="${escapeHtml(c.id)}" title="${escapeHtml(title)}">
+                                ${escapeHtml(title)}
+                            </button>
+                            <button type="button" class="conv-item-menu-btn" data-conv-id="${escapeHtml(c.id)}" title="대화 관리" aria-label="대화 관리 메뉴" aria-haspopup="true" aria-expanded="${isMenuOpen ? 'true' : 'false'}">⋯</button>
+                            ${dropdownHtml}
+                        </div>
+                    `;
+                }
+
                 function renderConvList() {
                     const container = document.getElementById('convList');
                     const query = (state.searchQuery || '').trim().toLowerCase();
@@ -1905,6 +2052,7 @@ async def agent_page():
 
                     if (list.length === 0) {
                         container.innerHTML = `<div class="conv-empty">${query ? '검색 결과가 없습니다.' : '대화 이력이 없습니다.'}</div>`;
+                        renderConvDeleteModal();
                         return;
                     }
 
@@ -1919,19 +2067,174 @@ async def agent_page():
                     container.innerHTML = groups.map(g => `
                         <div class="conv-group">
                             <div class="conv-group-label">${escapeHtml(g.label)}</div>
-                            ${g.items.map(c => `
-                                <button type="button" class="conv-item ${c.id === state.activeConversationId ? 'active' : ''}" data-conv-id="${escapeHtml(c.id)}" title="${escapeHtml(c.title || '새로운 대화')}">
-                                    ${escapeHtml(c.title || '새로운 대화')}
-                                </button>
-                            `).join('')}
+                            ${g.items.map(c => renderConvItemRow(c)).join('')}
                         </div>
                     `).join('');
 
+                    // 대화 전환 — 편집 폼(.conv-rename-form)이 떠 있는 행에는 .conv-item 버튼
+                    // 자체가 없으므로 자연히 이 핸들러의 대상이 아니다.
                     container.querySelectorAll('.conv-item').forEach(btn => {
                         btn.addEventListener('click', () => {
                             state.activeConversationId = btn.dataset.convId;
+                            state.convMenuOpenId = null;
                             renderAll();
                         });
+                    });
+
+                    container.querySelectorAll('.conv-item-menu-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            toggleConvMenu(btn.dataset.convId);
+                        });
+                    });
+
+                    container.querySelectorAll('.conv-menu-rename').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            startRenameConversation(btn.dataset.convId);
+                        });
+                    });
+
+                    container.querySelectorAll('.conv-menu-delete').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            requestDeleteConversation(btn.dataset.convId);
+                        });
+                    });
+
+                    container.querySelectorAll('.conv-rename-form').forEach(form => {
+                        form.addEventListener('submit', (e) => {
+                            e.preventDefault();
+                            const input = form.querySelector('.conv-rename-input');
+                            commitRenameConversation(form.dataset.convId, input.value);
+                        });
+                        form.querySelector('.conv-rename-cancel').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            cancelRenameConversation();
+                        });
+                        const input = form.querySelector('.conv-rename-input');
+                        input.addEventListener('keydown', (e) => {
+                            if (e.key === 'Escape') {
+                                e.stopPropagation();
+                                cancelRenameConversation();
+                            }
+                        });
+                    });
+
+                    // 이름 변경 모드로 막 들어왔다면 입력에 포커스 + 전체 선택(바로 typing으로
+                    // 덮어쓸 수 있게) — DOM이 매 렌더마다 새로 만들어지므로 매번 다시 해준다.
+                    if (state.convRenamingId) {
+                        const activeInput = container.querySelector(
+                            '.conv-rename-form[data-conv-id="' + cssEscapeAttr(state.convRenamingId) + '"] .conv-rename-input'
+                        );
+                        if (activeInput) { activeInput.focus(); activeInput.select(); }
+                    }
+
+                    renderConvDeleteModal();
+                }
+
+                // CSS.escape가 없는 아주 오래된 환경까지 고려한 최소 폴백 — 대화 id는
+                // crypto.randomUUID() 결과이거나 영숫자 접두사 조합이라 실제로는 특수문자를
+                // 걱정할 필요가 거의 없지만, 속성 선택자에 그대로 문자열 보간하는 것은
+                // 피한다.
+                function cssEscapeAttr(value) {
+                    return (window.CSS && CSS.escape) ? CSS.escape(value) : String(value).replace(/["\\\\]/g, '\\\\$&');
+                }
+
+                // ----- 대화 관리(⋯) 메뉴 열기/닫기 -----
+                function toggleConvMenu(id) {
+                    state.convMenuOpenId = (state.convMenuOpenId === id) ? null : id;
+                    renderConvList();
+                }
+
+                function closeConvMenu() {
+                    if (state.convMenuOpenId !== null) {
+                        state.convMenuOpenId = null;
+                        renderConvList();
+                    }
+                }
+
+                // ----- 대화 이름 변경(요청서 4-1절) -----
+                function startRenameConversation(id) {
+                    state.convMenuOpenId = null;
+                    state.convRenamingId = id;
+                    renderConvList();
+                }
+
+                function cancelRenameConversation() {
+                    state.convRenamingId = null;
+                    renderConvList();
+                }
+
+                // 빈 문자열/공백만 입력하면 저장하지 않고 기존 이름을 유지한다(요청서:
+                // "빈 문자열, 공백(whitespace only) 입력 방지"). 대화 id/메시지 기록은
+                // 절대 건드리지 않고 title 필드만 바꾼다.
+                function commitRenameConversation(id, rawValue) {
+                    const trimmed = (rawValue || '').trim();
+                    if (trimmed) {
+                        const conv = state.conversations.find(c => c.id === id);
+                        if (conv) {
+                            conv.title = trimmed;
+                            saveConversations();
+                        }
+                    }
+                    state.convRenamingId = null;
+                    renderConvList();
+                }
+
+                // ----- 대화 삭제(요청서 4-2절) -----
+                function requestDeleteConversation(id) {
+                    state.convMenuOpenId = null;
+                    state.pendingDeleteId = id;
+                    renderConvList();
+                }
+
+                function cancelDeleteConversation() {
+                    state.pendingDeleteId = null;
+                    renderConvList();
+                }
+
+                function confirmDeleteConversation(id) {
+                    const idx = state.conversations.findIndex(c => c.id === id);
+                    if (idx !== -1) state.conversations.splice(idx, 1);
+                    state.pendingDeleteId = null;
+                    // 지금 보고 있던 대화를 삭제한 경우 화면이 깨지지 않도록(참조하던
+                    // conv가 배열에서 사라짐) 새로운 빈 대화 화면으로 안전하게 전환한다 —
+                    // getOrCreateActiveConversation()이 다음 메시지 전송 시점에 알아서
+                    // 새 레코드를 만들므로 여기서는 activeConversationId만 비우면 된다.
+                    if (state.activeConversationId === id) {
+                        state.activeConversationId = null;
+                    }
+                    saveConversations();
+                    renderAll(); // messages 영역도 함께 갱신(현재 대화가 삭제됐다면 welcome-block으로).
+                }
+
+                function renderConvDeleteModal() {
+                    const root = document.getElementById('convDeleteModalRoot');
+                    if (!state.pendingDeleteId) {
+                        root.innerHTML = '';
+                        return;
+                    }
+                    const conv = state.conversations.find(c => c.id === state.pendingDeleteId);
+                    const title = (conv && conv.title) || '새로운 대화';
+                    root.innerHTML = `
+                        <div class="modal-backdrop" id="convDeleteBackdrop">
+                            <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="convDeleteTitle">
+                                <h2 id="convDeleteTitle">대화를 삭제할까요?</h2>
+                                <p>"${escapeHtml(title)}" 대화가 영구적으로 삭제되며 되돌릴 수 없습니다.</p>
+                                <div class="modal-actions">
+                                    <button type="button" class="modal-btn-cancel" id="convDeleteCancelBtn">취소</button>
+                                    <button type="button" class="modal-btn-danger" id="convDeleteConfirmBtn">삭제</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('convDeleteCancelBtn').addEventListener('click', cancelDeleteConversation);
+                    document.getElementById('convDeleteConfirmBtn').addEventListener('click', () => confirmDeleteConversation(state.pendingDeleteId));
+                    // Backdrop의 빈 영역 클릭 시에도 취소(모달 상자 자체 클릭은 버블링을
+                    // 막지 않아도 된다 — 클릭 지점이 정확히 backdrop 요소 자신일 때만 닫는다).
+                    document.getElementById('convDeleteBackdrop').addEventListener('click', (e) => {
+                        if (e.target.id === 'convDeleteBackdrop') cancelDeleteConversation();
                     });
                 }
 
@@ -2056,8 +2359,8 @@ async def agent_page():
                     addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
                 }
 
-                // #chatInput/#sendBtn만 disabled로 막는 것으로는 부족하다 — 추가
-                // 질문 제안(.related-item)처럼 메인 입력창과 무관한 다른 클릭
+                // #chatInput/#sendBtn만 disabled로 막는 것으로는 부족하다 — 홈 화면
+                // 예시 질문 chip(.chip)처럼 메인 입력창과 무관한 다른 클릭
                 // 요소에서도 handleUserMessage()를 호출하는데, 이런 요소는 setInput
                 // Disabled()의 대상이 아니라서 요청이 진행 중이어도 계속 클릭 가능한
                 // 상태로 남는다 — 그 상태에서 빠르게 여러 번 누르면 동일 질문이 여러
@@ -2332,6 +2635,29 @@ async def agent_page():
                 // aria-expanded 값이 실제 표시 상태와 어긋나지 않도록 다시 계산한다.
                 window.addEventListener('resize', updateHamburgerAria);
                 updateHamburgerAria();
+
+                // ================================================================
+                // 대화 관리(⋯) 메뉴 — 바깥 클릭/Escape로 닫기(요청서 4절)
+                // ================================================================
+                // 메뉴 버튼/드롭다운 자신을 클릭한 경우는 각 버튼의 클릭 핸들러가
+                // stopPropagation()으로 이미 처리하므로, 여기까지 버블링되어 온 클릭은
+                // 항상 "메뉴 바깥"을 클릭한 것으로 취급해도 안전하다.
+                document.addEventListener('click', () => {
+                    closeConvMenu();
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Escape') return;
+                    // 우선순위: 삭제 확인 모달 > 이름 변경 입력 > ⋯ 메뉴. 한 번의 Escape는
+                    // 그 시점에 가장 "앞에 떠 있는" 상태 하나만 닫는다.
+                    if (state.pendingDeleteId) {
+                        cancelDeleteConversation();
+                    } else if (state.convRenamingId) {
+                        cancelRenameConversation();
+                    } else if (state.convMenuOpenId) {
+                        closeConvMenu();
+                    }
+                });
 
                 // ================================================================
                 // 부팅 — sessionStorage에서 대화 목록을 복원한다(요청서 12절 2단계).

@@ -77,20 +77,22 @@ def test_send_button_reachable_and_activatable_via_keyboard(agent_page: Page):
     assert focused_id == "sendBtn", f"입력창 다음 Tab 이동 대상이 전송 버튼이 아님(실제: {focused_id})"
 
 
-def test_related_item_buttons_are_real_buttons_not_divs(agent_page: Page, mock_api):
-    """추가 질문 제안이 실제 <button>이어야 Tab/Enter 등 기본 키보드 조작이 공짜로
-    보장된다(요청서: "Enter/Space 키로 버튼을 사용할 수 있는가")."""
+def test_download_action_buttons_are_real_buttons_not_divs(agent_page: Page, mock_api):
+    """사양서 다운로드 버튼(Markdown/Word)이 실제 <button>이어야 Tab/Enter 등 기본
+    키보드 조작이 공짜로 보장된다(요청서: "Enter/Space 키로 버튼을 사용할 수
+    있는가"). ('추가 질문 제안' 버튼은 UX 개선으로 제거되어 더 이상 화면에 없다 —
+    tests/e2e/test_related_questions.py 참고.)"""
     mock_api.mock("**/api/agent/analyze-requirement", make_analyze_response())
     mock_api.mock("**/api/agent/generate-spec", make_generate_spec_response("pass"))
     agent_page.fill("#chatInput", QUESTION)
     agent_page.click("#sendBtn")
     expect(agent_page.locator(".msg-row.ai").last).to_be_visible(timeout=10000)
 
-    related_items = agent_page.locator(".related-item")
-    assert related_items.count() > 0
-    for i in range(related_items.count()):
-        tag = related_items.nth(i).evaluate("el => el.tagName.toLowerCase()")
-        assert tag == "button", f".related-item이 <button>이 아니라 <{tag}>임 — 키보드 접근성이 보장되지 않음"
+    download_buttons = agent_page.locator(".build-markdown-btn, .build-docx-btn")
+    assert download_buttons.count() > 0
+    for i in range(download_buttons.count()):
+        tag = download_buttons.nth(i).evaluate("el => el.tagName.toLowerCase()")
+        assert tag == "button", f"다운로드 버튼이 <button>이 아니라 <{tag}>임 — 키보드 접근성이 보장되지 않음"
 
 
 def _srgb_to_linear(c: float) -> float:
