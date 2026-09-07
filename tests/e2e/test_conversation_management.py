@@ -18,7 +18,7 @@ from playwright.sync_api import Page, expect
 from fixtures import make_analyze_response, make_generate_spec_response
 
 QUESTION = "두께 검사기 찾아줘."
-NEW_CONVERSATION_PLACEHOLDER_SNIPPET = "Inline으로 검사하고"
+NEW_CONVERSATION_PLACEHOLDER_SNIPPET = "inline으로 검사하고"
 
 
 def _send(page: Page, text: str = QUESTION):

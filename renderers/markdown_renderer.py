@@ -174,14 +174,17 @@ def render_candidate_markdown(
     추출된 값)만 사용하고 LLM을 전혀 거치지 않는다. 근거 없는 필드는 "UNKNOWN"
     으로 정직하게 남긴다(요청서: "마크다운 사양서 생성" 버튼).
 
-    General/Inspection Performance/Inspection Items/Defect Inspection/Sources
-    절은 기존 형식을 그대로 유지한다(tests/test_candidate_markdown_route.py가
+    General/Inspection Performance/Inspection Items/Defect Inspection 절은
+    기존 형식을 그대로 유지한다(tests/test_candidate_markdown_route.py가
     검증하는 기존 동작 — 절대 바꾸지 않는다). 그 뒤에 candidate_specification.
     build_candidate_specification_data()가 만드는 나머지 절(Inspection Target/
     Requirements/Measurement Performance/Spatial Performance/Optical System/
     System Configuration/Interfaces/Environment/Safety/Requirement Compliance)
     을 이어 붙인다 — docx_renderer.render_candidate_docx()도 정확히 같은 데이터로
-    이 절들을 만들므로 두 포맷의 내용이 어긋나지 않는다(요청서 4절).
+    이 절들을 만들므로 두 포맷의 내용이 어긋나지 않는다(요청서 4절). 맨 끝의
+    Sources/Notes도 docx_renderer와 동일하게 "## Sources / Notes" 한 절로
+    합쳐서 렌더링한다(과거에는 "## Sources"/"## Notes" 두 절로 나뉘어 있어
+    Word 사양서와 항목 구성이 달랐다).
     """
     fact = candidate.equipment_fact
     name_parts = [p for p in (candidate.manufacturer, candidate.model) if p]
@@ -257,14 +260,21 @@ def render_candidate_markdown(
 
     lines.append(_candidate_compliance_to_md(spec_data.compliance))
 
-    lines.append("## Sources")
+    lines.append("## Sources / Notes")
     lines.append("")
-    lines.append(f"- {candidate.source_document}")
-    lines.append("")
-
-    lines.append("## Notes")
-    lines.append("")
-    for note in spec_data.notes:
-        lines.append(f"- {note}")
+    if spec_data.sources:
+        lines.append("Reference Documents:")
+        lines.append("")
+        for source in spec_data.sources:
+            lines.append(f"- {source}")
+        lines.append("")
+    else:
+        lines.append("Reference Documents: UNKNOWN")
+        lines.append("")
+    if spec_data.notes:
+        lines.append("Notes:")
+        lines.append("")
+        for note in spec_data.notes:
+            lines.append(f"- {note}")
 
     return "\n".join(lines).rstrip() + "\n"

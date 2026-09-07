@@ -621,8 +621,8 @@ PAGE_STYLE = """
     .sources-block > summary.sources-title {
         cursor: pointer;
         list-style: none;
-        font-size: var(--font-heading-md-size); font-weight: var(--font-heading-md-weight);
-        line-height: var(--line-height-heading);
+        font-size: var(--font-body-sm-size); font-weight: var(--font-body-sm-weight);
+        line-height: var(--line-height-body);
         color: var(--grey-900); margin-bottom: 8px;
     }
     .sources-block > summary.sources-title::-webkit-details-marker { display: none; }
@@ -1119,7 +1119,7 @@ async def agent_page():
                 // 자동으로 사라진다. 빈 대화(메시지 0개)일 때만 이 문구를 쓰고, 메시지가
                 // 하나라도 있는(기존 대화를 불러온) 상태에서는 원래 안내 문구로
                 // 되돌린다 — renderAll()이 매번 이 상태를 다시 계산해서 반영한다.
-                const NEW_CONVERSATION_PLACEHOLDER = '폭 800mm 이상의 전극을 Inline으로 검사하고, 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘.';
+                const NEW_CONVERSATION_PLACEHOLDER = '예 : 폭 800mm 이상의 전극을 inline으로 검사하고, 두께와 표면 결함을 동시에 검사할 수 있는 장비를 찾아줘';
                 const DEFAULT_CHAT_PLACEHOLDER = '필요한 전극 검사 조건이나 궁금한 내용을 입력하세요.';
 
                 function escapeHtml(text) {

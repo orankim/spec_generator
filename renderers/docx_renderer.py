@@ -14,6 +14,7 @@ from typing import List, Optional
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from agent.schemas import CandidateEquipment, ComplianceRecord, RequirementSchema
@@ -28,6 +29,34 @@ _RESULT_COLORS = {
     "UNKNOWN": RGBColor(0x7B, 0x34, 0x1E),
     "N/A": RGBColor(0x55, 0x55, 0x55),
 }
+
+
+# python-docx 기본 템플릿은 East Asian(eastAsia) 폰트를 지정하지 않는다. Word는
+# 라틴 폰트(Calibri 등)에 한글 글리프가 없으면 대체 폰트를 찾는데, 이 대체 과정이
+# 실패하는 환경에서는 한글이 네모(tofu)로 깨져 보인다("Sources / Notes"의 한글
+# 안내문 등). Windows에 기본 내장된 한글 UI 폰트를 모든 run에 명시적으로 지정해
+# 이를 방지한다.
+_EAST_ASIAN_FONT = "맑은 고딕"
+
+
+def _set_east_asian_font(run, font_name: str = _EAST_ASIAN_FONT) -> None:
+    rPr = run._element.get_or_add_rPr()
+    rFonts = rPr.get_or_add_rFonts()
+    rFonts.set(qn("w:eastAsia"), font_name)
+
+
+def _apply_korean_font(document: Document) -> None:
+    normal_rPr = document.styles["Normal"].element.get_or_add_rPr()
+    normal_rPr.get_or_add_rFonts().set(qn("w:eastAsia"), _EAST_ASIAN_FONT)
+
+    paragraphs = list(document.paragraphs)
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                paragraphs.extend(cell.paragraphs)
+    for paragraph in paragraphs:
+        for run in paragraph.runs:
+            _set_east_asian_font(run)
 
 
 def _style_table(table) -> None:
@@ -120,6 +149,7 @@ def _build_document(data: CandidateSpecificationData) -> Document:
         for note in data.notes:
             document.add_paragraph(note, style="List Bullet")
 
+    _apply_korean_font(document)
     return document
 
 

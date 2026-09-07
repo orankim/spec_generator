@@ -14,7 +14,7 @@ from fixtures import make_analyze_response, make_generate_spec_response
 
 STORAGE_KEY = "electrode_ai_conversations_v1"
 QUESTION = "두께 검사기 찾아줘."
-NEW_CONVERSATION_PLACEHOLDER_SNIPPET = "Inline으로 검사하고"
+NEW_CONVERSATION_PLACEHOLDER_SNIPPET = "inline으로 검사하고"
 
 
 def _send(page: Page, text: str = QUESTION):
