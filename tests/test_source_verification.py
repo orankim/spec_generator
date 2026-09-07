@@ -120,24 +120,24 @@ def test_reported_query_pulls_identity_chunk_for_matched_source(db):
     assert 0 in spec001_chunk_ids, f"SPEC-001.md의 식별 정보 chunk(id=0)가 결과에 없습니다: {spec001_chunk_ids}"
 
 
-def test_default_k_per_query_is_15_not_10_or_lower():
+def test_default_k_per_query_is_20_not_15_or_lower():
     """
-    k_per_query 기본값 회귀 가드. 3(버그)→5→10으로 올린 이력에 이어, Ground
-    Truth 전체 56케이스를 실제 Ollama bge-m3 임베딩으로 k=[5,10,15,20] 재현한
-    결과 k=10의 Retrieval MISS 6건 전부가 "정답 문서가 순위 11~19위로 이미
-    검색되지만 top-10 컷오프 밖으로 밀리는" 순위 경쟁 문제로 확인되어(agent/
-    pipeline.py retrieve_and_generate() docstring 참고) 15로 다시 올렸다. 10
-    이하로 되돌아가지 않는지 함께 확인한다.
+    k_per_query 기본값 회귀 가드. 3(버그)→5→10→15로 올린 이력에 이어, sample_specs가
+    52→100개로 늘어난 뒤(Phase 1) Ground Truth 전체 56케이스를 실제 Ollama bge-m3
+    임베딩 + 실제 100-spec corpus로 k=[5,10,15,20,25] 재현한 결과, 옛 k=15의 Recall이
+    88.1%로(52개 corpus 시절 97.7%에서) 유의미하게 하락함을 확인해(agent/pipeline.py
+    retrieve_and_generate() docstring 참고) 20으로 다시 올렸다. 15 이하로 되돌아가지
+    않는지 함께 확인한다.
     """
     import inspect
 
     sig = inspect.signature(spec_retriever.retrieve_for_requirement)
-    assert sig.parameters["k_per_query"].default == 15
+    assert sig.parameters["k_per_query"].default == 20
 
     from agent.pipeline import retrieve_and_generate
 
     sig2 = inspect.signature(retrieve_and_generate)
-    assert sig2.parameters["k_per_query"].default == 15
+    assert sig2.parameters["k_per_query"].default == 20
 
 
 # ---------------------------------------------------------------

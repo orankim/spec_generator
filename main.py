@@ -592,6 +592,14 @@ PAGE_STYLE = """
     .md-body table.md-table th, .md-body table.md-table td { border: 1px solid var(--grey-300); padding: 5px 9px; text-align: left; }
     .md-body table.md-table th { background: var(--grey-50); font-weight: 700; }
 
+    /* ===== 견적 분석 카드(Phase 9) ===== */
+    table.quote-table { border-collapse: collapse; margin: 6px 0; font-size: var(--font-body-sm-size); width: 100%; }
+    table.quote-table th, table.quote-table td { border: 1px solid var(--grey-300); padding: 5px 9px; text-align: left; }
+    table.quote-table th { background: var(--grey-50); font-weight: 700; }
+    table.quote-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .quote-issue { color: #9b2c2c; font-size: var(--font-body-sm-size); }
+    .quote-excluded-list { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-body-sm-size); color: #555; }
+
     /* ===== typing indicator(요청서 11절) ===== */
     .typing-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
     .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--grey-900); opacity: .35; animation: typing-blink 1.2s infinite ease-in-out; }
@@ -1812,6 +1820,70 @@ async def agent_page():
                     `;
                 }
 
+                // Phase 9(UI 통합) — 견적 분석 카드. quote_analyses는 사용자 질문에 견적/
+                // 가격 의도가 있을 때만 backend(agent/routes.py generate_spec_api,
+                // agent.quote_intent.wants_quote_analysis)가 채워 보낸다 — 사양만 물었을
+                // 때는 이 dict가 비어 있으므로 카드 자체를 만들지 않는다(불필요한 견적
+                // 표를 매번 끼워 넣지 않는다는 요청서 6/9단계 원칙).
+                function renderQuoteCard(content) {
+                    const quoteAnalyses = content.quoteAnalyses || {};
+                    const specIds = Object.keys(quoteAnalyses);
+                    if (specIds.length === 0) {
+                        return `
+                            <div class="card">
+                                <div class="card-header">견적 분석</div>
+                                <div class="card-body"><span class="value muted">연결된 견적 정보를 찾지 못했습니다.</span></div>
+                            </div>
+                        `;
+                    }
+                    const chosenDoc = content.chosenSourceDocument;
+                    specIds.sort((a, b) => (a === chosenDoc ? -1 : b === chosenDoc ? 1 : 0));
+                    const fmt = (n) => (n === null || n === undefined) ? 'UNKNOWN' : Math.round(n).toLocaleString('ko-KR');
+
+                    const rows = specIds.map(specId => {
+                        const analyses = quoteAnalyses[specId] || [];
+                        return analyses.map((a, idx) => {
+                            const q = a.quotation;
+                            const name = `${(q.general && q.general.manufacturer) || '?'} ${(q.general && q.general.model) || '?'}`;
+                            const label = analyses.length > 1 ? `${name} (견적 ${idx + 1}/${analyses.length})` : name;
+                            const recommendedBadge = specId === chosenDoc ? ' <span class="badge badge-pass">추천</span>' : '';
+                            const issueBadge = (a.issues && a.issues.length)
+                                ? `<div class="quote-issue">⚠ 계산 오류 검출: ${a.issues.length}건 — 이 견적 데이터를 신뢰하기 전에 확인이 필요합니다.</div>`
+                                : '';
+                            const excludedItems = (q.excluded_items && q.excluded_items.length)
+                                ? `<ul class="quote-excluded-list">${q.excluded_items.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`
+                                : '<span class="value muted">제외 항목 없음</span>';
+                            return `
+                                <tr>
+                                    <td>${escapeHtml(label)}${recommendedBadge}</td>
+                                    <td class="num">${fmt(a.computed_equipment_amount)}</td>
+                                    <td class="num">${fmt(a.computed_options_amount)}</td>
+                                    <td class="num">${fmt(a.computed_additional_cost_amount)}</td>
+                                    <td class="num">${fmt(a.computed_discount)}</td>
+                                    <td class="num">${fmt(a.computed_vat_amount)}</td>
+                                    <td class="num"><strong>${fmt(a.computed_grand_total)}</strong></td>
+                                </tr>
+                                <tr><td colspan="7">${issueBadge}${excludedItems}</td></tr>
+                            `;
+                        }).join('');
+                    }).join('');
+
+                    return `
+                        <div class="card">
+                            <div class="card-header">견적 분석 (SAMPLE/TEST 데이터 — 실제 업체 견적 아님)</div>
+                            <div class="card-body">
+                                <div style="overflow-x:auto;">
+                                    <table class="quote-table">
+                                        <thead><tr><th>장비</th><th>본체</th><th>옵션</th><th>추가비용</th><th>할인</th><th>VAT</th><th>최종 금액</th></tr></thead>
+                                        <tbody>${rows}</tbody>
+                                    </table>
+                                </div>
+                                <div class="value muted" style="margin-top:6px; display:block;">가격이 비싸다/저렴하다/시장가격 대비 어떻다는 판단은 비교 근거가 없어 제공하지 않습니다.</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 function renderMessageContent(msg, disambiguation) {
                     switch (msg.type) {
                         case 'text': return renderTextMessage(msg.content);
@@ -1823,6 +1895,7 @@ async def agent_page():
                             disambiguation && disambiguation.hints.get(msg.id)
                         );
                         case 'comparison_result': return renderComparisonCard(msg.content);
+                        case 'quote_result': return renderQuoteCard(msg.content);
                         case 'error': return renderErrorMessage(msg.content);
                         case 'thinking': return renderThinkingMessage();
                         default: return '';
@@ -2357,6 +2430,20 @@ async def agent_page():
                         },
                     });
                     addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
+
+                    // Phase 9 — 견적 의도가 있던 질문에만 backend가 quote_analyses를 채워
+                    // 보낸다(agent.quote_intent.wants_quote_analysis). 비어 있으면(사양만
+                    // 물어본 경우) 견적 카드 자체를 추가하지 않는다.
+                    const quoteAnalyses = data.quote_analyses || {};
+                    if (Object.keys(quoteAnalyses).length > 0) {
+                        addMessage({
+                            role: 'assistant', type: 'quote_result',
+                            content: {
+                                quoteAnalyses: quoteAnalyses,
+                                chosenSourceDocument: data.chosen_candidate ? data.chosen_candidate.source_document : null,
+                            },
+                        });
+                    }
                 }
 
                 // #chatInput/#sendBtn만 disabled로 막는 것으로는 부족하다 — 홈 화면

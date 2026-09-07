@@ -26,10 +26,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
-from . import spec_retriever
+from . import candidate_matcher, quote_parser, spec_retriever
+from .equipment_lookup import find_specs_by_mentioned_names
+from .paths import DEFAULT_SAMPLE_SPECS_DIR
+from .quote_schemas import QuoteAnalysis
 from .requirement_parser import parse_requirement_text, requirement_from_selection
 from .requirement_validator import validate_requirement
-from .schemas import RequirementSchema, SpecificationSchema, ValidationResult
+from .schemas import CandidateEquipment, RequirementSchema, SpecificationSchema, ValidationResult
 from .spec_generator import generate_specification
 from .spec_validator import validate_specification
 
@@ -62,23 +65,23 @@ def retrieve_and_generate(
     db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
     model: Optional[str] = None,
-    k_per_query: int = 15,
+    k_per_query: int = 20,
 ) -> Tuple[SpecificationSchema, ValidationResult, List[Document]]:
     """
     SpecRetriever -> SpecificationGenerator -> SpecificationValidator.
 
-    k_per_query 기본값 15(이전 10): 5개 대표 질의(R1~R5) 스윕으로 5->10을 결정한
-    이력에 이어, 이번에는 Ground Truth 전체 56케이스(T001~T027, QA001~QA029,
-    evaluable 43케이스)를 실제 Ollama bge-m3 임베딩 + 실제 ChromaDB(52 SPEC,
-    383 chunk)로 k=[5,10,15,20] 전부 재현했다. k=10에서 Retrieval Recall
-    86.0%(37/43), MISS 6건이 지속됐고, MISS 6건 전부를 k=50까지 넓혀 재검색한
-    결과 전부 "정답 문서가 실제로는 순위 11~19위로 이미 검색되고 있었으나
-    production top-10 컷오프 바로 밖으로 밀린" 순위 경쟁 문제로 확인됐다(어휘
-    불일치/질의 확장 부족/corpus 표현 문제 등 다른 원인은 0건). k=15로 올리면
-    Recall이 97.7%(42/43, MISS 6건 중 5건 해소)로 개선되고, No-Match 13개 중
-    설계상 PASS 의도인 QA026을 제외한 12개 전부에서 False PASS가 0건으로
-    유지됨을 실측으로 확인했다 — k=20(Recall 100%)은 Candidate Pool 증가폭이
-    더 커(avg 31.4 vs k=15의 27.0) 이번에는 채택하지 않았다.
+    k_per_query 기본값 20(이전 15): 5->10, 10->15로 올린 이력에 이어, sample_specs가
+    52개(383 chunk)에서 100개(823 chunk)로 늘어난 뒤(Phase 1) 옛 k=15를 그대로
+    실측 재검증했다(scripts/full_retrieval_recall_benchmark.py, 실제 bge-m3 임베딩 +
+    실제 100-spec corpus, evaluable 42케이스). k=15에서 Recall이 88.1%(37/42)로,
+    52개 corpus 시절 97.7%(당시 기준)에서 유의미하게 하락함을 확인했다 — corpus가
+    커진 만큼 같은 k 예산으로는 더 많은 문서와 경쟁해야 하므로 당연한 결과다.
+    k=20에서 Recall 97.6%(41/42)로 옛 97.7% 수준을 회복했고, k=25는 100%(42/42)를
+    주지만 candidate pool이 더 늘어나는 트레이드오프가 있어(이전에도 k=20이 100%를
+    주던 52-corpus 시절 "candidate pool 증가폭이 크다"는 이유로 k=15를 택한 것과
+    동일한 원칙), 옛 정책과 동일하게 "high-90%대면 충분, 100%를 반드시 좇지 않는다"는
+    기준으로 k=20을 선택했다. No-Match 안전성(False PASS 0건)은 k=20에서도 유지됨을
+    tests/test_regression.py(56/56 PASS)로 확인했다.
     """
     host = ollama_host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
@@ -134,3 +137,95 @@ def run_full_pipeline(
         "specification_validation": spec_validation,
         "retrieved_docs": retrieved_docs,
     }
+
+
+# ==========================================
+# Phase 6 — 사양 분석 + 견적 분석 통합
+#
+#   질문 -> Requirement Parsing -> SPEC Retrieval -> Candidate Matching
+#   -> Hard Requirement -> PASS/PARTIAL/FAIL -> 후보 장비 선정 -> QUOTE 연결
+#   -> 견적 분석 -> 사양 + 견적 종합 -> 근거자료 기반 답변
+#
+# 기존 analyze_requirement/retrieve_and_generate는 전혀 수정하지 않는다 — 아래
+# 함수들은 그 위에 QUOTE 연결/분석 단계만 얇게 이어붙인 새 함수다(요청서: 기존
+# Production AI Logic의 불필요한 변경 금지).
+# ==========================================
+def attach_quote_analyses(
+    candidates: List[CandidateEquipment], quotes_dir: Optional[str] = None
+) -> Dict[str, List[QuoteAnalysis]]:
+    """각 후보의 source_document(예: 'SPEC-051.md')로 연결된 QUOTE를 찾아 분석한다.
+    견적이 없는 후보는 결과 dict에 키 자체가 없다(빈 리스트로 채우지 않음 —
+    "확인했지만 없음"과 "아직 안 봄"을 구분하지 않는 실수를 피하되, 호출부가
+    `quote_analyses.get(source_document, [])`로 안전하게 다루면 된다)."""
+    quote_analyses: Dict[str, List[QuoteAnalysis]] = {}
+    for candidate in candidates:
+        quotations = quote_parser.load_quotations_for_spec(candidate.source_document, quotes_dir=quotes_dir)
+        if quotations:
+            quote_analyses[candidate.source_document] = [quote_parser.analyze_quotation(q) for q in quotations]
+    return quote_analyses
+
+
+def analyze_with_quotes(
+    requirement: RequirementSchema,
+    db_path: Optional[str] = None,
+    ollama_host: Optional[str] = None,
+    model: Optional[str] = None,
+    k_per_query: int = 20,
+    quotes_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    요구조건 기반 질문("폭 800mm 이상 Inline 검사 가능한 두께+표면결함 검사기 중
+    견적 비교해줘")을 위한 진입점. 기존 retrieve_and_generate + candidate_matcher
+    흐름을 그대로 실행한 뒤, 도출된 모든 후보(PASS/PARTIAL/FAIL 무관 — 비교 목적에는
+    FAIL 후보의 견적도 참고 가치가 있을 수 있음)에 QUOTE 분석을 이어붙인다.
+    """
+    specification, validation, retrieved_docs = retrieve_and_generate(
+        requirement, db_path=db_path, ollama_host=ollama_host, model=model, k_per_query=k_per_query
+    )
+    candidates = candidate_matcher.build_candidates(requirement, retrieved_docs)
+    chosen_candidate = candidate_matcher.select_best_candidate(candidates)
+    quote_analyses = attach_quote_analyses(candidates, quotes_dir=quotes_dir)
+
+    return {
+        "requirement": requirement,
+        "specification": specification,
+        "specification_validation": validation,
+        "candidates": candidates,
+        "chosen_candidate": chosen_candidate,
+        "quote_analyses": quote_analyses,
+    }
+
+
+def analyze_named_equipment(
+    spec_ids: List[str],
+    specs_dir: Optional[str] = None,
+    quotes_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    이름/모델로 콕 집은 질문("ES-200의 사양과 견적을 같이 알려줘", "ES-200과
+    MI-800을 비교해줘")을 위한 진입점. RAG 검색을 거치지 않는다 — spec_id가 이미
+    확정돼 있으므로 해당 SPEC 파일 전체를 그대로 읽어(요청값과 무관하게 항상 전체
+    사실을 보여줘야 하는 화면이므로 RequirementSchema()는 빈 채로 candidate_matcher
+    에 넘긴다 — Hard Requirement 판정(matches)은 비어 있고 equipment_fact만 채워짐).
+
+    각 spec_id에 대해 (candidate, quote_analyses) 쌍의 리스트를 반환한다 — SPEC은
+    있지만 QUOTE가 없는 장비는 quote_analyses가 빈 리스트다(요청서 10단계 테스트
+    13: "견적 없는 장비 처리").
+    """
+    base = specs_dir or DEFAULT_SAMPLE_SPECS_DIR
+    results: List[Dict[str, Any]] = []
+    for spec_id in spec_ids:
+        clean_id = spec_id if spec_id.upper().startswith("SPEC-") else f"SPEC-{spec_id}"
+        clean_id = os.path.splitext(clean_id)[0]
+        path = os.path.join(base, f"{clean_id}.md")
+        if not os.path.exists(path):
+            results.append({"spec_id": clean_id, "found": False, "candidate": None, "quote_analyses": []})
+            continue
+        text = open(path, "r", encoding="utf-8").read()
+        doc = Document(page_content=text, metadata={"filename": f"{clean_id}.md", "source": f"{clean_id}.md"})
+        candidates = candidate_matcher.build_candidates(RequirementSchema(), [doc])
+        candidate = candidates[0] if candidates else None
+        quotations = quote_parser.load_quotations_for_spec(clean_id, quotes_dir=quotes_dir)
+        analyses = [quote_parser.analyze_quotation(q) for q in quotations]
+        results.append({"spec_id": clean_id, "found": candidate is not None, "candidate": candidate, "quote_analyses": analyses})
+    return {"equipment": results}

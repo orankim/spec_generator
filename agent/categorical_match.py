@@ -31,6 +31,12 @@ MEASUREMENT_PRINCIPLE_KEYWORDS: Tuple[Tuple[str, str], ...] = (
     ("interferometry", "Interferometry"),
     ("간섭계", "Interferometry"),
     ("oct", "OCT"),
+    # "confocal"이 "chromatic confocal"의 부분 문자열이므로 이 표기 그대로도
+    # 매칭된다(둘 다 canonical "Confocal") — SPEC-053~100(Phase 1)에서 처음
+    # 등장하는 원리이며, 이전에는 이 표에 없어 measurement_principle이 항상
+    # None(UNKNOWN)으로 남았다.
+    ("confocal", "Confocal"),
+    ("structured light", "Structured Light"),
     ("machine vision", "Vision"),
     ("vision", "Vision"),
     ("비전", "Vision"),

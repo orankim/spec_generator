@@ -20,7 +20,8 @@ from renderers.markdown_renderer import render_candidate_markdown, render_markdo
 
 from . import candidate_matcher, ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
-from .pipeline import analyze_requirement, retrieve_and_generate
+from .pipeline import analyze_requirement, attach_quote_analyses, retrieve_and_generate
+from .quote_intent import wants_quote_analysis
 from .requirement_parser import apply_conversational_patch, apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import CandidateEquipment, ComplianceRecord, RequirementSchema, SpecificationSchema
@@ -217,6 +218,17 @@ async def generate_spec_api(req: GenerateSpecRequest):
         chosen_candidate = candidate_matcher.select_best_candidate(candidates)
         hard_requirement_report += build_inspection_item_hard_requirement_records(chosen_candidate)
 
+        # Phase 6(사양+견적 통합): 사용자 원문(raw_text)에 견적/가격 관련 의도가
+        # 있을 때만 QUOTE 분석을 이어붙인다 — 사양만 물었는데 견적 표까지 매번
+        # 끼워 넣지 않는다(요청서 6단계 "사양만"/"견적만" 질문 구분). raw_text가
+        # 없으면(조건 선택 UI 등) 안전하게 견적 분석을 생략한다.
+        quote_analyses = {}
+        if wants_quote_analysis(requirement.raw_text or ""):
+            quote_analyses = {
+                spec_id: [a.model_dump() for a in analyses]
+                for spec_id, analyses in attach_quote_analyses(candidates).items()
+            }
+
         return {
             "specification": specification.model_dump(),
             "validation": validation.model_dump(),
@@ -241,6 +253,7 @@ async def generate_spec_api(req: GenerateSpecRequest):
                 }
                 for m in (chosen_candidate.matches if chosen_candidate else [])
             ],
+            "quote_analyses": quote_analyses,
         }
     except ollama_client.OllamaError as e:
         logger.exception("사양서 생성 중 Ollama 오류")

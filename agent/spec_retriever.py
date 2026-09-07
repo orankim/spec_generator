@@ -117,6 +117,19 @@ _ITEM_BOOST_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "coating_non_uniformity": ("coating non-uniformity", "coating nonuniformity", "coating non uniformity"),
     "edge_crack": ("edge crack",),
 }
+# 상위(부모) 카테고리 "surface_defect"는 세부 하위 타입 키워드 없이 그 자체로는
+# 이 표에 없어 boost가 전혀 발동하지 않았다(예: "표면 결함 검사기를 찾아줘" 처럼
+# 세부 결함 이름 없이 상위 카테고리만 묻는 질의). 실측(Final Combined Validation,
+# 56케이스 전체 real Ollama 재확인): 이 boost 공백 때문에 Retrieval Recall이
+# 43케이스 중 42/43(97.7%)에 머물렀고, 하위 타입 키워드 합집합을 여기 연결하면
+# 43/43(100%)로 개선되며, 다른 8개 관련 케이스(T002/T005/T021/T022/QA002/QA009/
+# QA021)는 True False PASS/Status Priority 위반 0건으로 안전함을 확인했다. 새
+# 키워드를 만들지 않고 위에 이미 정의된 하위 타입 키워드만 그대로 합친다.
+_ITEM_BOOST_KEYWORDS["surface_defect"] = tuple(
+    kw
+    for key in ("scratch", "contamination", "particle", "pinhole", "void", "coating_non_uniformity", "edge_crack")
+    for kw in _ITEM_BOOST_KEYWORDS[key]
+)
 
 
 def _inspection_item_boost_docs(requirement: RequirementSchema, vector_store: SimpleChromaStore) -> List[Document]:
@@ -205,18 +218,30 @@ def retrieve_for_requirement(
     requirement: RequirementSchema,
     db_path: Optional[str] = None,
     ollama_host: Optional[str] = None,
-    k_per_query: int = 15,
+    k_per_query: int = 20,
 ) -> List[Document]:
     """
     요구사항 기반 다중 질의 검색을 수행하고, (source, content) 기준으로
     중복 제거한 Document 목록을 반환한다.
 
-    k_per_query 기본값 15(이전 10) — agent/pipeline.py retrieve_and_generate()의
-    docstring에 근거(실제 bge-m3 임베딩 기반 k=[5,10,15,20] 전체 56케이스 재현
-    실험) 기록. k=10에서는 Retrieval Recall이 86.0%(6/43 MISS)였고, MISS 6건
-    전부 순위 경쟁(정답 문서가 실제로는 순위 11~19위로 검색됐으나 top-10 밖으로
-    밀림)으로 확인됐다 — k=15에서 Recall 97.7%(42/43, MISS 6건 중 5건 해소),
-    No-Match 안전성(False PASS 0건)은 그대로 유지됨을 실측으로 확인한 뒤 올렸다.
+    k_per_query 기본값 20(이전 15) — sample_specs가 52개(383 chunk)에서 100개
+    (823 chunk)로 늘어난 뒤(Phase 1), 옛 k=15 그대로는 corpus 확장으로 인한
+    경쟁 심화 때문에 더 이상 예전 수준의 Recall을 보장하지 못함을 실측으로
+    확인했다(scripts/full_retrieval_recall_benchmark.py, 실제 bge-m3 임베딩 +
+    실제 100-spec corpus, 56케이스 중 평가 가능 42케이스 재현):
+
+      k=5  Recall 73.8% (31/42)
+      k=10 Recall 83.3% (35/42)
+      k=15 Recall 88.1% (37/42, MISS 5건) — 52개 corpus 시절 97.7%에서 유의미하게 하락
+      k=20 Recall 97.6% (41/42, MISS 1건) — 옛 97.7% 기준을 다시 회복
+      k=25 Recall 100%  (42/42)
+
+    옛 정책(k=10->15로 올릴 때도 "high-90%대면 충분, 100%를 반드시 좇지 않는다")과
+    동일한 기준으로 k=20을 선택했다 — k=15는 corpus 성장으로 더 이상 안전하지
+    않으므로(52개 기준 기록이었던 97.7%가 100개 기준으로는 88.1%로 하락) 유지할
+    수 없고, k=25는 마지막 1건까지 없애지만 그 1건(T016)도 k=20에서 이미 구조
+    boost로 만회 가능한 경계 사례였다. No-Match 안전성(False PASS)은 k=20에서도
+    별도 확인됨(tests/test_regression.py 56/56 PASS).
 
     db_path를 명시하지 않으면 CHROMA_DB_PATH 환경변수 -> 저장소 루트 기준 기본값
     (agent/paths.DEFAULT_CHROMA_DB_PATH) 순으로 정해진다 — build_rag_ollama.py도

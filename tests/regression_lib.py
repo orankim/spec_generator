@@ -141,7 +141,14 @@ class RegressionRunResult:
         return matches[0] if matches else None
 
 
-def run_case(case: Dict[str, Any], db_path: str, k_per_query: int = 100) -> RegressionRunResult:
+def run_case(case: Dict[str, Any], db_path: str, k_per_query: int = 250) -> RegressionRunResult:
+    # k_per_query 기본값 100->250: sample_specs/가 52->100개로 늘며 chunk 수도
+    # 383->823개로 늘었다(Phase 1). 이 fake-embedding 하니스는 원래 "retrieval이
+    # 항상 정답 후보를 찾아낸다"를 전제로 candidate matching/ranking 로직만
+    # 검증하려는 목적이었으므로(위 run_case docstring 없음, build_fake_embedding_db
+    # 참고), corpus가 커진 만큼 이 전제를 유지하려면 예산도 비례해 늘려야 한다.
+    # Production의 k_per_query=15(agent/spec_retriever.py, 실제 bge-m3 임베딩)와는
+    # 별개 값이며, 이 파일을 임의로 바꾸지 않는다(Phase 2에서 실측으로 별도 판단).
     requirement = parse_with_empty_llm(case["user_query"])
     retrieved_docs = spec_retriever.retrieve_for_requirement(requirement, db_path=db_path, k_per_query=k_per_query)
     candidates = build_candidates(requirement, retrieved_docs)
