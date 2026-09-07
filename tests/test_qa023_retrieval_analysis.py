@@ -15,11 +15,15 @@ from agent import categorical_match, spec_retriever  # noqa: E402
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_surface_defect_has_no_item_boost_keyword_entry():
-    """Root Cause의 핵심 사실 — 이 회귀 가드가 실패하면(누군가 surface_defect 항목을
-    _ITEM_BOOST_KEYWORDS에 추가하면) QA023 분석 리포트의 전제가 바뀐 것이므로
-    재분석이 필요하다는 신호다."""
-    assert spec_retriever._ITEM_BOOST_KEYWORDS.get("surface_defect") is None
+def test_surface_defect_boost_keyword_entry_is_union_of_subtypes():
+    """Final Combined Validation(56케이스 전체 real Ollama 재확인) 결과로 Production에
+    적용된 변경 — surface_defect(상위 카테고리)는 이미 정의된 세부 하위 타입 키워드의
+    합집합을 그대로 쓴다(새 키워드를 만들지 않음, QA023 하드코딩 아님 — 일반 정책).
+    이 테스트가 실패하면(예: 누군가 이 매핑을 되돌리면) Retrieval Recall이 다시
+    97.7%로 떨어질 수 있다는 신호다."""
+    subtype_keys = ("scratch", "contamination", "particle", "pinhole", "void", "coating_non_uniformity", "edge_crack")
+    expected = tuple(kw for key in subtype_keys for kw in spec_retriever._ITEM_BOOST_KEYWORDS[key])
+    assert spec_retriever._ITEM_BOOST_KEYWORDS["surface_defect"] == expected
 
 
 def test_surface_defect_has_no_capability_keyword_entry():
@@ -64,3 +68,62 @@ def test_build_queries_generates_expected_two_queries_for_surface_defect_only():
     req = RequirementSchema(raw_text="표면 결함 검사기를 찾아줘. 폭 조건은 따로 없어.", inspection_items=["surface_defect"])
     queries = spec_retriever._build_queries(req)
     assert queries == ["표면 결함 검출 이물 크랙 핀홀", "표면 결함 검사기를 찾아줘. 폭 조건은 따로 없어."]
+
+
+# ---------------------------------------------------------------------------
+# 일반 정책 회귀 테스트(QA023 전용 아님) — surface_defect(상위 카테고리) 질의가
+# "이미 정의된 세부 하위 타입 키워드"를 실제로 활용하는지, 그리고 기존 하위 타입
+# 단독 질의(scratch/crack/particle/contamination)의 동작이 그대로 유지되는지를
+# synthetic in-memory vector store로 검증한다. 실제 ChromaDB/Ollama 불필요.
+# ---------------------------------------------------------------------------
+class _FakeVectorStore:
+    """SimpleChromaStore.get()의 최소 인터페이스만 흉내낸다 — 임베딩/DB 연결 없음."""
+
+    def __init__(self, docs: dict):
+        # docs: {filename: content}
+        self._docs = docs
+
+    def get(self, include=None, where=None):
+        return {
+            "documents": list(self._docs.values()),
+            "metadatas": [{"filename": fn} for fn in self._docs],
+        }
+
+
+def _boost_sources(requirement, docs: dict):
+    from agent.schemas import RequirementSchema
+
+    vs = _FakeVectorStore(docs)
+    req = RequirementSchema(inspection_items=requirement)
+    return {spec_retriever.source_label(d) for d in spec_retriever._inspection_item_boost_docs(req, vs)}
+
+
+def test_surface_defect_boost_finds_doc_mentioning_only_a_subtype_keyword():
+    """일반 정책 검증: 문서가 상위 카테고리 단어("surface defect")를 전혀 쓰지 않고
+    세부 결함 이름("Scratch")만 언급해도, inspection_items=['surface_defect']로
+    질의하면 boost가 그 문서를 찾아야 한다 — QA023/SPEC-009와 무관한 합성 문서."""
+    docs = {
+        "SPEC-FAKE-1.md": "Equipment Type: Generic Inspector\nDefect Types: Large Scratch",
+        "SPEC-FAKE-2.md": "Equipment Type: Thickness Gauge\nNo defect detection capability.",
+    }
+    sources = _boost_sources(["surface_defect"], docs)
+    assert sources == {"SPEC-FAKE-1.md"}
+
+
+def test_surface_defect_boost_does_not_match_unrelated_document():
+    """관련 없는 문서(결함 키워드 전혀 없음)는 boost되지 않아야 한다(과도한 매칭 방지)."""
+    docs = {"SPEC-FAKE-3.md": "Equipment Type: Speed Sensor\nMeasures line speed only."}
+    sources = _boost_sources(["surface_defect"], docs)
+    assert sources == set()
+
+
+def test_existing_subtype_only_query_behavior_unchanged():
+    """기존 세부 결함 단독 질의(scratch/crack/particle/contamination)가 surface_defect
+    추가 이후에도 예전과 동일하게 동작하는지(회귀 없음) 확인한다."""
+    docs = {
+        "SPEC-FAKE-4.md": "Defect Types: Particle, Contamination",
+        "SPEC-FAKE-5.md": "Defect Types: Large Scratch",
+    }
+    assert _boost_sources(["particle"], docs) == {"SPEC-FAKE-4.md"}
+    assert _boost_sources(["contamination"], docs) == {"SPEC-FAKE-4.md"}
+    assert _boost_sources(["scratch"], docs) == {"SPEC-FAKE-5.md"}
