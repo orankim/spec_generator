@@ -24,6 +24,15 @@
 | Line Speed | 300 mm/s |
 | Image Acquisition Rate | 4 kHz |
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 600 mm |
+| X Resolution | 25 μm |
+| Y Resolution | 25 μm |
+| Pixel Size | 25 μm |
+
 ## Defect Inspection
 
 | Item | Specification |

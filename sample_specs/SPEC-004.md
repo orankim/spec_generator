@@ -24,6 +24,14 @@
 | Repeatability | ±0.2 % |
 | Measurement Time | 200 ms / point |
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 100.0 mm |
+| Y Range | 0 ~ 100.0 mm |
+| FOV | 100 × 100 mm |
+
 ## Optical System
 
 - Light Source: Halogen

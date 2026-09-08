@@ -152,18 +152,26 @@ def build_candidate_specification_data(
         ],
     )
 
-    # Spatial Performance/Optical System/System Configuration/Interfaces/
-    # Environment/Safety는 CandidateEquipmentFact가 전혀 추출하지 않는 영역이다
-    # (사양서 원문에 표/문구로 있어도 현재 후보 추출 로직 범위 밖) — 전부
-    # UNKNOWN으로 정직하게 표시한다. 섹션 자체를 생략하지 않는 이유는 요청서가
-    # 명시한 문서 구조(13개 섹션)를 항상 일관되게 유지하기 위함이다.
+    # Spatial Performance는 sample_specs의 "## Spatial Performance" 절(agent.
+    # candidate_matcher._extract_spatial_performance_fields)에서 채워진다. 장비
+    # 원리상 의미 없는 축(예: 2D Vision의 Z)이나 사양서에 없는 값은 그대로
+    # UNKNOWN으로 남는다 — 추측해서 채우지 않는다. Optical System/System
+    # Configuration/Interfaces/Environment/Safety는 여전히 CandidateEquipmentFact가
+    # 추출하지 않는 영역이라 전부 UNKNOWN이다(섹션 자체를 생략하지 않는 이유는
+    # 요청서가 명시한 문서 구조(13개 섹션)를 항상 일관되게 유지하기 위함).
     spatial_performance = SpecSection(
         "spatial_performance",
         "Spatial Performance",
         [
-            _row("X Range", None), _row("Y Range", None), _row("Z Range", None),
-            _row("X Resolution", None), _row("Y Resolution", None), _row("Z Resolution", None),
-            _row("FOV", None), _row("Working Distance", None), _row("Pixel Size", None),
+            _range_row("X Range", fact.x_range_min if fact else None, fact.x_range_max if fact else None, fact.x_range_unit if fact else None),
+            _range_row("Y Range", fact.y_range_min if fact else None, fact.y_range_max if fact else None, fact.y_range_unit if fact else None),
+            _range_row("Z Range", fact.z_range_min if fact else None, fact.z_range_max if fact else None, fact.z_range_unit if fact else None),
+            _row("X Resolution", fact.x_resolution_value if fact else None, fact.x_resolution_unit if fact and fact.x_resolution_value is not None else None),
+            _row("Y Resolution", fact.y_resolution_value if fact else None, fact.y_resolution_unit if fact and fact.y_resolution_value is not None else None),
+            _row("Z Resolution", fact.z_resolution_value if fact else None, fact.z_resolution_unit if fact and fact.z_resolution_value is not None else None),
+            _row("FOV", fact.fov_display if fact else None),
+            _row("Working Distance", fact.working_distance_value if fact else None, fact.working_distance_unit if fact and fact.working_distance_value is not None else None),
+            _row("Pixel Size", fact.pixel_size_value if fact else None, fact.pixel_size_unit if fact and fact.pixel_size_value is not None else None),
         ],
     )
 

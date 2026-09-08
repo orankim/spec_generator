@@ -23,6 +23,15 @@
 | Measurement Accuracy | ±20 μm |
 | Line Speed | 600 mm/s |
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 1600 mm |
+| X Resolution | 25 μm |
+| Y Resolution | 25 μm |
+| Pixel Size | 25 μm |
+
 ## Defect Inspection
 
 | Item | Specification |

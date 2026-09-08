@@ -14,6 +14,12 @@
 - Target: Battery Electrode Surface
 - Maximum Electrode Width: 500 mm
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 500 mm |
+
 ## Defect Inspection
 
 | Item | Specification |

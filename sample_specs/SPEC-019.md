@@ -20,6 +20,12 @@
 |---|---|
 | Measurement Speed | 1000 mm/s |
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 300 mm |
+
 ## Defect Inspection
 
 | Item | Specification |

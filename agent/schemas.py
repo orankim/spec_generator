@@ -579,6 +579,41 @@ class CandidateEquipmentFact(BaseModel):
     min_defect_size_value: Optional[float] = None
     min_defect_size_unit: Optional[str] = None
 
+    # Spatial Performance(X/Y/Z Range·Resolution/FOV/Working Distance/Pixel Size) —
+    # sample_specs의 "## Spatial Performance" 절에서 채워지거나(agent.candidate_
+    # matcher._extract_spatial_performance_fields), Z Range/Resolution과 X/Y
+    # Resolution은 그 절이 없어도 "## Measurement Performance"의 값을 그대로
+    # 재사용한다(같은 파일에 중복으로 다시 적지 않기 위함 — agent.candidate_
+    # matcher._extract_candidate_fact 조립부 참고). 위 range_*/resolution_*
+    # (Measurement Performance 절의 "주" 측정 범위/해상도, Hard Requirement
+    # 판정에 쓰임)와는 완전히 독립된 필드다 — 이 필드들은 Hard Requirement
+    # 판정/Ranking에 전혀 관여하지 않고, Markdown/Word 사양서 내보내기 화면에만
+    # 쓰인다. 장비 원리상 의미 없는 축(예: 2D 비전 장비의 Z)은 그냥 None으로
+    # 남는다(추측해서 채우지 않는다).
+    x_range_min: Optional[float] = None
+    x_range_max: Optional[float] = None
+    x_range_unit: Optional[str] = None
+    y_range_min: Optional[float] = None
+    y_range_max: Optional[float] = None
+    y_range_unit: Optional[str] = None
+    z_range_min: Optional[float] = None
+    z_range_max: Optional[float] = None
+    z_range_unit: Optional[str] = None
+    x_resolution_value: Optional[float] = None
+    x_resolution_unit: Optional[str] = None
+    y_resolution_value: Optional[float] = None
+    y_resolution_unit: Optional[str] = None
+    z_resolution_value: Optional[float] = None
+    z_resolution_unit: Optional[str] = None
+    # FOV는 "10 x 10 mm"처럼 2축 복합 표기가 흔해 단일 min/max 숫자쌍으로 어색하게
+    # 쪼개지 않고, 사양서 원문 표기를 그대로 옮긴 표시용 문자열로 둔다(다른 필드와
+    # 달리 이 필드만 원문 그대로 — 근거 문서에 적힌 표기를 왜곡하지 않기 위함).
+    fov_display: Optional[str] = None
+    working_distance_value: Optional[float] = None
+    working_distance_unit: Optional[str] = None
+    pixel_size_value: Optional[float] = None
+    pixel_size_unit: Optional[str] = None
+
 
 class CandidateEquipment(BaseModel):
     """RAG 검색 결과를 문서(장비) 단위로 그룹화한 후보 하나."""

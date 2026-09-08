@@ -28,8 +28,12 @@
 
 | Item | Specification |
 |---|---|
-| XY Resolution | 0.8 μm |
-| Field of View | 10 × 10 mm |
+| X Range | 0 ~ 10.0 mm |
+| Y Range | 0 ~ 10.0 mm |
+| X Resolution | 0.8 μm |
+| Y Resolution | 0.8 μm |
+| FOV | 10 × 10 mm |
+| Working Distance | 20.5 mm |
 
 ## Defect Inspection
 

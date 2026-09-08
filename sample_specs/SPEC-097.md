@@ -24,6 +24,12 @@
 | Z Resolution | 0.05 μm |
 | Measurement Speed | 25 mm/s |
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 400 mm |
+
 ## Defect Inspection
 
 - Not Supported

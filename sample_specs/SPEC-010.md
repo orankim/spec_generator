@@ -27,6 +27,15 @@
 | Maximum Line Speed | 500 mm/s |
 | Sampling Rate | 8 kHz |
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 800 mm |
+| X Resolution | 20 μm |
+| Y Resolution | 20 μm |
+| Pixel Size | 20 μm |
+
 ## Defect Inspection
 
 | Item | Specification |

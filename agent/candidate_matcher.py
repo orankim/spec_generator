@@ -61,6 +61,20 @@ _MAXIMUM_WIDTH_RE = re.compile(r"(?:^|\n)[-*]?\s*Maximum(?:\s+Electrode)?\s+Widt
 _NOTES_RE = re.compile(r"(?:^|\n)#{1,3}\s*Notes\s*\n+(.+?)(?=\n#{1,3}\s|\Z)", re.IGNORECASE | re.DOTALL)
 
 _RANGE_LABEL_HINTS = ("measurement range", "측정 범위", "측정범위")
+# "## Spatial Performance" 절(agent.candidate_matcher._extract_spatial_performance_
+# fields 참고)의 "X Range"/"Y Range"는 전극 폭(가로) 같은 완전히 다른 물리량이라
+# 이 아래 "주" Measurement Range(두께/깊이 축, Hard Requirement 판정에 쓰임)와
+# 절대 섞이면 안 된다. RAG chunk는 "## Measurement Performance"/"## Spatial
+# Performance"가 서로 다른 chunk로 나뉘고 검색 관련도 순으로 재배열될 수 있어
+# (원본 문서 순서가 보장되지 않음), "Spatial Performance" chunk가 먼저 처리되면
+# "X Range: 0 ~ 800 mm"(mm 단위 폭)이 fact.range에 잘못 들어가 예: "0~5000 μm
+# 측정 가능?" 같은 두께 Hard Requirement를 엉뚱하게 PASS로 만드는 사고가 실제로
+# 있었다(회귀 테스트 T020/QA019가 잡아냄) — X/Y/XY Resolution에 이미 있던 것과
+# 동일한 원리의 제외 목록을 range에도 추가한다. "Z Range"는 값 자체는 항상
+# Measurement Performance의 원본 범위와 동일하게 만들어지므로(agent.candidate_
+# matcher._extract_spatial_performance_fields 쪽 데이터 생성 정책) 순서가 바뀌어도
+# 결과값은 같지만, 우연에 기대지 않도록 동일한 원칙으로 함께 제외한다.
+_SPATIAL_PERFORMANCE_RANGE_LABELS = ("x range", "y range", "z range")
 _ACCURACY_LABEL_HINTS = ("accuracy", "정확도")
 _DEFECT_SIZE_LABEL_HINTS = ("minimum detectable defect", "minimum defect size", "최소 검출", "최소 결함")
 _DEFECT_TYPES_LABEL_HINTS = ("defect types",)
@@ -78,6 +92,63 @@ def _is_primary_resolution_label(label_lower: str) -> bool:
     if not label_lower.endswith("resolution"):
         return False
     return label_lower not in _LATERAL_RESOLUTION_LABELS
+
+
+# ==========================================
+# Spatial Performance(X/Y/Z Range·Resolution/FOV/Working Distance/Pixel Size) —
+# sample_specs 데이터 보강과 함께 추가된 별도 절 전용 추출. 위 "주" Measurement
+# Range/Resolution(Hard Requirement 판정에 쓰임, _is_range_label/_is_primary_
+# resolution_label)과는 완전히 분리해서 처리한다 — 만약 이 라벨들을 기존
+# `for label, value in _extract_table_rows(text):` 루프에 그냥 섞어 넣으면,
+# "## Spatial Performance"의 "Z Range"/"X Resolution" 같은 라벨이 "range"/
+# "resolution"으로 끝난다는 이유만으로 _is_range_label/_is_primary_resolution_label
+# 매칭에 걸려 fact.range/fact.resolution(=Hard Requirement가 실제로 비교하는 값)을
+# 잘못 채울 위험이 있다 — 특히 RAG chunk 순서는 원본 문서의 절 순서를 보장하지
+# 않으므로(같은 후보의 chunk가 relevance 순으로 섞여 들어올 수 있음), "Measurement
+# Performance"보다 "Spatial Performance" chunk가 먼저 처리되면 이 위험이 실제로
+# 발생할 수 있다. 그래서 "## Spatial Performance" 절 본문만 별도로 잘라낸 뒤
+# (_SPATIAL_PERFORMANCE_SECTION_RE), 그 안에서만 정확히 일치하는 라벨(대소문자
+# 무시)로 값을 뽑는다 — Hard Requirement/Ranking 로직에는 전혀 영향을 주지 않는다.
+_SPATIAL_PERFORMANCE_SECTION_RE = re.compile(
+    r"(?:^|\n)#{1,3}\s*Spatial Performance\s*\n+(.+?)(?=\n#{1,3}\s|\Z)", re.IGNORECASE | re.DOTALL
+)
+# label -> _CandidateFact의 어느 속성에 저장할지. range 계열은 units.parse_range(),
+# 나머지는 units.parse_value_unit()으로 파싱한다(FOV만 예외 — 아래 fov_display 참고).
+# X/Y(/XY) Resolution은 여기 넣지 않는다 — 아래 _extract_candidate_fact의 공용
+# table-row 루프가 "## Spatial Performance" 안팎을 가리지 않고 이미 처리한다
+# (카메라 비전 계열은 이 값을 "## Measurement Performance"에 직접 적으므로).
+_SPATIAL_RANGE_LABELS = {"x range": "x_range", "y range": "y_range", "z range": "z_range"}
+_SPATIAL_VALUE_LABELS = {
+    "z resolution": "z_resolution",
+    "working distance": "working_distance",
+    "pixel size": "pixel_size",
+}
+
+
+def _extract_spatial_performance_fields(text: str, fact: "_CandidateFact") -> None:
+    m = _SPATIAL_PERFORMANCE_SECTION_RE.search(text)
+    if not m:
+        return
+    section_text = m.group(1)
+    for label, value in _extract_table_rows(section_text):
+        label_lower = label.lower()
+        if label_lower in _SPATIAL_RANGE_LABELS:
+            attr = _SPATIAL_RANGE_LABELS[label_lower]
+            if getattr(fact, attr) is None:
+                range_result = units.parse_range(value)
+                if range_result is not None:
+                    setattr(fact, attr, range_result)
+        elif label_lower in _SPATIAL_VALUE_LABELS:
+            attr = _SPATIAL_VALUE_LABELS[label_lower]
+            if getattr(fact, attr) is None:
+                value_unit = units.parse_value_unit(value)
+                if value_unit is not None:
+                    setattr(fact, attr, value_unit)
+        elif label_lower == "fov" and fact.fov_display is None:
+            # FOV는 "10 x 10 mm"처럼 2축 복합 표기가 흔해 단일 수치로 쪼개지 않고
+            # 사양서 원문 표기를 그대로 보존한다(schemas.CandidateEquipmentFact.
+            # fov_display 참고).
+            fact.fov_display = value.strip()
 
 # requirement.inspection_items 중 "이 결함 종류를 실제로 검출하는가"로 검증 가능한
 # 항목만 다룬다(thickness/coating은 사양서에 이런 형태의 명시적 목록이 없어 안전하게
@@ -155,6 +226,8 @@ def _is_range_label(label_lower: str) -> bool:
     무관한 "…Range" 표 라벨이 같은 표에 섞여 있는 사례는 없음), 고정 문구 힌트에
     더해 라벨이 "range"/"범위"로 끝나는지도 함께 확인한다.
     """
+    if label_lower in _SPATIAL_PERFORMANCE_RANGE_LABELS:
+        return False
     if any(h in label_lower for h in _RANGE_LABEL_HINTS):
         return True
     return label_lower.endswith("range") or label_lower.endswith("범위")
@@ -244,6 +317,20 @@ class _CandidateFact:
         self.resolution: Optional[Tuple[float, str]] = None
         self.resolution_doc: Optional[Document] = None
         self.resolution_text: Optional[str] = None
+        # Spatial Performance(위 _extract_spatial_performance_fields 참고) — 이
+        # 필드들은 fact.range/fact.resolution(Hard Requirement 판정용)과 완전히
+        # 독립적이며, Markdown/Word 사양서 내보내기 전용이다. 근거 doc/text는
+        # equipment_fact 내보내기 화면이 필드별 출처를 별도로 표시하지 않으므로
+        # (기존 range_min/resolution_value 등과 동일하게) 따로 두지 않는다.
+        self.x_range: Optional[Tuple[float, float, str]] = None
+        self.y_range: Optional[Tuple[float, float, str]] = None
+        self.z_range: Optional[Tuple[float, float, str]] = None
+        self.x_resolution: Optional[Tuple[float, str]] = None
+        self.y_resolution: Optional[Tuple[float, str]] = None
+        self.z_resolution: Optional[Tuple[float, str]] = None
+        self.fov_display: Optional[str] = None
+        self.working_distance: Optional[Tuple[float, str]] = None
+        self.pixel_size: Optional[Tuple[float, str]] = None
 
 
 def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
@@ -307,6 +394,8 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                 fact.notes_text = m.group(1).strip()
                 fact.notes_doc = doc
 
+        _extract_spatial_performance_fields(text, fact)
+
         if fact.width_mm is None:
             m = _MAXIMUM_WIDTH_RE.search(text)
             if m:
@@ -369,6 +458,19 @@ def _extract_candidate_fact(docs: List[Document]) -> _CandidateFact:
                     fact.resolution = value_unit
                     fact.resolution_doc = doc
                     fact.resolution_text = f"{label}: {value}"
+            # X/Y/XY Resolution(위 _is_primary_resolution_label이 fact.resolution용
+            # 으로는 일부러 제외하는 라벨) — 카메라 비전 계열 사양서는 이 값을
+            # "## Measurement Performance" 표에 직접 적어 두므로(예: SPEC-006),
+            # Spatial Performance 표시용으로 같은 값을 사양서 원문에 다시 중복
+            # 기재하지 않고 여기서 코드로 직접 추출해 재사용한다("XY Resolution"
+            # 한 값으로 X/Y 둘 다 채운다).
+            if label_lower in ("x resolution", "y resolution", "xy resolution"):
+                value_unit = units.parse_value_unit(value)
+                if value_unit is not None:
+                    if label_lower in ("x resolution", "xy resolution") and fact.x_resolution is None:
+                        fact.x_resolution = value_unit
+                    if label_lower in ("y resolution", "xy resolution") and fact.y_resolution is None:
+                        fact.y_resolution = value_unit
     return fact
 
 
@@ -936,6 +1038,36 @@ def build_candidates(requirement: RequirementSchema, retrieved_docs: List[Docume
             ),
             min_defect_size_value=fact.defect_size[0] if fact.defect_size else None,
             min_defect_size_unit=fact.defect_size[1] if fact.defect_size else None,
+            x_range_min=fact.x_range[0] if fact.x_range else None,
+            x_range_max=fact.x_range[1] if fact.x_range else None,
+            x_range_unit=fact.x_range[2] if fact.x_range else None,
+            y_range_min=fact.y_range[0] if fact.y_range else None,
+            y_range_max=fact.y_range[1] if fact.y_range else None,
+            y_range_unit=fact.y_range[2] if fact.y_range else None,
+            # Z Range/Resolution: "## Spatial Performance" 절에 명시적으로 있으면
+            # 그 값을 쓰고, 없으면 "## Measurement Performance"의 주 측정 범위/
+            # 해상도(fact.range/fact.resolution)를 그대로 재사용한다 — 이 corpus의
+            # 장비 대부분은 두께/깊이(Z축)를 측정하는 것이 곧 "주" 측정 성능이므로
+            # 같은 숫자를 "## Spatial Performance"에도 사양서 원문에 중복으로
+            # 적어 넣을 필요가 없다(sample_specs 파일에 문자 그대로 중복 텍스트를
+            # 추가하면 heading 기반 RAG chunking이 새 chunk를 만들어, fake-hash
+            # 임베딩을 쓰는 결정론적 테스트의 검색 순위가 흔들리는 부작용이 실제로
+            # 있었다 — Z Range/Resolution은 코드에서만 매핑하고 원문은 건드리지
+            # 않는 것으로 정책을 바꿨다).
+            z_range_min=fact.z_range[0] if fact.z_range else (fact.range[0] if fact.range else None),
+            z_range_max=fact.z_range[1] if fact.z_range else (fact.range[1] if fact.range else None),
+            z_range_unit=fact.z_range[2] if fact.z_range else (fact.range[2] if fact.range else None),
+            x_resolution_value=fact.x_resolution[0] if fact.x_resolution else None,
+            x_resolution_unit=fact.x_resolution[1] if fact.x_resolution else None,
+            y_resolution_value=fact.y_resolution[0] if fact.y_resolution else None,
+            y_resolution_unit=fact.y_resolution[1] if fact.y_resolution else None,
+            z_resolution_value=fact.z_resolution[0] if fact.z_resolution else (fact.resolution[0] if fact.resolution else None),
+            z_resolution_unit=fact.z_resolution[1] if fact.z_resolution else (fact.resolution[1] if fact.resolution else None),
+            fov_display=fact.fov_display,
+            working_distance_value=fact.working_distance[0] if fact.working_distance else None,
+            working_distance_unit=fact.working_distance[1] if fact.working_distance else None,
+            pixel_size_value=fact.pixel_size[0] if fact.pixel_size else None,
+            pixel_size_unit=fact.pixel_size[1] if fact.pixel_size else None,
         )
 
         candidates.append(

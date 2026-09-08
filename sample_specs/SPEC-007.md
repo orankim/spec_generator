@@ -27,8 +27,12 @@
 
 | Item | Specification |
 |---|---|
-| XY Resolution | 0.5 μm |
-| Z Resolution | 0.05 nm |
+| X Range | 0 ~ 5.0 mm |
+| Y Range | 0 ~ 5.0 mm |
+| X Resolution | 0.5 μm |
+| Y Resolution | 0.5 μm |
+| FOV | 5 × 5 mm |
+| Working Distance | 10.1 mm |
 
 ## Defect Inspection
 

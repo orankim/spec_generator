@@ -22,6 +22,12 @@
 | Accuracy | ±0.2 μm |
 | Z Resolution | 0.05 μm |
 
+## Spatial Performance
+
+| Item | Specification |
+|---|---|
+| X Range | 0 ~ 500 mm |
+
 ## Defect Inspection
 
 | Item | Specification |
