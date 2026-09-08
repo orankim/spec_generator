@@ -592,13 +592,28 @@ PAGE_STYLE = """
     .md-body table.md-table th, .md-body table.md-table td { border: 1px solid var(--grey-300); padding: 5px 9px; text-align: left; }
     .md-body table.md-table th { background: var(--grey-50); font-weight: 700; }
 
-    /* ===== 견적 분석 카드(Phase 9) ===== */
-    table.quote-table { border-collapse: collapse; margin: 6px 0; font-size: var(--font-body-sm-size); width: 100%; }
-    table.quote-table th, table.quote-table td { border: 1px solid var(--grey-300); padding: 5px 9px; text-align: left; }
-    table.quote-table th { background: var(--grey-50); font-weight: 700; }
-    table.quote-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .quote-issue { color: #9b2c2c; font-size: var(--font-body-sm-size); }
-    .quote-excluded-list { margin: 4px 0 0; padding-left: 18px; font-size: var(--font-body-sm-size); color: #555; }
+    /* ===== 예상 견적(EquipmentCard 내부, 견적 통합 개선) — 추천 장비 카드
+       바깥에 뜬금없이 뜨는 별도 카드가 아니라, "이 견적이 어떤 장비의 견적인지"가
+       명확하도록 EquipmentCard 본문 안에 이어서 표시한다(renderQuoteSummaryBlock).
+       기존 .card-row/.unknown-specs-detail/.sources-block과 시각적으로 통일한다. */
+    .quote-summary-block { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--grey-300); }
+    .quote-summary-title {
+        font-size: var(--font-label-size); font-weight: var(--font-label-weight);
+        color: var(--grey-900); margin-bottom: 4px;
+    }
+    .quote-variant + .quote-variant { margin-top: 8px; }
+    .quote-issue { color: #9b2c2c; font-size: var(--font-body-sm-size); padding: 4px 0; }
+    .quote-detail-toggle { margin-top: 4px; font-size: var(--font-body-sm-size); }
+    .quote-detail-toggle summary { cursor: pointer; list-style: none; color: var(--text-secondary); }
+    .quote-detail-toggle summary::-webkit-details-marker { display: none; }
+    .quote-detail-toggle summary::before { content: "▸ "; }
+    .quote-detail-toggle[open] summary::before { content: "▾ "; }
+    .quote-detail-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+    .quote-detail-row {
+        display: flex; justify-content: space-between; gap: 10px;
+        font-size: var(--font-body-sm-size); color: var(--text-secondary);
+    }
+    .quote-detail-row .value { color: var(--grey-900); font-variant-numeric: tabular-nums; }
 
     /* ===== typing indicator(요청서 11절) ===== */
     .typing-dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
@@ -1753,6 +1768,7 @@ async def agent_page():
                                 ${confirmationSummaryHtml(content.hardRequirementReport)}
                                 ${rowsHtml}
                                 ${unknownFieldsHtml}
+                                ${renderQuoteSummaryBlock(content.quoteAnalyses, content.chosenCandidate)}
                                 ${renderSourcesBlock(primarySources, content.retrievedSourcesCount, eq.name, content.chosenCandidate)}
                                 ${renderDownloadArea(content, msgId)}
                             </div>
@@ -1820,66 +1836,118 @@ async def agent_page():
                     `;
                 }
 
-                // Phase 9(UI 통합) — 견적 분석 카드. quote_analyses는 사용자 질문에 견적/
-                // 가격 의도가 있을 때만 backend(agent/routes.py generate_spec_api,
-                // agent.quote_intent.wants_quote_analysis)가 채워 보낸다 — 사양만 물었을
-                // 때는 이 dict가 비어 있으므로 카드 자체를 만들지 않는다(불필요한 견적
-                // 표를 매번 끼워 넣지 않는다는 요청서 6/9단계 원칙).
-                function renderQuoteCard(content) {
-                    const quoteAnalyses = content.quoteAnalyses || {};
-                    const specIds = Object.keys(quoteAnalyses);
-                    if (specIds.length === 0) {
+                // ----- 예상 견적(EquipmentCard 내부, 견적 통합 개선) -----
+                // 추천 장비 결과가 있으면 그 장비에 실제로 연결된 QUOTE 데이터를 함께
+                // 보여준다(agent/routes.py generate_spec_api가 이제 견적 키워드 유무와
+                // 무관하게 quote_analyses를 채워 보낸다). 예전에는 이 정보가 답변 맨
+                // 아래에 별도 "견적 분석" 카드로 뜬금없이 나타났고, 그마저도 후보 전체를
+                // 한 표에 뒤섞어 "이 견적이 어떤 장비의 것인지" 알기 어려웠다 — 지금은
+                // 추천된 그 장비(chosenCandidate)의 견적만, 그 장비의 EquipmentCard
+                // 안에서 바로 이어서 보여준다.
+                //
+                // 가격 Hallucination 방어(요청서 10단계): 여기서 보여주는 모든 금액은
+                // agent.quote_parser.analyze_quotation()이 QUOTE-*.md 원문에서 코드로
+                // 재계산한 값(computed_*)이며, LLM이 만든 숫자가 아니다. 연결된 QUOTE가
+                // 없으면 가격을 추측하지 않고 "없음"을 명시한다.
+                function fmtQuoteAmount(n) {
+                    if (n === null || n === undefined) return '확인 불가';
+                    const sign = n < 0 ? '-' : '';
+                    return `${sign}₩${Math.round(Math.abs(n)).toLocaleString('ko-KR')}`;
+                }
+
+                function quoteIssueHtml(analysis) {
+                    return (analysis.issues && analysis.issues.length)
+                        ? `<div class="quote-issue">⚠ 계산 오류 검출: ${analysis.issues.length}건 — 이 견적 데이터를 신뢰하기 전에 확인이 필요합니다.</div>`
+                        : '';
+                }
+
+                // 견적 구성 접이식 상세 — 실제 quote_parser 계산 결과에 존재하는(0이
+                // 아닌) 항목만 나열한다(요청서 7-2절: "실제 QUOTE 데이터 구조에 존재하는
+                // 항목만 표시"). 기본 장비/합계는 항상 보여준다.
+                function quoteDetailRowsHtml(analysis) {
+                    const rows = [['기본 장비', analysis.computed_equipment_amount]];
+                    if (analysis.computed_options_amount) rows.push(['옵션', analysis.computed_options_amount]);
+                    if (analysis.computed_additional_cost_amount) rows.push(['추가 비용', analysis.computed_additional_cost_amount]);
+                    if (analysis.computed_discount) rows.push(['할인', analysis.computed_discount]);
+                    if (analysis.computed_vat_amount !== null && analysis.computed_vat_amount !== undefined) {
+                        rows.push(['부가세', analysis.computed_vat_amount]);
+                    }
+                    rows.push(['합계', analysis.computed_grand_total]);
+                    const excludedItems = (analysis.quotation.excluded_items || []);
+                    const rowsHtml = rows
+                        .map(([label, amount]) => `<div class="quote-detail-row"><span class="label">${escapeHtml(label)}</span><span class="value">${fmtQuoteAmount(amount)}</span></div>`)
+                        .join('');
+                    const excludedHtml = excludedItems.length
+                        ? `<div class="quote-detail-row"><span class="label">제외 항목</span><span class="value">${excludedItems.map(escapeHtml).join(', ')}</span></div>`
+                        : '';
+                    return `<div class="quote-detail-list">${rowsHtml}${excludedHtml}</div>`;
+                }
+
+                function quoteVariantHtml(analysis, label) {
+                    const labelHtml = label ? `<div class="card-row"><span class="label">${escapeHtml(label)}</span><span class="value">${fmtQuoteAmount(analysis.computed_grand_total)}</span></div>` : '';
+                    return `
+                        <div class="quote-variant">
+                            ${labelHtml}
+                            ${quoteIssueHtml(analysis)}
+                            <details class="quote-detail-toggle">
+                                <summary>견적 구성 보기</summary>
+                                ${quoteDetailRowsHtml(analysis)}
+                            </details>
+                        </div>
+                    `;
+                }
+
+                function renderQuoteSummaryBlock(quoteAnalyses, chosenCandidate) {
+                    if (!chosenCandidate) return '';
+                    const analyses = (quoteAnalyses && quoteAnalyses[chosenCandidate.source_document]) || [];
+                    if (analyses.length === 0) {
                         return `
-                            <div class="card">
-                                <div class="card-header">견적 분석</div>
-                                <div class="card-body"><span class="value muted">연결된 견적 정보를 찾지 못했습니다.</span></div>
+                            <div class="quote-summary-block">
+                                <div class="quote-summary-title">예상 견적</div>
+                                <span class="value muted">현재 저장된 견적 자료가 없어 예상 견적을 제공할 수 없습니다.</span>
                             </div>
                         `;
                     }
-                    const chosenDoc = content.chosenSourceDocument;
-                    specIds.sort((a, b) => (a === chosenDoc ? -1 : b === chosenDoc ? 1 : 0));
-                    const fmt = (n) => (n === null || n === undefined) ? 'UNKNOWN' : Math.round(n).toLocaleString('ko-KR');
 
-                    const rows = specIds.map(specId => {
-                        const analyses = quoteAnalyses[specId] || [];
-                        return analyses.map((a, idx) => {
-                            const q = a.quotation;
-                            const name = `${(q.general && q.general.manufacturer) || '?'} ${(q.general && q.general.model) || '?'}`;
-                            const label = analyses.length > 1 ? `${name} (견적 ${idx + 1}/${analyses.length})` : name;
-                            const recommendedBadge = specId === chosenDoc ? ' <span class="badge badge-pass">추천</span>' : '';
-                            const issueBadge = (a.issues && a.issues.length)
-                                ? `<div class="quote-issue">⚠ 계산 오류 검출: ${a.issues.length}건 — 이 견적 데이터를 신뢰하기 전에 확인이 필요합니다.</div>`
-                                : '';
-                            const excludedItems = (q.excluded_items && q.excluded_items.length)
-                                ? `<ul class="quote-excluded-list">${q.excluded_items.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`
-                                : '<span class="value muted">제외 항목 없음</span>';
-                            return `
-                                <tr>
-                                    <td>${escapeHtml(label)}${recommendedBadge}</td>
-                                    <td class="num">${fmt(a.computed_equipment_amount)}</td>
-                                    <td class="num">${fmt(a.computed_options_amount)}</td>
-                                    <td class="num">${fmt(a.computed_additional_cost_amount)}</td>
-                                    <td class="num">${fmt(a.computed_discount)}</td>
-                                    <td class="num">${fmt(a.computed_vat_amount)}</td>
-                                    <td class="num"><strong>${fmt(a.computed_grand_total)}</strong></td>
-                                </tr>
-                                <tr><td colspan="7">${issueBadge}${excludedItems}</td></tr>
-                            `;
-                        }).join('');
-                    }).join('');
+                    const sourcesHtml = analyses.map(a => `
+                        <div class="source-item">
+                            <div class="source-doc">📄 ${escapeHtml(a.quotation.source_file)}</div>
+                        </div>
+                    `).join('');
+                    const evidenceHtml = `
+                        <details class="sources-block">
+                            <summary class="sources-title">견적 근거 ${analyses.length}개 보기</summary>
+                            <div class="sources-list">${sourcesHtml}</div>
+                        </details>
+                    `;
 
-                    return `
-                        <div class="card">
-                            <div class="card-header">견적 분석 (SAMPLE/TEST 데이터 — 실제 업체 견적 아님)</div>
-                            <div class="card-body">
-                                <div style="overflow-x:auto;">
-                                    <table class="quote-table">
-                                        <thead><tr><th>장비</th><th>본체</th><th>옵션</th><th>추가비용</th><th>할인</th><th>VAT</th><th>최종 금액</th></tr></thead>
-                                        <tbody>${rows}</tbody>
-                                    </table>
-                                </div>
-                                <div class="value muted" style="margin-top:6px; display:block;">가격이 비싸다/저렴하다/시장가격 대비 어떻다는 판단은 비교 근거가 없어 제공하지 않습니다.</div>
+                    if (analyses.length === 1) {
+                        return `
+                            <div class="quote-summary-block">
+                                <div class="quote-summary-title">예상 견적</div>
+                                <div class="card-row"><span class="label">총 예상 금액</span><span class="value">${fmtQuoteAmount(analyses[0].computed_grand_total)}</span></div>
+                                ${quoteIssueHtml(analyses[0])}
+                                <details class="quote-detail-toggle">
+                                    <summary>견적 구성 보기</summary>
+                                    ${quoteDetailRowsHtml(analyses[0])}
+                                </details>
+                                ${evidenceHtml}
+                                <div class="value muted" style="margin-top:6px; display:block;">SAMPLE/TEST 데이터 기반이며, 가격이 비싸다/저렴하다는 판단은 비교 근거가 없어 제공하지 않습니다.</div>
                             </div>
+                        `;
+                    }
+
+                    // 동일 장비에 견적이 여러 건 있는 경우(예: 옵션 포함/대안 견적) — 하나를
+                    // 숨기지 않고 각각 구조적으로 구분해서 보여준다(요청서 6-2절).
+                    const variantsHtml = analyses
+                        .map((a, idx) => quoteVariantHtml(a, idx === 0 ? '기본 견적' : `대안 견적 ${idx}`))
+                        .join('');
+                    return `
+                        <div class="quote-summary-block">
+                            <div class="quote-summary-title">예상 견적 (${analyses.length}건)</div>
+                            ${variantsHtml}
+                            ${evidenceHtml}
+                            <div class="value muted" style="margin-top:6px; display:block;">SAMPLE/TEST 데이터 기반이며, 가격이 비싸다/저렴하다는 판단은 비교 근거가 없어 제공하지 않습니다.</div>
                         </div>
                     `;
                 }
@@ -1895,7 +1963,6 @@ async def agent_page():
                             disambiguation && disambiguation.hints.get(msg.id)
                         );
                         case 'comparison_result': return renderComparisonCard(msg.content);
-                        case 'quote_result': return renderQuoteCard(msg.content);
                         case 'error': return renderErrorMessage(msg.content);
                         case 'thinking': return renderThinkingMessage();
                         default: return '';
@@ -2427,23 +2494,14 @@ async def agent_page():
                             // "마크다운 사양서 생성" 버튼용 — RAG로 찾은 후보 장비 원본 사양
                             // (LLM을 거치지 않은 값). 후보가 아예 없으면 null.
                             chosenCandidate: data.chosen_candidate || null,
+                            // 추천 장비에 연결된 QUOTE 데이터(견적 통합 개선) — backend가
+                            // 이제 견적 키워드 유무와 무관하게 채워 보낸다. renderEquipmentCard가
+                            // chosenCandidate.source_document로 이 dict에서 자기 견적만
+                            // 찾아 카드 안에 바로 이어서 보여준다(renderQuoteSummaryBlock).
+                            quoteAnalyses: data.quote_analyses || {},
                         },
                     });
                     addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
-
-                    // Phase 9 — 견적 의도가 있던 질문에만 backend가 quote_analyses를 채워
-                    // 보낸다(agent.quote_intent.wants_quote_analysis). 비어 있으면(사양만
-                    // 물어본 경우) 견적 카드 자체를 추가하지 않는다.
-                    const quoteAnalyses = data.quote_analyses || {};
-                    if (Object.keys(quoteAnalyses).length > 0) {
-                        addMessage({
-                            role: 'assistant', type: 'quote_result',
-                            content: {
-                                quoteAnalyses: quoteAnalyses,
-                                chosenSourceDocument: data.chosen_candidate ? data.chosen_candidate.source_document : null,
-                            },
-                        });
-                    }
                 }
 
                 // #chatInput/#sendBtn만 disabled로 막는 것으로는 부족하다 — 홈 화면

@@ -21,7 +21,6 @@ from renderers.markdown_renderer import render_candidate_markdown, render_markdo
 from . import candidate_matcher, ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, attach_quote_analyses, retrieve_and_generate
-from .quote_intent import wants_quote_analysis
 from .requirement_parser import apply_conversational_patch, apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import CandidateEquipment, ComplianceRecord, RequirementSchema, SpecificationSchema
@@ -218,16 +217,22 @@ async def generate_spec_api(req: GenerateSpecRequest):
         chosen_candidate = candidate_matcher.select_best_candidate(candidates)
         hard_requirement_report += build_inspection_item_hard_requirement_records(chosen_candidate)
 
-        # Phase 6(사양+견적 통합): 사용자 원문(raw_text)에 견적/가격 관련 의도가
-        # 있을 때만 QUOTE 분석을 이어붙인다 — 사양만 물었는데 견적 표까지 매번
-        # 끼워 넣지 않는다(요청서 6단계 "사양만"/"견적만" 질문 구분). raw_text가
-        # 없으면(조건 선택 UI 등) 안전하게 견적 분석을 생략한다.
-        quote_analyses = {}
-        if wants_quote_analysis(requirement.raw_text or ""):
-            quote_analyses = {
-                spec_id: [a.model_dump() for a in analyses]
-                for spec_id, analyses in attach_quote_analyses(candidates).items()
-            }
+        # Phase 6(사양+견적 통합) -> 후속 개선: 사용자가 견적 관련 키워드를 직접
+        # 쓰지 않은 일반 장비 추천 질문에서도 QUOTE 데이터가 실제로 연결돼 있다면
+        # 함께 보여준다(요청서: "추천 장비 결과가 존재할 경우, 해당 추천 장비의
+        # 견적 데이터를 함께 제공"). attach_quote_analyses()는 candidate.source_
+        # document(예: 'SPEC-051.md')로 연결된 QUOTE 파일만 찾아 코드로 결정론적
+        # 계산(quote_parser.analyze_quotation, LLM 미사용)을 수행하므로, 매번
+        # 호출해도 가격을 지어내거나 비용이 크지 않다. 연결된 QUOTE가 없는
+        # 후보는 이전과 동일하게 quote_analyses에 키 자체가 없다(가격 추측 없음).
+        # 이전에는 quote_intent.wants_quote_analysis(raw_text)로 게이팅해
+        # "장비 찾아줘"처럼 견적 키워드가 없는 질문에서는 이 함수 자체를 호출하지
+        # 않았다 — 그 결과 실제로 연결된 QUOTE가 있어도 화면에 전혀 나타나지
+        # 않는 문제가 있었다.
+        quote_analyses = {
+            spec_id: [a.model_dump() for a in analyses]
+            for spec_id, analyses in attach_quote_analyses(candidates).items()
+        }
 
         return {
             "specification": specification.model_dump(),

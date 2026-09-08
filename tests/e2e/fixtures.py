@@ -11,6 +11,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from agent.quote_schemas import (
+    QuoteAnalysis,
+    QuoteCalculationIssue,
+    QuoteGeneral,
+    QuotationSchema,
+)
 from agent.schemas import (
     CandidateEquipment,
     CandidateEquipmentFact,
@@ -228,18 +234,63 @@ def make_candidate(
     ).model_dump()
 
 
+def make_quote_analysis(
+    source_file: str = "QUOTE-013.md",
+    manufacturer: str = "ThicknessPro",
+    model: str = "TP-800",
+    equipment_amount: float = 100_000_000.0,
+    options_amount: float = 20_000_000.0,
+    additional_cost_amount: float = 0.0,
+    discount: float = 0.0,
+    vat_amount: Optional[float] = 12_000_000.0,
+    grand_total: Optional[float] = 132_000_000.0,
+    excluded_items: Optional[List[str]] = None,
+    has_issue: bool = False,
+) -> Dict[str, Any]:
+    """견적 통합 개선 — EquipmentCard 안에 인라인으로 표시되는 "예상 견적" 블록
+    (main.py renderQuoteSummaryBlock)을 검증하는 e2e 테스트용 QuoteAnalysis.
+    금액은 전부 agent.quote_parser.analyze_quotation()이 채우는 것과 동일한
+    computed_* 필드로 표현한다(실제 백엔드가 절대 LLM으로 만들지 않는 값)."""
+    return QuoteAnalysis(
+        quotation=QuotationSchema(
+            source_file=source_file,
+            general=QuoteGeneral(manufacturer=manufacturer, model=model, linked_specification="SPEC-013.md"),
+            excluded_items=excluded_items or [],
+        ),
+        computed_equipment_amount=equipment_amount,
+        computed_options_amount=options_amount,
+        computed_additional_cost_amount=additional_cost_amount,
+        computed_discount=discount,
+        computed_subtotal_before_vat=equipment_amount + options_amount + additional_cost_amount + discount,
+        computed_vat_amount=vat_amount,
+        computed_grand_total=grand_total,
+        issues=(
+            [QuoteCalculationIssue(field="grand_total", message="문서 값과 재계산 값이 다릅니다.", stated_value=1.0, computed_value=2.0)]
+            if has_issue
+            else []
+        ),
+    ).model_dump()
+
+
 def make_generate_spec_response(
     scenario: str = "pass",
     retrieved_sources_count: int = 3,
     include_candidate: bool = True,
     specification: Optional[Dict[str, Any]] = None,
     candidate: Optional[Dict[str, Any]] = None,
+    quote_analyses: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> Dict[str, Any]:
     """
     specification/candidate를 명시하면(예: 중복 Equipment Name 시나리오처럼
     make_specification()/make_candidate()의 기본값으로는 표현할 수 없는 조합이
     필요할 때) 그 값을 그대로 쓰고, 없으면 기존처럼 scenario 기반 기본값을 만든다
     — 기존 호출부는 전혀 바뀌지 않는다.
+
+    quote_analyses를 명시하지 않으면 빈 dict({})다 — main.py의
+    renderQuoteSummaryBlock이 "현재 저장된 견적 자료가 없어..." 메시지를 보여주는
+    경로를 기존 e2e 테스트들이 계속 그대로 검증하게 한다(견적 연결 개선 이전과
+    동일하게, 이 fixture를 그대로 쓰는 다른 테스트들은 quote_analyses를 신경 쓸
+    필요가 없다).
     """
     candidate_status = {"pass": "PASS", "unknown": "PARTIAL", "fail": "FAIL"}[scenario]
     return {
@@ -253,6 +304,7 @@ def make_generate_spec_response(
         "recommendation_reasons": [],
         "unconfirmed_items": [],
         "comparison_table": [],
+        "quote_analyses": quote_analyses if quote_analyses is not None else {},
     }
 
 
