@@ -671,16 +671,21 @@ PAGE_STYLE = """
     }
     .unknown-spec-row .label { color: var(--text-secondary); }
 
-    /* ===== Cards (used inside AI content) ===== */
-    .card { background: #ffffff; border: 1px solid var(--grey-300); border-radius: 8px; overflow: hidden; }
+    /* ===== Cards (used inside AI content) =====
+       UX 개선(문서형 답변 레이아웃) — 답변마다 흰 배경 + 테두리로 감싼 "박스"가
+       여러 개 쌓이면 화면이 카드 더미처럼 분절돼 보인다는 문제가 있었다. .card는
+       더 이상 박스가 아니라 하나의 문서 섹션이다 — 배경/테두리를 없애고, 여러
+       .card가 이어질 때만(예: equipment_result 다음에 다른 메시지가 이어지는 경우)
+       얇은 구분선 하나로 섹션이 바뀌었음을 표시한다. DOM 구조(.card/.card-header/
+       .card-body)와 클래스명은 기존 그대로 유지한다 — 이 클래스를 대상으로 하는
+       기존 e2e 테스트(카드 스코핑용 셀렉터)가 계속 동작해야 하기 때문이다. */
+    .card { background: transparent; }
     .bubble .card { margin-top: 4px; }
-    .card + .card { margin-top: 10px; }
+    .card + .card { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--grey-200); }
     .card-header {
-        padding: 10px 14px;
-        background: var(--grey-50);
-        border-bottom: 1px solid var(--grey-300);
-        font-size: var(--font-heading-sm-size);
-        font-weight: var(--font-heading-sm-weight);
+        padding: 0 0 10px;
+        font-size: var(--font-heading-md-size);
+        font-weight: var(--font-heading-md-weight);
         line-height: var(--line-height-heading);
         color: var(--grey-900);
         display: flex;
@@ -689,30 +694,34 @@ PAGE_STYLE = """
     }
     /* 동일 Equipment Name을 가진 서로 다른 SPEC 문서가 한 대화 안에 함께
        등장할 때만 조건부로 렌더링되는 구분 정보(JS computeEquipmentDisambiguation
-       참고) — 정상적인 카드에는 나타나지 않는다. text-secondary는 --grey-50
-       배경 위에서 6.2:1로 이미 WCAG AA를 만족하는 조합(위 .badge-unset 참고)을
-       그대로 재사용한다. */
+       참고) — 정상적인 카드에는 나타나지 않는다. */
     .card-subtitle {
-        padding: 0 14px 8px;
-        margin-top: -4px;
-        background: var(--grey-50);
-        border-bottom: 1px solid var(--grey-300);
+        padding: 0 0 10px;
+        margin-top: -6px;
         font-size: var(--font-label-size);
         font-weight: var(--font-label-weight);
         color: var(--text-secondary);
         word-break: break-word;
     }
-    .card-body { padding: 12px 14px; }
+    .card-body { padding: 0; }
     /* Contextual Hint(JS pickContextualHints 참고) — 같은 이름의 다른 SPEC 문서가
        "새로 등장"할 때만 카드 본문 맨 위에 한 번 표시되는 짧은 안내. 새 색상을
-       추가하지 않고 본문 기본 대비 한 단계 낮은 --text-secondary(6.2:1, 위
-       .card-subtitle과 동일 조합)를 그대로 쓴다 — 경고/오류가 아니라 정보 안내이므로
-       .banner-* 색상 박스는 쓰지 않는다. */
+       추가하지 않고 본문 기본 대비 한 단계 낮은 --text-secondary를 그대로 쓴다 —
+       경고/오류가 아니라 정보 안내이므로 .banner-* 색상 박스는 쓰지 않는다. */
     .card-hint {
         font-size: var(--font-body-sm-size);
         color: var(--text-secondary);
         margin-bottom: 8px;
     }
+    /* 문서 내부 섹션 제목(예: "필수 조건 비교", "사양 정보") — .card-header(문서
+       전체 제목)보다 한 단계 작은 소제목. 카드/배경 없이 굵은 글자만으로 계층을
+       표현한다(문서형 답변 레이아웃 원칙 — 섹션마다 박스를 새로 만들지 않는다). */
+    .doc-subheading {
+        font-size: var(--font-heading-sm-size); font-weight: var(--font-heading-sm-weight);
+        line-height: var(--line-height-heading); color: var(--grey-900);
+        margin: 18px 0 8px;
+    }
+    .card-body > .doc-subheading:first-child { margin-top: 0; }
     .card-row {
         display: flex;
         justify-content: space-between;
@@ -766,21 +775,25 @@ PAGE_STYLE = """
     .banner-fail { background: #fff5f5; border: 1px solid #feb2b2; color: #822727; }
     .banner-unknown { background: #fffaf0; border: 1px solid #fbd38d; color: #7b341e; }
 
-    /* ===== Hard requirement comparison list ===== */
-    .hard-req-list { list-style: none; margin: 0; padding: 0; }
-    .hard-req-list li {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 10px;
-        padding: 8px 0;
-        border-bottom: 1px dashed var(--grey-300);
-        font-size: var(--font-body-md-size);
+    /* ===== 필수 조건 비교 표(요청서: 사양/요구조건 비교는 표로) =====
+       기존에는 항목마다 <li> 한 줄(항목명 + 이유 문장 + 배지)로 나열했으나,
+       "조건 | 요구사항 | 장비 사양 | 결과" 4열 표로 구조화한다 — 같은 데이터
+       (hardRequirementReport)를 더 스캔하기 쉬운 형태로만 바꾼 것이다. 표 자체가
+       좁은 화면에서 넘칠 수 있어 .table-scroll로 감싸 가로 스크롤만 그 안에서
+       일어나게 한다(페이지 전체가 가로로 늘어나지 않도록). */
+    .table-scroll { overflow-x: auto; margin: 8px 0; }
+    table.hard-req-list { width: 100%; border-collapse: collapse; font-size: var(--font-body-sm-size); }
+    table.hard-req-list th, table.hard-req-list td {
+        padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--grey-200);
         line-height: var(--line-height-body);
     }
-    .hard-req-list li:last-child { border-bottom: none; }
-    .hard-req-list .item-name { color: var(--grey-900); font-weight: 500; flex-shrink: 0; }
-    .hard-req-list .reason { color: var(--grey-900); opacity: .75; flex: 1; text-align: right; font-size: var(--font-body-sm-size); }
+    table.hard-req-list th {
+        color: var(--text-secondary); font-weight: 500; font-size: var(--font-support-size);
+        border-bottom: 1px solid var(--grey-300);
+    }
+    table.hard-req-list td:last-child, table.hard-req-list th:last-child { text-align: right; }
+    table.hard-req-list tbody tr:last-child td { border-bottom: none; }
+    table.hard-req-list .item-name { color: var(--grey-900); font-weight: 500; }
 
     /* ===== Ranking(추천 순위) vs Compliance(요구조건 충족) 요약 — EquipmentCard ===== */
     .confirm-block {
@@ -1421,8 +1434,9 @@ async def agent_page():
                 }
 
                 // Hard Requirement 결과를 "확인된 조건(PASS)/미충족 조건(FAIL)/확인 필요
-                // (UNKNOWN)"으로 묶어 카드 안에 간단히 요약한다 — 아래 별도 comparison_result
-                // 카드(각 항목의 상세 근거/배지)를 대체하지 않고 보완한다.
+                // (UNKNOWN)"으로 묶어 카드 안에 간단히 요약한다 — 바로 아래 이어지는
+                // renderHardRequirementTable()의 항목별 상세 표(같은 카드 안)를 대체하지
+                // 않고 빠른 스캔용 요약으로 보완한다.
                 function confirmationSummaryHtml(hardRequirementReport) {
                     const records = hardRequirementReport || [];
                     if (records.length === 0) return '';
@@ -1757,6 +1771,14 @@ async def agent_page():
                     const hintHtml = contextualHint
                         ? `<div class="card-hint">ℹ️ ${escapeHtml(contextualHint)}</div>`
                         : '';
+                    // 문서형 답변 레이아웃: 예전에는 "확인된/미충족/확인 필요 요약"과
+                    // "항목별 상세 비교"가 각각 이 카드와 별도의 comparison_result 카드로
+                    // 나뉘어 있었다 — 같은 장비에 대한 같은 정보인데 카드 두 개로 쪼개져
+                    // 보이는 문제가 있었다. 지금은 요약 다음에 상세 비교 표를 바로 이어
+                    // 붙여 하나의 "필수 조건" 섹션으로 통합한다(데이터는 동일).
+                    const specSectionHtml = (rowsHtml || unknownFieldsHtml)
+                        ? `<div class="doc-subheading">사양 정보</div>${rowsHtml}${unknownFieldsHtml}`
+                        : '';
                     return `
                         <div class="card">
                             <div class="card-header">${equipmentHeaderPrefix(content.hasFail, content.hasUnknown, content.hasRecords)} — ${escapeHtml(eq.name || 'N/A')}</div>
@@ -1766,8 +1788,8 @@ async def agent_page():
                                 ${equipmentBanner(content.hasFail, content.hasUnknown, content.hasRecords)}
                                 ${noResults}
                                 ${confirmationSummaryHtml(content.hardRequirementReport)}
-                                ${rowsHtml}
-                                ${unknownFieldsHtml}
+                                ${renderHardRequirementTable(content.hardRequirementReport)}
+                                ${specSectionHtml}
                                 ${renderQuoteSummaryBlock(content.quoteAnalyses, content.chosenCandidate)}
                                 ${renderSourcesBlock(primarySources, content.retrievedSourcesCount, eq.name, content.chosenCandidate)}
                                 ${renderDownloadArea(content, msgId)}
@@ -1802,36 +1824,46 @@ async def agent_page():
                     'N/A': `<span class="badge badge-unknown" style="background:#e0e0e0; color:#555;">${HARD_REQ_RESULT_LABEL['N/A']}</span>`,
                 };
 
-                // Backend(agent.spec_validator/agent.candidate_matcher)가 만드는 reason
-                // 문구는 "... → PASS"처럼 결과를 문장 끝에 텍스트로도 붙여준다(사람이 읽는
-                // 근거 설명 자체에 필요) — 그런데 이 카드는 바로 옆에 같은 결과를 badge로도
-                // 보여주므로 그대로 두면 "PASS ... PASS"처럼 중복돼 보인다. 여기서는 화면
-                // 표시용으로만 그 꼬리를 잘라내고, reason 문자열 자체(다른 곳에서 재사용될
-                // 수 있는 원본 데이터)는 건드리지 않는다.
-                function stripTrailingResultArrow(reason) {
-                    return (reason || '').replace(/\\s*(→|->)\\s*(PASS|FAIL|UNKNOWN)\\s*$/i, '');
+                // 요구사항/장비 사양 셀 표시 문자열 — hardRequirementReport(ComplianceRecord)의
+                // requirement/specification은 단일 숫자값이다(범위 표시는 EquipmentCard의
+                // sourcedFieldRows가 이미 별도로 보여준다). fmtReqValue와 동일한 연산자
+                // 한글 표기(이상/이하/미만/초과)를 재사용해 표 안에서도 자연스럽게 읽히게 한다.
+                const _OP_LABEL = {'<=': '이하', '>=': '이상', '<': '미만', '>': '초과', '=': ''};
+                function hardReqCellText(value, unit, operator, emptyText) {
+                    if (value === null || value === undefined) return emptyText || '-';
+                    const opLabel = operator ? (_OP_LABEL[operator] ?? '') : '';
+                    return `${value}${unit ? ' ' + unit : ''}${opLabel ? ' ' + opLabel : ''}`.trim();
                 }
 
-                function renderComparisonCard(content) {
-                    const records = content.hardRequirementReport || [];
-                    if (records.length === 0) {
-                        return `
-                            <div class="card">
-                                <div class="card-header">필수 조건 검증</div>
-                                <div class="card-body"><span class="value muted">평가할 조건이 지정되지 않았습니다.</span></div>
-                            </div>
-                        `;
-                    }
-                    const itemsHtml = records.map(r => {
+                // ----- 필수 조건 비교 표(요청서: "조건 | 요구사항 | 장비 사양 | 결과") -----
+                // 예전에는 별도의 "comparison_result" 메시지/카드로 EquipmentCard 아래에
+                // 뜬금없이 하나 더 쌓였다 — 지금은 EquipmentCard 안에서 확인된/미충족/확인
+                // 필요 요약(confirmationSummaryHtml) 바로 다음에 이어지는 하나의 표로
+                // 통합해 "추천 장비 하나에 대한 답변"이 카드 여러 개가 아니라 하나의
+                // 문서처럼 읽히게 한다. 데이터(hardRequirementReport)와 PASS/FAIL/UNKNOWN
+                // 판정 자체는 그대로이고 표시 형태만 바뀐다.
+                function renderHardRequirementTable(hardRequirementReport) {
+                    const records = hardRequirementReport || [];
+                    if (records.length === 0) return '';
+                    const rowsHtml = records.map(r => {
                         const badge = RESULT_BADGE[r.result] || RESULT_BADGE.UNKNOWN;
                         const src = (r.result !== 'UNKNOWN' && r.source && r.source.document) ? sourceDetailHtml(r.source) : '';
-                        const reasonText = escapeHtml(stripTrailingResultArrow(r.reason));
-                        return `<li><span class="item-name">${escapeHtml(r.item)}</span><span class="reason">${reasonText} ${badge}${src}</span></li>`;
+                        return `
+                            <tr>
+                                <td class="item-name">${escapeHtml(r.item)}</td>
+                                <td>${escapeHtml(hardReqCellText(r.requirement, r.unit, r.operator))}</td>
+                                <td>${escapeHtml(hardReqCellText(r.specification, r.unit, null, '확인 불가'))}</td>
+                                <td>${badge}${src}</td>
+                            </tr>
+                        `;
                     }).join('');
                     return `
-                        <div class="card">
-                            <div class="card-header">사용자 요구조건 검증 (필수 조건)</div>
-                            <div class="card-body"><ul class="hard-req-list">${itemsHtml}</ul></div>
+                        <div class="doc-subheading">필수 조건 비교</div>
+                        <div class="table-scroll">
+                            <table class="hard-req-list">
+                                <thead><tr><th>조건</th><th>요구사항</th><th>장비 사양</th><th>결과</th></tr></thead>
+                                <tbody>${rowsHtml}</tbody>
+                            </table>
                         </div>
                     `;
                 }
@@ -1962,7 +1994,6 @@ async def agent_page():
                             disambiguation && disambiguation.labels.get(msg.id),
                             disambiguation && disambiguation.hints.get(msg.id)
                         );
-                        case 'comparison_result': return renderComparisonCard(msg.content);
                         case 'error': return renderErrorMessage(msg.content);
                         case 'thinking': return renderThinkingMessage();
                         default: return '';
@@ -2501,7 +2532,6 @@ async def agent_page():
                             quoteAnalyses: data.quote_analyses || {},
                         },
                     });
-                    addMessage({ role: 'assistant', type: 'comparison_result', content: { hardRequirementReport: hardRecords } });
                 }
 
                 // #chatInput/#sendBtn만 disabled로 막는 것으로는 부족하다 — 홈 화면

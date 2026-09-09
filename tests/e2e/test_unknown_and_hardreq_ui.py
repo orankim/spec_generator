@@ -100,15 +100,15 @@ def test_fail_badge_is_visually_distinct_from_pass(agent_page: Page, mock_api):
 
 def test_unknown_result_never_rendered_as_pass_badge(agent_page: Page, mock_api):
     _send(agent_page, mock_api, "unknown")
-    hard_req_items = agent_page.locator(".hard-req-list li")
-    count = hard_req_items.count()
+    hard_req_rows = agent_page.locator("table.hard-req-list tbody tr")
+    count = hard_req_rows.count()
     found_unknown = False
     for i in range(count):
-        item = hard_req_items.nth(i)
-        text = item.inner_text()
+        row = hard_req_rows.nth(i)
+        text = row.inner_text()
         if "Accuracy" in text:
             assert "확인 불가" in text
-            assert item.locator(".badge-pass").count() == 0, "UNKNOWN 항목이 PASS 배지로 잘못 렌더링됨"
+            assert row.locator(".badge-pass").count() == 0, "UNKNOWN 항목이 PASS 배지로 잘못 렌더링됨"
             found_unknown = True
     assert found_unknown, "테스트 전제(Accuracy=UNKNOWN)가 화면에 반영되지 않음"
 
