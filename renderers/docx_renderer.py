@@ -17,9 +17,11 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
+from agent.quote_schemas import QuoteAnalysis
 from agent.schemas import CandidateEquipment, ComplianceRecord, RequirementSchema
 
 from .candidate_specification import CandidateSpecificationData, build_candidate_specification_data
+from .quote_document import QuoteDocumentData, build_quote_document_data
 
 # Hard Requirement 결과 배지 색상 — main.py의 RESULT_BADGE 팔레트(design token)와
 # 맞춘다. 새 색상을 만들지 않고 이미 프로젝트가 쓰는 값을 그대로 가져왔다.
@@ -113,11 +115,11 @@ def _add_compliance_table(document: Document, compliance) -> None:
 # Word 사양서에서만 제외하는 섹션(요청서: "핵심 전극 검사 비교와 무관하고 항상
 # UNKNOWN뿐인 섹션이 여전히 노출된다") — CandidateEquipmentFact가 애초에 이
 # 영역을 추출하지 않아(candidate_specification.py 주석 참고) 실제 데이터로 채워질
-# 일이 없는 3개 섹션만 Word 출력에서 제외한다. candidate_specification.py의
-# 공통 Structured Data(sections) 자체는 건드리지 않는다 — Markdown 사양서
-# (render_candidate_markdown)는 지금처럼 13개 섹션을 그대로 유지해야 하므로,
-# 두 포맷이 공유하는 데이터가 아니라 Word 렌더러가 소비하는 시점에만 걸러낸다.
-_DOCX_EXCLUDED_SECTION_IDS = {"interfaces", "environment", "safety"}
+# 일이 없는 4개 섹션을 Word 출력에서 제외한다. candidate_specification.py의
+# 공통 Structured Data(sections) 자체는 건드리지 않는다 — Word 렌더러가 소비하는
+# 시점에만 걸러낸다(Markdown 사양서(render_candidate_markdown)도 같은 4개
+# 섹션을 _MARKDOWN_EXCLUDED_SECTION_IDS로 각자 소비 시점에 제외한다).
+_DOCX_EXCLUDED_SECTION_IDS = {"system_configuration", "interfaces", "environment", "safety"}
 
 
 def _build_document(data: CandidateSpecificationData) -> Document:
@@ -164,6 +166,105 @@ def render_candidate_docx(
     Hard Requirement 결과)가 항상 일치한다."""
     data = build_candidate_specification_data(candidate, requirement=requirement, hard_requirement_report=hard_requirement_report)
     document = _build_document(data)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _add_quote_line_item_table(document: Document, heading: str, rows) -> None:
+    document.add_heading(heading, level=1)
+    if not rows:
+        document.add_paragraph("None")
+        document.add_paragraph()
+        return
+    table = document.add_table(rows=1, cols=4)
+    _style_table(table)
+    header = table.rows[0].cells
+    header[0].text, header[1].text, header[2].text, header[3].text = "Item", "Quantity", "Unit Price", "Amount"
+    for row in rows:
+        cells = table.add_row().cells
+        cells[0].text, cells[1].text, cells[2].text, cells[3].text = row.item, row.quantity, row.unit_price, row.amount
+    document.add_paragraph()
+
+
+def _build_quote_document(data: QuoteDocumentData) -> Document:
+    document = Document()
+
+    title = document.add_heading(data.title, level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    document.add_heading("General", level=1)
+    for label, value in data.general_rows:
+        document.add_paragraph(f"{label}: {value}", style="List Bullet")
+    document.add_paragraph()
+
+    _add_quote_line_item_table(document, "Equipment", data.equipment_rows)
+    _add_quote_line_item_table(document, "Options", data.option_rows)
+
+    document.add_heading("Additional Cost", level=1)
+    if not data.additional_cost_rows:
+        document.add_paragraph("None")
+    else:
+        table = document.add_table(rows=1, cols=2)
+        _style_table(table)
+        header = table.rows[0].cells
+        header[0].text, header[1].text = "Item", "Amount"
+        for row in data.additional_cost_rows:
+            cells = table.add_row().cells
+            cells[0].text, cells[1].text = row.item, row.amount
+    document.add_paragraph()
+
+    document.add_heading("Excluded Items", level=1)
+    if not data.excluded_items:
+        document.add_paragraph("None")
+    else:
+        for item in data.excluded_items:
+            document.add_paragraph(item, style="List Bullet")
+    document.add_paragraph()
+
+    document.add_heading("Commercial Terms", level=1)
+    for label, value in data.commercial_rows:
+        document.add_paragraph(f"{label}: {value}", style="List Bullet")
+    document.add_paragraph()
+
+    document.add_heading("Total", level=1)
+    table = document.add_table(rows=1, cols=2)
+    _style_table(table)
+    header = table.rows[0].cells
+    header[0].text, header[1].text = "Item", "Amount"
+    for row in data.total_rows:
+        cells = table.add_row().cells
+        cells[0].text, cells[1].text = row.label, row.amount
+    document.add_paragraph()
+
+    document.add_heading("Calculation Issues", level=1)
+    if not data.issue_messages:
+        document.add_paragraph("No calculation issues detected — computed values match the amounts stated in the source quotation.")
+    else:
+        for message in data.issue_messages:
+            p = document.add_paragraph(f"⚠ {message}", style="List Bullet")
+            for run in p.runs:
+                run.font.color.rgb = _RESULT_COLORS["FAIL"]
+    document.add_paragraph()
+
+    document.add_heading("Notes", level=1)
+    if data.notes:
+        for note in data.notes:
+            document.add_paragraph(note, style="List Bullet")
+    else:
+        document.add_paragraph("None")
+    document.add_paragraph(f"Source: {data.source_file}")
+
+    _apply_korean_font(document)
+    return document
+
+
+def render_quote_docx(analysis: QuoteAnalysis) -> bytes:
+    """QuoteAnalysis 하나를 Word(.docx) 바이트로 렌더링한다. render_quote_markdown()과
+    정확히 같은 build_quote_document_data() 결과를 쓰므로 두 포맷의 금액(코드가
+    재계산한 computed_* 값)이 항상 일치한다."""
+    data = build_quote_document_data(analysis)
+    document = _build_quote_document(data)
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()

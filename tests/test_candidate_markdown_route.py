@@ -90,17 +90,19 @@ def test_render_candidate_markdown_matches_requested_format():
     assert "- SPEC-010.md" in md
 
 
-def test_render_candidate_markdown_still_includes_interfaces_environment_safety():
-    """회귀 방지: Word 사양서에서는 Interfaces/Data, Environment, Safety 섹션을
-    제외했지만(renderers/docx_renderer.py의 _DOCX_EXCLUDED_SECTION_IDS는 Word
-    렌더러 소비 시점에만 적용) Markdown 사양서는 이 변경의 영향을 받지 않고
-    기존 13개 섹션 구조를 그대로 유지해야 한다."""
+def test_render_candidate_markdown_excludes_system_interfaces_environment_safety():
+    """System Configuration/Interfaces/Environment/Safety는 CandidateEquipmentFact가
+    추출하지 않아 항상 UNKNOWN뿐인 섹션이라, Markdown 사양서 출력에서 제외한다
+    (renderers/markdown_renderer.py의 _MARKDOWN_EXCLUDED_SECTION_IDS, docx_renderer.py의
+    _DOCX_EXCLUDED_SECTION_IDS와 같은 패턴 — 소비 시점에만 걸러내고 공유 sections
+    데이터 자체는 그대로 둔다)."""
     candidate = _full_candidate()
     md = render_candidate_markdown(candidate, requirement=None)
 
-    assert "## Interfaces / Data" in md
-    assert "## Environment" in md
-    assert "## Safety" in md
+    assert "## System Configuration" not in md
+    assert "## Interfaces / Data" not in md
+    assert "## Environment" not in md
+    assert "## Safety" not in md
 
 
 def test_render_candidate_markdown_leaves_missing_fields_as_unknown():

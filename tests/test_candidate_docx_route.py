@@ -109,10 +109,12 @@ def test_render_candidate_docx_includes_equipment_name_and_sections():
     for expected in (
         "General Specification", "Inspection Target", "Inspection Requirements",
         "Measurement Performance", "Spatial Performance", "Optical System",
-        "Defect Inspection", "Inspection Performance", "System Configuration",
+        "Defect Inspection", "Inspection Performance",
         "Requirement Compliance", "Sources / Notes",
     ):
         assert expected in headings, f"'{expected}' 섹션(Heading)이 문서에 없음: {headings}"
+
+    assert "System Configuration" not in headings
 
 
 def test_render_candidate_docx_excludes_interfaces_environment_safety_sections():

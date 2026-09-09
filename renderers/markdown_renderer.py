@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from agent.quote_schemas import QuoteAnalysis
 from agent.schemas import CandidateEquipment, ComplianceRecord, RequirementSchema, SpecificationSchema, ValidationResult
 from agent.spec_validator import build_compliance_report
 
@@ -22,6 +23,14 @@ from .common import (
     build_sections,
     build_validation_section,
 )
+from .quote_document import build_quote_document_data
+
+# CandidateEquipmentFact가 애초에 이 영역을 추출하지 않아(candidate_specification.py
+# 주석 참고) 실제 데이터로 채워질 일이 없는 4개 섹션은 Markdown 사양서 출력에서
+# 제외한다. docx_renderer.py의 _DOCX_EXCLUDED_SECTION_IDS와 같은 패턴 — 두 포맷이
+# 공유하는 candidate_specification.py의 sections 데이터 자체는 건드리지 않고,
+# 각 렌더러가 소비하는 시점에만 걸러낸다.
+_MARKDOWN_EXCLUDED_SECTION_IDS = {"system_configuration", "interfaces", "environment", "safety"}
 
 _SECTION_ORDER = [
     "equipment",
@@ -179,12 +188,14 @@ def render_candidate_markdown(
     검증하는 기존 동작 — 절대 바꾸지 않는다). 그 뒤에 candidate_specification.
     build_candidate_specification_data()가 만드는 나머지 절(Inspection Target/
     Requirements/Measurement Performance/Spatial Performance/Optical System/
-    System Configuration/Interfaces/Environment/Safety/Requirement Compliance)
-    을 이어 붙인다 — docx_renderer.render_candidate_docx()도 정확히 같은 데이터로
-    이 절들을 만들므로 두 포맷의 내용이 어긋나지 않는다(요청서 4절). 맨 끝의
-    Sources/Notes도 docx_renderer와 동일하게 "## Sources / Notes" 한 절로
-    합쳐서 렌더링한다(과거에는 "## Sources"/"## Notes" 두 절로 나뉘어 있어
-    Word 사양서와 항목 구성이 달랐다).
+    Requirement Compliance)을 이어 붙인다 — System Configuration/Interfaces/
+    Environment/Safety는 CandidateEquipmentFact가 추출하지 않아 항상 UNKNOWN뿐이므로
+    _MARKDOWN_EXCLUDED_SECTION_IDS로 제외한다(docx_renderer.render_candidate_docx()는
+    이 중 Interfaces/Environment/Safety만 별도로 제외한다 — _DOCX_EXCLUDED_SECTION_IDS
+    참고, 두 포맷의 제외 목록이 완전히 같지는 않다). 맨 끝의 Sources/Notes도
+    docx_renderer와 동일하게 "## Sources / Notes" 한 절로 합쳐서 렌더링한다
+    (과거에는 "## Sources"/"## Notes" 두 절로 나뉘어 있어 Word 사양서와 항목
+    구성이 달랐다).
     """
     fact = candidate.equipment_fact
     name_parts = [p for p in (candidate.manufacturer, candidate.model) if p]
@@ -256,6 +267,8 @@ def render_candidate_markdown(
     for section in spec_data.sections:
         if section.id == "general":
             continue  # General은 위에서 이미 렌더링했다 — 중복 방지.
+        if section.id in _MARKDOWN_EXCLUDED_SECTION_IDS:
+            continue
         lines.append(_candidate_section_to_md(section))
 
     lines.append(_candidate_compliance_to_md(spec_data.compliance))
@@ -276,5 +289,104 @@ def render_candidate_markdown(
         lines.append("")
         for note in spec_data.notes:
             lines.append(f"- {note}")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _quote_line_item_table_md(rows) -> List[str]:
+    if not rows:
+        return ["_None_", ""]
+    lines = ["| Item | Quantity | Unit Price | Amount |", "|---|---|---|---|"]
+    for row in rows:
+        lines.append(f"| {row.item} | {row.quantity} | {row.unit_price} | {row.amount} |")
+    lines.append("")
+    return lines
+
+
+def render_quote_markdown(analysis: QuoteAnalysis) -> str:
+    """
+    QuoteAnalysis(agent/quote_parser.py analyze_quotation()의 결과) 하나를 Markdown
+    견적서로 렌더링한다. render_candidate_markdown()과 같은 원칙 — 문서에 적힌
+    값(quotation.totals)이 아니라 코드가 재계산한 값(analysis.computed_*)만
+    금액으로 보여주고, 재계산 값과 문서 값이 다르면 "Calculation Issues" 절에
+    그대로 옮긴다(요청서 5/10단계: 가격을 추측하거나 조용히 한쪽 값만 보여주지
+    않는다). docs/QUOTATION_MARKDOWN_FORMAT.md가 정의한 원본 QUOTE-*.md 섹션
+    순서(General/Equipment/Options/Additional Cost/Excluded Items/Commercial
+    Terms/Total/Notes)를 그대로 따르되, 재계산 결과를 보여주는 절이므로 원본에는
+    없는 "Calculation Issues" 절을 Total 다음에 추가한다.
+    """
+    data = build_quote_document_data(analysis)
+
+    lines: List[str] = [f"# {data.title}", ""]
+
+    lines.append("## General")
+    lines.append("")
+    for label, value in data.general_rows:
+        lines.append(f"- {label}: {value}")
+    lines.append("")
+
+    lines.append("## Equipment")
+    lines.append("")
+    lines.extend(_quote_line_item_table_md(data.equipment_rows))
+
+    lines.append("## Options")
+    lines.append("")
+    lines.extend(_quote_line_item_table_md(data.option_rows))
+
+    lines.append("## Additional Cost")
+    lines.append("")
+    if not data.additional_cost_rows:
+        lines.append("_None_")
+        lines.append("")
+    else:
+        lines.append("| Item | Amount |")
+        lines.append("|---|---|")
+        for row in data.additional_cost_rows:
+            lines.append(f"| {row.item} | {row.amount} |")
+        lines.append("")
+
+    lines.append("## Excluded Items")
+    lines.append("")
+    if not data.excluded_items:
+        lines.append("_None_")
+        lines.append("")
+    else:
+        for item in data.excluded_items:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    lines.append("## Commercial Terms")
+    lines.append("")
+    for label, value in data.commercial_rows:
+        lines.append(f"- {label}: {value}")
+    lines.append("")
+
+    lines.append("## Total")
+    lines.append("")
+    lines.append("| Item | Amount |")
+    lines.append("|---|---|")
+    for row in data.total_rows:
+        lines.append(f"| {row.label} | {row.amount} |")
+    lines.append("")
+
+    lines.append("## Calculation Issues")
+    lines.append("")
+    if not data.issue_messages:
+        lines.append("_No calculation issues detected — computed values match the amounts stated in the source quotation._")
+        lines.append("")
+    else:
+        for message in data.issue_messages:
+            lines.append(f"- ⚠ {message}")
+        lines.append("")
+
+    lines.append("## Notes")
+    lines.append("")
+    if data.notes:
+        for note in data.notes:
+            lines.append(f"- {note}")
+    else:
+        lines.append("_None_")
+    lines.append("")
+    lines.append(f"Source: {data.source_file}")
 
     return "\n".join(lines).rstrip() + "\n"

@@ -15,12 +15,13 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from renderers.docx_renderer import render_candidate_docx
-from renderers.markdown_renderer import render_candidate_markdown, render_markdown
+from renderers.docx_renderer import render_candidate_docx, render_quote_docx
+from renderers.markdown_renderer import render_candidate_markdown, render_markdown, render_quote_markdown
 
 from . import candidate_matcher, ollama_client, spec_retriever
 from .paths import DEFAULT_CHROMA_DB_PATH
 from .pipeline import analyze_requirement, attach_quote_analyses, retrieve_and_generate
+from .quote_schemas import QuoteAnalysis
 from .requirement_parser import apply_conversational_patch, apply_deterministic_extraction
 from .requirement_validator import validate_requirement
 from .schemas import CandidateEquipment, ComplianceRecord, RequirementSchema, SpecificationSchema
@@ -51,6 +52,22 @@ def _safe_filename_stem(candidate: CandidateEquipment) -> str:
     sanitized = _UNSAFE_FILENAME_CHARS_RE.sub("_", raw)
     sanitized = re.sub(r"\s+", "_", sanitized).strip("_")
     return f"{sanitized}_specification" if sanitized else "equipment_specification"
+
+
+# 견적서 다운로드 파일명 — _safe_filename_stem(사양서)과 동일한 원칙(Windows 금지
+# 문자 치환, 장비명 없으면 fallback)이되 접미사만 "_quotation"으로 구분한다.
+# main.py:/api/download/{file_name}이 이 접미사로 "견적서_"/"설비사양서_" 다운로드
+# 파일명 접두어를 구분하므로(요청서: 사양서와 견적서를 혼동하지 않는 파일명),
+# 접미사 문자열 자체를 임의로 바꾸지 않는다.
+def _safe_quote_filename_stem(analysis: QuoteAnalysis) -> str:
+    general = analysis.quotation.general
+    name_parts = [p for p in (general.manufacturer, general.model) if p]
+    if not name_parts:
+        return "equipment_quotation"
+    raw = "_".join(name_parts)
+    sanitized = _UNSAFE_FILENAME_CHARS_RE.sub("_", raw)
+    sanitized = re.sub(r"\s+", "_", sanitized).strip("_")
+    return f"{sanitized}_quotation" if sanitized else "equipment_quotation"
 
 
 class AnalyzeRequest(BaseModel):
@@ -380,4 +397,62 @@ async def build_candidate_docx_api(req: BuildCandidateDocxRequest):
         }
     except Exception as e:
         logger.exception("후보 장비 Word 사양서 생성 실패")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BuildQuoteMarkdownRequest(BaseModel):
+    # 프론트엔드가 /generate-spec 응답의 quote_analyses[source_document][i]를
+    # 그대로 돌려보낸다(QuoteAnalysis.model_dump()) — build-candidate-markdown이
+    # chosenCandidate 스냅샷을 그대로 돌려받는 것과 동일한 패턴. 서버가 QUOTE
+    # 파일을 다시 찾아 재계산하지 않고, 화면에 이미 표시된(agent.quote_parser.
+    # analyze_quotation()이 계산한) 값을 그대로 문서로 저장한다.
+    quote_analysis: Dict[str, Any]
+
+
+@router.post("/build-quote-markdown")
+async def build_quote_markdown_api(req: BuildQuoteMarkdownRequest):
+    """
+    추천 화면 "예상 견적" 영역의 "Markdown 다운로드" 버튼용 — build-candidate-markdown
+    과 대칭인 견적서 버전. build-quote-docx와 정확히 같은 renderers.quote_document
+    Structured Data를 쓰므로 두 포맷의 금액이 어긋나지 않는다.
+    """
+    try:
+        analysis = QuoteAnalysis(**req.quote_analysis)
+        markdown_text = render_quote_markdown(analysis)
+
+        output_filename = f"{_safe_quote_filename_stem(analysis)}.md"
+        output_path = OUTPUT_DIR / output_filename
+        output_path.write_text(markdown_text, encoding="utf-8")
+        return {
+            "status": "success",
+            "file_name": output_filename,
+            "download_url": f"/api/download/{output_filename}",
+        }
+    except Exception as e:
+        logger.exception("Markdown 견적서 생성 실패")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BuildQuoteDocxRequest(BaseModel):
+    quote_analysis: Dict[str, Any]
+
+
+@router.post("/build-quote-docx")
+async def build_quote_docx_api(req: BuildQuoteDocxRequest):
+    """build-quote-markdown과 완전히 동일한 입력(quote_analysis)을 받아 Word(.docx)
+    견적서를 만든다."""
+    try:
+        analysis = QuoteAnalysis(**req.quote_analysis)
+        docx_bytes = render_quote_docx(analysis)
+
+        output_filename = f"{_safe_quote_filename_stem(analysis)}.docx"
+        output_path = OUTPUT_DIR / output_filename
+        output_path.write_bytes(docx_bytes)
+        return {
+            "status": "success",
+            "file_name": output_filename,
+            "download_url": f"/api/download/{output_filename}",
+        }
+    except Exception as e:
+        logger.exception("Word 견적서 생성 실패")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1790,7 +1790,7 @@ async def agent_page():
                                 ${confirmationSummaryHtml(content.hardRequirementReport)}
                                 ${renderHardRequirementTable(content.hardRequirementReport)}
                                 ${specSectionHtml}
-                                ${renderQuoteSummaryBlock(content.quoteAnalyses, content.chosenCandidate)}
+                                ${renderQuoteSummaryBlock(content, msgId)}
                                 ${renderSourcesBlock(primarySources, content.retrievedSourcesCount, eq.name, content.chosenCandidate)}
                                 ${renderDownloadArea(content, msgId)}
                             </div>
@@ -1915,7 +1915,63 @@ async def agent_page():
                     return `<div class="quote-detail-list">${rowsHtml}${excludedHtml}</div>`;
                 }
 
-                function quoteVariantHtml(analysis, label) {
+                // 견적서 다운로드 포맷 정의 — DOWNLOAD_FORMATS(사양서)와 같은 표 기반 패턴.
+                // 사양서는 EquipmentCard 전체에 후보 하나뿐이라 버튼 상태를 msg.content에
+                // 바로 두지만, 견적은 한 장비에 여러 건(Case H 대안 견적)이 있을 수 있어
+                // msg.content.quoteDownloads[quoteKey]로 견적 건별 상태를 따로 둔다
+                // (quoteKey = "{source_document}::{index}").
+                const QUOTE_DOWNLOAD_FORMATS = {
+                    markdown: {
+                        endpoint: '/api/agent/build-quote-markdown',
+                        btnClass: 'build-quote-markdown-btn',
+                        urlField: 'downloadUrl',
+                        generatingField: 'markdownGenerating',
+                        errorField: 'markdownError',
+                        formatLabel: 'Markdown',
+                        generateLabel: '📄 견적서 Markdown 다운로드',
+                        retryLabel: '📄 견적서 Markdown 다시 시도',
+                        readyLabel: '📄 견적서 Markdown 파일 다운로드',
+                    },
+                    docx: {
+                        endpoint: '/api/agent/build-quote-docx',
+                        btnClass: 'build-quote-docx-btn',
+                        urlField: 'docxDownloadUrl',
+                        generatingField: 'docxGenerating',
+                        errorField: 'docxError',
+                        formatLabel: 'Word',
+                        generateLabel: '📝 견적서 Word 다운로드',
+                        retryLabel: '📝 견적서 Word 다시 시도',
+                        readyLabel: '📝 견적서 Word 파일 다운로드',
+                    },
+                };
+
+                function renderSingleQuoteDownloadButton(format, quoteState, msgId, quoteKey) {
+                    const spec = QUOTE_DOWNLOAD_FORMATS[format];
+                    if (quoteState[spec.urlField]) {
+                        return `<a class="download-btn ${spec.btnClass}-ready" href="${escapeHtml(quoteState[spec.urlField])}" download>${spec.readyLabel}</a>`;
+                    }
+                    if (quoteState[spec.generatingField]) {
+                        return `<button type="button" class="download-btn" disabled style="border:none;">생성 중...</button>`;
+                    }
+                    const errorBanner = quoteState[spec.errorField]
+                        ? `<div class="banner banner-fail" style="margin-top:8px;">⚠️ 견적서 ${spec.formatLabel} 생성 중 오류가 발생했습니다: ${escapeHtml(quoteState[spec.errorField])}</div>`
+                        : '';
+                    const label = quoteState[spec.errorField] ? spec.retryLabel : spec.generateLabel;
+                    return `${errorBanner}<button type="button" class="download-btn ${spec.btnClass}" data-msg-id="${escapeHtml(msgId)}" data-quote-key="${escapeHtml(quoteKey)}" data-format="${format}" style="border:none; cursor:pointer;">${label}</button>`;
+                }
+
+                function renderQuoteDownloadArea(content, msgId, quoteKey) {
+                    content.quoteDownloads = content.quoteDownloads || {};
+                    const state = content.quoteDownloads[quoteKey] || {};
+                    return `
+                        <div class="download-actions" style="margin-top:8px;">
+                            ${renderSingleQuoteDownloadButton('markdown', state, msgId, quoteKey)}
+                            ${renderSingleQuoteDownloadButton('docx', state, msgId, quoteKey)}
+                        </div>
+                    `;
+                }
+
+                function quoteVariantHtml(analysis, label, downloadAreaHtml) {
                     const labelHtml = label ? `<div class="card-row"><span class="label">${escapeHtml(label)}</span><span class="value">${fmtQuoteAmount(analysis.computed_grand_total)}</span></div>` : '';
                     return `
                         <div class="quote-variant">
@@ -1925,12 +1981,15 @@ async def agent_page():
                                 <summary>견적 구성 보기</summary>
                                 ${quoteDetailRowsHtml(analysis)}
                             </details>
+                            ${downloadAreaHtml}
                         </div>
                     `;
                 }
 
-                function renderQuoteSummaryBlock(quoteAnalyses, chosenCandidate) {
+                function renderQuoteSummaryBlock(content, msgId) {
+                    const chosenCandidate = content.chosenCandidate;
                     if (!chosenCandidate) return '';
+                    const quoteAnalyses = content.quoteAnalyses;
                     const analyses = (quoteAnalyses && quoteAnalyses[chosenCandidate.source_document]) || [];
                     if (analyses.length === 0) {
                         return `
@@ -1954,6 +2013,7 @@ async def agent_page():
                     `;
 
                     if (analyses.length === 1) {
+                        const quoteKey = `${chosenCandidate.source_document}::0`;
                         return `
                             <div class="quote-summary-block">
                                 <div class="quote-summary-title">예상 견적</div>
@@ -1963,6 +2023,7 @@ async def agent_page():
                                     <summary>견적 구성 보기</summary>
                                     ${quoteDetailRowsHtml(analyses[0])}
                                 </details>
+                                ${renderQuoteDownloadArea(content, msgId, quoteKey)}
                                 ${evidenceHtml}
                                 <div class="value muted" style="margin-top:6px; display:block;">SAMPLE/TEST 데이터 기반이며, 가격이 비싸다/저렴하다는 판단은 비교 근거가 없어 제공하지 않습니다.</div>
                             </div>
@@ -1970,9 +2031,14 @@ async def agent_page():
                     }
 
                     // 동일 장비에 견적이 여러 건 있는 경우(예: 옵션 포함/대안 견적) — 하나를
-                    // 숨기지 않고 각각 구조적으로 구분해서 보여준다(요청서 6-2절).
+                    // 숨기지 않고 각각 구조적으로 구분해서 보여준다(요청서 6-2절). 다운로드도
+                    // 건별로 독립적으로 생성/실패한다.
                     const variantsHtml = analyses
-                        .map((a, idx) => quoteVariantHtml(a, idx === 0 ? '기본 견적' : `대안 견적 ${idx}`))
+                        .map((a, idx) => quoteVariantHtml(
+                            a,
+                            idx === 0 ? '기본 견적' : `대안 견적 ${idx}`,
+                            renderQuoteDownloadArea(content, msgId, `${chosenCandidate.source_document}::${idx}`)
+                        ))
                         .join('');
                     return `
                         <div class="quote-summary-block">
@@ -2075,6 +2141,9 @@ async def agent_page():
                     document.querySelectorAll('.build-markdown-btn, .build-docx-btn').forEach(btn => {
                         btn.addEventListener('click', () => buildDocumentForMessage(btn.dataset.msgId, btn.dataset.format));
                     });
+                    document.querySelectorAll('.build-quote-markdown-btn, .build-quote-docx-btn').forEach(btn => {
+                        btn.addEventListener('click', () => buildQuoteDocumentForMessage(btn.dataset.msgId, btn.dataset.quoteKey, btn.dataset.format));
+                    });
                 }
 
                 // 생성 완료 직후 실제 파일 다운로드를 코드로 트리거한다 — 사용자가
@@ -2149,6 +2218,51 @@ async def agent_page():
                     // 시작한다 — 실패 시에는 오류 배너 + "다시 시도" 버튼만 보여준다.
                     if (msg.content[spec.urlField]) {
                         triggerDownload(msg.content[spec.urlField]);
+                    }
+                }
+
+                // buildDocumentForMessage(사양서)와 같은 흐름이지만, 견적은 한 장비에
+                // 여러 건(대안 견적)이 있을 수 있어 상태를 msg.content 최상위가 아니라
+                // msg.content.quoteDownloads[quoteKey]에 견적 건별로 따로 둔다. 서버에
+                // 다시 계산을 맡기지 않고, 화면에 이미 표시된(그 검색 시점에 계산된)
+                // QuoteAnalysis를 그대로 build-quote-markdown/build-quote-docx로 보낸다
+                // — 다운로드 문서의 금액이 화면에 보이는 금액과 항상 일치하도록.
+                async function buildQuoteDocumentForMessage(msgId, quoteKey, format) {
+                    const spec = QUOTE_DOWNLOAD_FORMATS[format];
+                    if (!spec) return;
+                    const conv = getActiveConversation();
+                    const msg = conv && conv.messages.find(m => m.id === msgId);
+                    if (!msg) return;
+                    const sepIdx = quoteKey.lastIndexOf('::');
+                    const sourceDocument = quoteKey.slice(0, sepIdx);
+                    const idx = Number(quoteKey.slice(sepIdx + 2));
+                    const analyses = (msg.content.quoteAnalyses && msg.content.quoteAnalyses[sourceDocument]) || [];
+                    const analysis = analyses[idx];
+                    if (!analysis) return;
+
+                    msg.content.quoteDownloads = msg.content.quoteDownloads || {};
+                    const state = msg.content.quoteDownloads[quoteKey] = msg.content.quoteDownloads[quoteKey] || {};
+
+                    if (state[spec.urlField]) {
+                        triggerDownload(state[spec.urlField]);
+                        return;
+                    }
+                    if (state[spec.generatingField]) return;
+                    state[spec.generatingField] = true;
+                    state[spec.errorField] = null;
+                    renderAll();
+                    try {
+                        const data = await postJSON(spec.endpoint, { quote_analysis: analysis });
+                        state[spec.urlField] = data.download_url;
+                    } catch (err) {
+                        state[spec.errorField] = err.message;
+                    } finally {
+                        state[spec.generatingField] = false;
+                        saveConversations();
+                        renderAll();
+                    }
+                    if (state[spec.urlField]) {
+                        triggerDownload(state[spec.urlField]);
                     }
                 }
 
@@ -2872,16 +2986,21 @@ _DOWNLOAD_MEDIA_TYPES = {
 @app.get("/api/download/{file_name}")
 async def download_file(file_name: str):
     """
-    생성된 사양서 파일을 다운로드합니다.
+    생성된 사양서/견적서 파일을 다운로드합니다.
     """
     file_path = OUTPUT_DIR / file_name
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
 
     media_type = _DOWNLOAD_MEDIA_TYPES.get(file_path.suffix.lower(), "application/octet-stream")
+    # 파일명 접두어는 agent/routes.py가 만든 stem 접미사("_quotation" vs
+    # "_specification"/기타)로만 구분한다 — 별도 문서 타입 필드를 새로 만들지
+    # 않고, 이미 파일명에 있는 정보를 그대로 재사용한다(_safe_quote_filename_stem/
+    # _safe_filename_stem 참고).
+    prefix = "견적서_" if "_quotation" in file_path.stem else "설비사양서_"
     return FileResponse(
         path=file_path,
-        filename=f"설비사양서_{file_name}",
+        filename=f"{prefix}{file_name}",
         media_type=media_type,
     )
 
