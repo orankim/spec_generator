@@ -80,7 +80,7 @@ def test_word_button_click_triggers_real_api_call_and_download_link(agent_page: 
 
     download_link = agent_page.locator("a.build-docx-btn-ready")
     expect(download_link).to_be_visible(timeout=10000)
-    expect(download_link).to_have_text("📝 Word 파일 다운로드")
+    expect(download_link).to_have_text("Word 파일 다운로드")
     expect(agent_page.locator("button.build-docx-btn")).to_have_count(0)
 
     assert _saw_generating(agent_page), "Word 생성 중 \"생성 중...\" 로딩 상태가 화면에 한 번도 표시되지 않음"

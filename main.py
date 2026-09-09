@@ -819,8 +819,8 @@ PAGE_STYLE = """
     details.source-detail { margin-top: 4px; font-size: var(--font-support-size); }
     details.source-detail summary { color: var(--primary-600); cursor: pointer; list-style: none; }
     details.source-detail summary::-webkit-details-marker { display: none; }
-    details.source-detail summary::before { content: "📄 근거 보기"; }
-    details.source-detail[open] summary::before { content: "📄 근거 숨기기"; }
+    details.source-detail summary::before { content: "근거 보기"; }
+    details.source-detail[open] summary::before { content: "근거 숨기기"; }
     details.source-detail .source-body { color: var(--grey-900); opacity: .55; margin-top: 4px; padding-left: 4px; }
 
     /* ===== Quick Start Questions(문서 8절) — 홈 화면에서 자주 쓰는 질문 제안 ===== */
@@ -1213,7 +1213,7 @@ async def agent_page():
                     const parts = [escapeHtml(source.document)];
                     if (source.chunk_id !== null && source.chunk_id !== undefined) parts.push('chunk_' + escapeHtml(source.chunk_id));
                     if (source.section) parts.push(escapeHtml(source.section));
-                    // <summary>가 비어 있고 보이는 "📄 근거 보기" 문구는 CSS ::before로만
+                    // <summary>가 비어 있고 보이는 "근거 보기" 문구는 CSS ::before로만
                     // 그려져(요청서 15절 접근성 테스트 — axe-core "summary-name" 위반
                     // 실측: 생성된 콘텐츠는 스크린리더 접근성 트리에 이름으로 잡히지
                     // 않는다) 스크린리더 사용자에게는 이름 없는 토글로 들린다.
@@ -1343,7 +1343,7 @@ async def agent_page():
                 }
 
                 function renderErrorMessage(content) {
-                    return `<span class="msg-text">⚠️ ${escapeHtml(content.text)}</span>`;
+                    return `<span class="msg-text">${escapeHtml(content.text)}</span>`;
                 }
 
                 // ----- 답변 생성 중 표시(UX 개선 A) -----
@@ -1383,7 +1383,7 @@ async def agent_page():
                         .join('');
                     return `
                         <div class="card">
-                            <div class="card-header">📋 AI가 이해한 요구사항</div>
+                            <div class="card-header">AI가 이해한 요구사항</div>
                             <div class="card-body">${rowsHtml || '<span class="value muted">아직 확정된 조건이 없습니다.</span>'}</div>
                         </div>
                     `;
@@ -1408,7 +1408,7 @@ async def agent_page():
                     const runningDots = done ? '' : '<span class="typing-dots"><span></span><span></span><span></span></span>';
                     return `
                         <div class="card">
-                            <div class="card-header">${done ? '✅ 검색 완료' : '전극검사기 AI가 장비 정보를 분석하고 있습니다'}${runningDots}</div>
+                            <div class="card-header">${done ? '검색 완료' : '전극검사기 AI가 장비 정보를 분석하고 있습니다'}${runningDots}</div>
                             <div class="card-body"><ul class="progress-list">${itemsHtml}</ul></div>
                         </div>
                     `;
@@ -1421,16 +1421,16 @@ async def agent_page():
                 // 낮춰서 표현한다 — 검색된 후보 중 상대적으로 나은 순위일 뿐, 요구조건을
                 // 전부 확인했다는 뜻이 아니기 때문이다.
                 function equipmentBanner(hasFail, hasUnknown, hasRecords) {
-                    if (hasFail) return '<div class="banner banner-fail">⚠️ 모든 필수 조건을 만족하는 장비를 찾지 못했습니다 — 참고 후보 장비입니다.</div>';
-                    if (hasUnknown) return '<div class="banner banner-unknown">⚠️ 필수 조건 일부 확인 필요 — 확인된 조건은 만족하지만, 사양서에서 확인되지 않은 조건이 있어 모든 요구조건을 충족한다고 단정할 수 없습니다.</div>';
-                    if (hasRecords) return '<div class="banner banner-pass">✅ 필수 조건을 모두 충족합니다.</div>';
+                    if (hasFail) return '<div class="banner banner-fail">모든 필수 조건을 만족하는 장비를 찾지 못했습니다 — 참고 후보 장비입니다.</div>';
+                    if (hasUnknown) return '<div class="banner banner-unknown">필수 조건 일부 확인 필요 — 확인된 조건은 만족하지만, 사양서에서 확인되지 않은 조건이 있어 모든 요구조건을 충족한다고 단정할 수 없습니다.</div>';
+                    if (hasRecords) return '<div class="banner banner-pass">필수 조건을 모두 충족합니다.</div>';
                     return '';
                 }
 
                 function equipmentHeaderPrefix(hasFail, hasUnknown, hasRecords) {
-                    if (hasFail) return '🥈 참고 후보';
-                    if (!hasFail && !hasUnknown && hasRecords) return '🥇 추천 장비';
-                    return '🥈 추천 후보';
+                    if (hasFail) return '참고 후보';
+                    if (!hasFail && !hasUnknown && hasRecords) return '추천 장비';
+                    return '추천 후보';
                 }
 
                 // Hard Requirement 결과를 "확인된 조건(PASS)/미충족 조건(FAIL)/확인 필요
@@ -1479,11 +1479,10 @@ async def agent_page():
                         urlField: 'downloadUrl',
                         generatingField: 'markdownGenerating',
                         errorField: 'markdownError',
-                        icon: '📄',
                         formatLabel: 'Markdown',
-                        generateLabel: '📄 Markdown 다운로드',
-                        retryLabel: '📄 Markdown 다운로드 다시 시도',
-                        readyLabel: '📄 Markdown 파일 다운로드',
+                        generateLabel: 'Markdown 다운로드',
+                        retryLabel: 'Markdown 다운로드 다시 시도',
+                        readyLabel: 'Markdown 파일 다운로드',
                     },
                     docx: {
                         endpoint: '/api/agent/build-candidate-docx',
@@ -1491,11 +1490,10 @@ async def agent_page():
                         urlField: 'docxDownloadUrl',
                         generatingField: 'docxGenerating',
                         errorField: 'docxError',
-                        icon: '📝',
                         formatLabel: 'Word',
-                        generateLabel: '📝 Word 다운로드',
-                        retryLabel: '📝 Word 다운로드 다시 시도',
-                        readyLabel: '📝 Word 파일 다운로드',
+                        generateLabel: 'Word 다운로드',
+                        retryLabel: 'Word 다운로드 다시 시도',
+                        readyLabel: 'Word 파일 다운로드',
                     },
                 };
 
@@ -1516,7 +1514,7 @@ async def agent_page():
                     // 가까운 상태가 된다(요청서: "클릭 후 아무 변화가 없는 silent
                     // failure가 없는지"·"다시 시도할 수 있는가").
                     const errorBanner = content[spec.errorField]
-                        ? `<div class="banner banner-fail" style="margin-top:8px;">⚠️ ${spec.formatLabel} 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content[spec.errorField])}</div>`
+                        ? `<div class="banner banner-fail" style="margin-top:8px;">${spec.formatLabel} 사양서 생성 중 오류가 발생했습니다: ${escapeHtml(content[spec.errorField])}</div>`
                         : '';
                     const label = content[spec.errorField] ? spec.retryLabel : spec.generateLabel;
                     return `${errorBanner}<button type="button" class="download-btn ${spec.btnClass}" data-msg-id="${escapeHtml(msgId)}" data-format="${format}" style="border:none; cursor:pointer;">${label}</button>`;
@@ -1568,7 +1566,7 @@ async def agent_page():
                         return `
                             <div class="source-item">
                                 ${equipmentLine}
-                                <div class="source-doc">📄 ${escapeHtml(s)}</div>
+                                <div class="source-doc">${escapeHtml(s)}</div>
                             </div>
                         `;
                     }).join('');
@@ -1719,7 +1717,7 @@ async def agent_page():
                     const primarySources = (spec.primary_sources && spec.primary_sources.length > 0) ? spec.primary_sources : (spec.sources || []);
 
                     const noResults = content.retrievedSourcesCount === 0
-                        ? '<div class="banner banner-unknown">⚠️ 조건에 맞는 참고 사양서를 찾지 못했습니다(참고한 사양서 내용 0개). 아래 값은 사용자가 입력한 요구사항 외에는 근거가 없습니다.</div>'
+                        ? '<div class="banner banner-unknown">조건에 맞는 참고 사양서를 찾지 못했습니다(참고한 사양서 내용 0개). 아래 값은 사용자가 입력한 요구사항 외에는 근거가 없습니다.</div>'
                         : '';
 
                     // 검사 폭/속도는 target.width_mm(요구값 echo)이 아니라 후보 문서에서
@@ -1769,7 +1767,7 @@ async def agent_page():
                     // 않는다 — computeEquipmentDisambiguation/pickContextualHints가 실제로
                     // 서로 다른 SPEC 문서가 같은 이름으로 충돌할 때만 값을 채운다.
                     const hintHtml = contextualHint
-                        ? `<div class="card-hint">ℹ️ ${escapeHtml(contextualHint)}</div>`
+                        ? `<div class="card-hint">${escapeHtml(contextualHint)}</div>`
                         : '';
                     // 문서형 답변 레이아웃: 예전에는 "확인된/미충족/확인 필요 요약"과
                     // "항목별 상세 비교"가 각각 이 카드와 별도의 comparison_result 카드로
@@ -1889,7 +1887,7 @@ async def agent_page():
 
                 function quoteIssueHtml(analysis) {
                     return (analysis.issues && analysis.issues.length)
-                        ? `<div class="quote-issue">⚠ 계산 오류 검출: ${analysis.issues.length}건 — 이 견적 데이터를 신뢰하기 전에 확인이 필요합니다.</div>`
+                        ? `<div class="quote-issue">계산 오류 검출: ${analysis.issues.length}건 — 이 견적 데이터를 신뢰하기 전에 확인이 필요합니다.</div>`
                         : '';
                 }
 
@@ -1928,9 +1926,9 @@ async def agent_page():
                         generatingField: 'markdownGenerating',
                         errorField: 'markdownError',
                         formatLabel: 'Markdown',
-                        generateLabel: '📄 견적서 Markdown 다운로드',
-                        retryLabel: '📄 견적서 Markdown 다시 시도',
-                        readyLabel: '📄 견적서 Markdown 파일 다운로드',
+                        generateLabel: '견적서 Markdown 다운로드',
+                        retryLabel: '견적서 Markdown 다시 시도',
+                        readyLabel: '견적서 Markdown 파일 다운로드',
                     },
                     docx: {
                         endpoint: '/api/agent/build-quote-docx',
@@ -1939,9 +1937,9 @@ async def agent_page():
                         generatingField: 'docxGenerating',
                         errorField: 'docxError',
                         formatLabel: 'Word',
-                        generateLabel: '📝 견적서 Word 다운로드',
-                        retryLabel: '📝 견적서 Word 다시 시도',
-                        readyLabel: '📝 견적서 Word 파일 다운로드',
+                        generateLabel: '견적서 Word 다운로드',
+                        retryLabel: '견적서 Word 다시 시도',
+                        readyLabel: '견적서 Word 파일 다운로드',
                     },
                 };
 
@@ -1954,7 +1952,7 @@ async def agent_page():
                         return `<button type="button" class="download-btn" disabled style="border:none;">생성 중...</button>`;
                     }
                     const errorBanner = quoteState[spec.errorField]
-                        ? `<div class="banner banner-fail" style="margin-top:8px;">⚠️ 견적서 ${spec.formatLabel} 생성 중 오류가 발생했습니다: ${escapeHtml(quoteState[spec.errorField])}</div>`
+                        ? `<div class="banner banner-fail" style="margin-top:8px;">견적서 ${spec.formatLabel} 생성 중 오류가 발생했습니다: ${escapeHtml(quoteState[spec.errorField])}</div>`
                         : '';
                     const label = quoteState[spec.errorField] ? spec.retryLabel : spec.generateLabel;
                     return `${errorBanner}<button type="button" class="download-btn ${spec.btnClass}" data-msg-id="${escapeHtml(msgId)}" data-quote-key="${escapeHtml(quoteKey)}" data-format="${format}" style="border:none; cursor:pointer;">${label}</button>`;
@@ -2002,7 +2000,7 @@ async def agent_page():
 
                     const sourcesHtml = analyses.map(a => `
                         <div class="source-item">
-                            <div class="source-doc">📄 ${escapeHtml(a.quotation.source_file)}</div>
+                            <div class="source-doc">${escapeHtml(a.quotation.source_file)}</div>
                         </div>
                     `).join('');
                     const evidenceHtml = `
@@ -2075,7 +2073,7 @@ async def agent_page():
                     const wrap = document.createElement('div');
                     wrap.className = 'welcome-block';
                     wrap.innerHTML = `
-                        <div class="welcome-icon">🔋</div>
+                        <div class="welcome-icon"></div>
                         <h2>안녕하세요. 전극검사기 AI입니다.</h2>
                         <p>찾고 있는 전극 검사 장비의 조건이나 궁금한 내용을 입력해주세요.</p>
                         ${renderExampleChips()}
