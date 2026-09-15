@@ -11,6 +11,7 @@ import pytest
 
 pptx = pytest.importorskip("pptx")
 
+from pptx.enum.shapes import MSO_SHAPE  # noqa: E402
 from pptx.util import Inches  # noqa: E402
 
 from converters.pptx_to_markdown import convert_pptx_file, convert_pptx_to_markdown  # noqa: E402
@@ -111,3 +112,93 @@ def test_no_network_or_external_api_import():
     source = Path("converters/pptx_to_markdown.py").read_text(encoding="utf-8")
     for forbidden in ("openai", "requests", "httpx", "urllib.request", "socket"):
         assert forbidden not in source, f"외부 통신 관련 모듈({forbidden})을 사용하면 안 됨"
+
+
+def _build_merged_category_pptx(path: Path) -> Path:
+    """실제 사내 사양서 슬라이드에서 흔한 패턴: '구분' 열에 각 행마다 같은 값을
+    타이핑한 뒤(H/W x5, Vision x5) 세로로 병합한 표. python-pptx/PowerPoint는
+    이렇게 병합하면 병합된 셀의 텍스트가 "H/W\\nH/W\\n..."처럼 줄바꿈으로
+    이어붙는다 — 변환기가 이를 중복 없이 "H/W" 한 번으로 정리해야 한다."""
+    prs = pptx.Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    rows = [
+        ("구분", "항목", "내용"),
+        ("H/W", "검사 Stage", "세라믹 흡입"),
+        ("H/W", "비전시스템 정확도", "0.8um"),
+        ("Vision", "카메라 Type", "2D Area"),
+        ("Vision", "카메라 해상도", "152M"),
+    ]
+    table_shape = slide.shapes.add_table(len(rows), 3, Inches(1), Inches(1), Inches(6), Inches(3))
+    table = table_shape.table
+    for r, (a, b, c) in enumerate(rows):
+        table.cell(r, 0).text = a
+        table.cell(r, 1).text = b
+        table.cell(r, 2).text = c
+    table.cell(1, 0).merge(table.cell(2, 0))  # H/W 2행 병합
+    table.cell(3, 0).merge(table.cell(4, 0))  # Vision 2행 병합
+    prs.save(str(path))
+    return path
+
+
+def test_merged_category_column_fills_every_row(tmp_path: Path):
+    pptx_path = _build_merged_category_pptx(tmp_path / "merged.pptx")
+    md = convert_pptx_to_markdown(pptx_path, extract_images=False)
+    assert "| H/W | 검사 Stage | 세라믹 흡입 |" in md
+    assert "| H/W | 비전시스템 정확도 | 0.8um |" in md
+    assert "| Vision | 카메라 Type | 2D Area |" in md
+    assert "| Vision | 카메라 해상도 | 152M |" in md
+    # 병합 과정에서 이어붙은 "H/W\nH/W"가 그대로 노출되면 안 됨
+    assert "H/W<br>H/W" not in md
+    assert "Vision<br>Vision" not in md
+
+
+def _build_narrative_plus_table_pptx(path: Path) -> Path:
+    """제목 + 도면 placeholder 사각형(AutoShape) + 설명 문단 + 표 하나로 이뤄진
+    슬라이드, 그리고 표가 아예 없는 두 번째 슬라이드. tables_only 옵션이 표 없는
+    슬라이드는 통째로 생략하고, 표 있는 슬라이드에서는 사각형/문단은 건너뛰고
+    표만 남기는지 확인하기 위한 fixture."""
+    prs = pptx.Presentation()
+
+    slide1 = prs.slides.add_slide(prs.slide_layouts[6])
+    slide1.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(5), Inches(0.5)).text_frame.text = "검사기 H/W"
+    box = slide1.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(1), Inches(3), Inches(1))
+    box.text_frame.text = "검사기 그림"
+    para_box = slide1.shapes.add_textbox(Inches(0.5), Inches(2.2), Inches(6), Inches(0.5))
+    para_box.text_frame.text = "양극 절연을 검사하여 공정 품질 관리를 위함"
+    table_shape = slide1.shapes.add_table(2, 2, Inches(0.5), Inches(3), Inches(4), Inches(1))
+    table_shape.table.cell(0, 0).text = "항목"
+    table_shape.table.cell(0, 1).text = "내용"
+    table_shape.table.cell(1, 0).text = "정확도"
+    table_shape.table.cell(1, 1).text = "0.8um"
+
+    slide2 = prs.slides.add_slide(prs.slide_layouts[6])
+    slide2.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(5), Inches(0.5)).text_frame.text = "표 없는 슬라이드"
+    slide2.shapes.add_textbox(Inches(0.5), Inches(1), Inches(5), Inches(0.5)).text_frame.text = "이 문단은 표와 무관함"
+
+    prs.save(str(path))
+    return path
+
+
+def test_tables_only_skips_narrative_shapes_but_keeps_table(tmp_path: Path):
+    pptx_path = _build_narrative_plus_table_pptx(tmp_path / "narrative.pptx")
+    md = convert_pptx_to_markdown(pptx_path, extract_images=False, tables_only=True)
+    assert "| 항목 | 내용 |" in md
+    assert "| 정확도 | 0.8um |" in md
+    assert "검사기 그림" not in md
+    assert "양극 절연을 검사하여" not in md
+
+
+def test_tables_only_omits_slides_without_tables(tmp_path: Path):
+    pptx_path = _build_narrative_plus_table_pptx(tmp_path / "narrative2.pptx")
+    md = convert_pptx_to_markdown(pptx_path, extract_images=False, tables_only=True)
+    assert "표 없는 슬라이드" not in md
+    assert "이 문단은 표와 무관함" not in md
+
+
+def test_full_mode_still_includes_narrative_shapes(tmp_path: Path):
+    """tables_only=False(기본값)면 기존처럼 도형/문단 텍스트도 그대로 포함되어야 함."""
+    pptx_path = _build_narrative_plus_table_pptx(tmp_path / "narrative3.pptx")
+    md = convert_pptx_to_markdown(pptx_path, extract_images=False, tables_only=False)
+    assert "검사기 그림" in md
+    assert "양극 절연을 검사하여" in md
+    assert "표 없는 슬라이드" in md

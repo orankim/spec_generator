@@ -34,17 +34,53 @@ def _escape_cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
+def _resolve_merged_grid(table) -> List[List[str]]:
+    """병합된 셀(예: '구분' 열이 여러 행에 걸쳐 세로 병합)을 실제 값으로 채운
+    2차원 그리드를 만든다.
+
+    python-pptx는 병합 영역에서 원본(origin) 셀 외의 칸은 항상 빈 텍스트를
+    반환한다(is_spanned=True). 그대로 표로 옮기면 "구분" 같은 병합 열이 첫
+    행에서만 값이 보이고 나머지 행은 빈 칸이 되어, 각 행이 어떤 구분/항목에
+    속하는지 알 수 없는 표가 된다 — 사양서 표에서는 각 행이 독립적인 사양
+    항목이어야 하므로 원본 셀 값을 병합 범위 전체에 채워 넣는다.
+    """
+    n_rows = len(table.rows)
+    n_cols = len(table.columns)
+    grid: List[List[str]] = [["" for _ in range(n_cols)] for _ in range(n_rows)]
+
+    for r in range(n_rows):
+        for c in range(n_cols):
+            cell = table.cell(r, c)
+            if cell.is_spanned:
+                continue  # origin 셀 처리 시 함께 채워짐
+            text = cell.text.strip()
+            if cell.is_merge_origin and (cell.span_height > 1 or cell.span_width > 1):
+                # PowerPoint에서 이미 값이 들어간 셀들을 나중에 병합하면(예: "H/W"를
+                # 5개 행에 각각 타이핑한 뒤 세로 병합), 병합된 셀의 텍스트는 그 값들이
+                # 줄바꿈으로 이어붙은 "H/W\nH/W\nH/W..."가 된다. 병합 전 각 줄이
+                # 같은 라벨의 반복이었을 뿐이므로, 완전히 동일한 줄이 반복되면 한
+                # 번만 남긴다(순서는 유지, 서로 다른 줄은 그대로 보존).
+                text = "\n".join(dict.fromkeys(text.split("\n")))
+                for i in range(r, r + cell.span_height):
+                    for j in range(c, c + cell.span_width):
+                        grid[i][j] = text
+            else:
+                grid[r][c] = text
+
+    return grid
+
+
 def _table_to_markdown(table) -> str:
-    rows = list(table.rows)
-    if not rows:
+    grid = _resolve_merged_grid(table)
+    if not grid:
         return ""
 
     lines: List[str] = []
-    header_cells = [_escape_cell(cell.text) for cell in rows[0].cells]
+    header_cells = [_escape_cell(v) for v in grid[0]]
     lines.append("| " + " | ".join(header_cells) + " |")
     lines.append("|" + "|".join(["---"] * len(header_cells)) + "|")
-    for row in rows[1:]:
-        cells = [_escape_cell(cell.text) for cell in row.cells]
+    for row in grid[1:]:
+        cells = [_escape_cell(v) for v in row]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
@@ -105,11 +141,17 @@ def _extract_picture(shape, slide_idx: int, image_counter: List[int], images_dir
     return f"![{alt}]({images_dir.name}/{filename})"
 
 
-def _process_shapes(shapes, slide_idx: int, image_counter: List[int], images_dir: Optional[Path]) -> List[str]:
+def _process_shapes(
+    shapes,
+    slide_idx: int,
+    image_counter: List[int],
+    images_dir: Optional[Path],
+    tables_only: bool = False,
+) -> List[str]:
     blocks: List[str] = []
     for shape in shapes:
         if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-            blocks.extend(_process_shapes(shape.shapes, slide_idx, image_counter, images_dir))
+            blocks.extend(_process_shapes(shape.shapes, slide_idx, image_counter, images_dir, tables_only))
             continue
 
         if getattr(shape, "has_table", False) and shape.has_table:
@@ -120,6 +162,11 @@ def _process_shapes(shapes, slide_idx: int, image_counter: List[int], images_dir
 
         if getattr(shape, "has_chart", False) and shape.has_chart:
             blocks.append(_chart_to_markdown(shape.chart))
+            continue
+
+        if tables_only:
+            # 설치 위치 도면/장비 사진 같은 placeholder 도형, 목적 설명 같은
+            # 서술형 텍스트는 사양서(표)와 무관하므로 건너뛴다.
             continue
 
         if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
@@ -140,6 +187,7 @@ def convert_pptx_to_markdown(
     *,
     extract_images: bool = True,
     images_dir: Optional[Union[str, Path]] = None,
+    tables_only: bool = False,
 ) -> str:
     """PPTX 파일 하나를 읽어 슬라이드 순서를 보존한 Markdown 문자열로 변환한다.
 
@@ -147,12 +195,17 @@ def convert_pptx_to_markdown(
     같은 위치의 `<파일명>_images/`) 아래에 실제 파일로 저장하고 상대 경로로
     링크한다. LLM 기반 이미지 캡셔닝은 하지 않는다(외부 API 호출 없음) — alt
     text는 PPTX 도형 이름을 그대로 사용한다.
+
+    tables_only=True면 표(및 차트 데이터)만 남기고 일반 텍스트 상자/도형/사진은
+    건너뛴다. 사내 사양서 슬라이드가 "설치 위치 도면", "설치 목적" 같은 서술
+    섹션과 실제 사양 표를 함께 담고 있을 때, 사양서로 쓸 값은 표뿐이므로 이
+    옵션으로 표만 뽑아낼 수 있다. 표가 하나도 없는 슬라이드는 통째로 생략된다.
     """
     pptx_path = Path(pptx_path)
     prs = Presentation(str(pptx_path))
 
     resolved_images_dir: Optional[Path] = None
-    if extract_images:
+    if extract_images and not tables_only:
         resolved_images_dir = Path(images_dir) if images_dir is not None else pptx_path.with_suffix("").parent / f"{pptx_path.stem}_images"
 
     doc_lines: List[str] = [f"# {pptx_path.stem}", ""]
@@ -164,16 +217,20 @@ def convert_pptx_to_markdown(
         if title_shape is not None and title_shape.has_text_frame:
             title_text = title_shape.text_frame.text.strip()
 
-        heading = f"## Slide {slide_idx}: {title_text}" if title_text else f"## Slide {slide_idx}"
-        doc_lines.append(heading)
-        doc_lines.append("")
-
         # slide.shapes.title은 호출할 때마다 새 래퍼 객체를 반환하므로(`is`
         # 비교가 항상 False) shape_id로 비교해야 제목 도형이 본문에서 중복
         # 렌더링되지 않는다.
         title_shape_id = title_shape.shape_id if title_shape is not None else None
         body_shapes = [s for s in slide.shapes if s.shape_id != title_shape_id]
-        blocks = _process_shapes(body_shapes, slide_idx, image_counter, resolved_images_dir)
+        blocks = _process_shapes(body_shapes, slide_idx, image_counter, resolved_images_dir, tables_only)
+
+        if tables_only and not blocks:
+            continue  # 표가 없는 슬라이드(도면/목적 설명 등)는 사양서에 불필요하므로 생략
+
+        heading = f"## Slide {slide_idx}: {title_text}" if title_text else f"## Slide {slide_idx}"
+        doc_lines.append(heading)
+        doc_lines.append("")
+
         for block in blocks:
             doc_lines.append(block)
             doc_lines.append("")
@@ -201,13 +258,16 @@ def convert_pptx_file(
     output_path: Optional[Union[str, Path]] = None,
     *,
     extract_images: bool = True,
+    tables_only: bool = False,
 ) -> Path:
     """PPTX -> Markdown 변환 후 파일로 저장하고 저장된 경로를 반환한다."""
     pptx_path = Path(pptx_path)
     out_path = Path(output_path) if output_path is not None else pptx_path.with_suffix(".md")
 
     images_dir = out_path.with_suffix("").parent / f"{out_path.stem}_images"
-    markdown = convert_pptx_to_markdown(pptx_path, extract_images=extract_images, images_dir=images_dir)
+    markdown = convert_pptx_to_markdown(
+        pptx_path, extract_images=extract_images, images_dir=images_dir, tables_only=tables_only
+    )
 
     out_path.write_text(markdown, encoding="utf-8")
     return out_path

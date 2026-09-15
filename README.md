@@ -498,6 +498,7 @@ PPTX 변환 방식(슬라이드 텍스트/표/이미지/노트를 순서대로 M
 python main.py pptx-to-md 사양서.pptx                # 사양서.md + 사양서_images/ 생성
 python main.py pptx-to-md 사양서.pptx -o out.md       # 출력 경로 지정
 python main.py pptx-to-md 사양서.pptx --no-images     # 이미지 추출 생략
+python main.py pptx-to-md 사양서.pptx --tables-only   # 표(사양 데이터)만 추출
 ```
 
 변환 결과는 `converters/markdown_to_spec.py`가 인식하는 표준 Specification
@@ -505,6 +506,13 @@ python main.py pptx-to-md 사양서.pptx --no-images     # 이미지 추출 생�
 옮겨 적은 1차 변환 결과물이다. 이 결과물을 사람이 검토/정리해서
 `sample_specs/`의 표준 포맷으로 옮기거나, `build_rag_ollama.py --input-dir`에
 그대로 넣어 RAG 색인 원본으로 쓰면 된다.
+
+`--tables-only`는 사내에서 흔히 쓰는 "설치 위치 도면 + 설치 목적 설명 + 사양
+표"가 한 슬라이드에 섞인 문서에서, 실제 사양서에 필요한 표만 뽑고 도면
+placeholder 도형이나 설명 문단은 건너뛴다. 표가 하나도 없는 슬라이드는 통째로
+생략된다. "구분" 열처럼 여러 행에 걸쳐 세로 병합된 셀도 각 행에 값을 채워
+넣어(`H/W`, `H/W`, `H/W`, ... 처럼) 행 단위로 독립적인 사양 항목 표가 되도록
+정리한다.
 
 ### sample_specs 데이터 무결성 점검
 
