@@ -9,7 +9,6 @@ main.py는 FastAPI 웹 서버 진입점이므로(기존 `python main.py`는 그�
     python main.py render-md specification.json [-o out.md]
     python main.py render-html specification.json [-o out.html]
     python main.py md-to-spec input.md [-o out.json]
-    python main.py pptx-to-md input.pptx [-o out.md] [--no-images] [--tables-only]
 """
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-KNOWN_COMMANDS = {"render-md", "render-html", "md-to-spec", "pptx-to-md"}
+KNOWN_COMMANDS = {"render-md", "render-html", "md-to-spec"}
 
 
 def _load_specification(json_path: str):
@@ -59,20 +58,10 @@ def _cmd_md_to_spec(args: argparse.Namespace) -> None:
     print(f"Specification JSON 저장 완료: {out_path}")
 
 
-def _cmd_pptx_to_md(args: argparse.Namespace) -> None:
-    from converters.pptx_to_markdown import convert_pptx_file
-
-    out_path = convert_pptx_file(
-        args.input, args.output, extract_images=not args.no_images, tables_only=args.tables_only
-    )
-    print(f"Markdown 저장 완료: {out_path}")
-
-
 _DISPATCH = {
     "render-md": _cmd_render_md,
     "render-html": _cmd_render_html,
     "md-to-spec": _cmd_md_to_spec,
-    "pptx-to-md": _cmd_pptx_to_md,
 }
 
 
@@ -89,11 +78,6 @@ def run_cli(argv: List[str]) -> bool:
     parser = argparse.ArgumentParser(prog=f"main.py {command}")
     parser.add_argument("input")
     parser.add_argument("-o", "--output", default=None)
-    if command == "pptx-to-md":
-        parser.add_argument("--no-images", action="store_true", help="슬라이드 이미지를 추출하지 않음")
-        parser.add_argument(
-            "--tables-only", action="store_true", help="표(사양 데이터)만 추출하고 도면/설명 텍스트는 건너뜀"
-        )
 
     args = parser.parse_args(argv[2:])
     _DISPATCH[command](args)

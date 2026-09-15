@@ -484,49 +484,12 @@ python -m pytest tests -v
 
 ### PPTX 사양서 -> Markdown 변환 도구
 
-PPT(.pptx) 형태로 받은 장비 사양서를 표준 Markdown으로 옮겨 적을 때 쓰는
-CLI다. [microsoft/markitdown](https://github.com/microsoft/markitdown)의
-PPTX 변환 방식(슬라이드 텍스트/표/이미지/노트를 순서대로 Markdown으로
-직렬화)을 참고했지만, markitdown 패키지 자체를 쓰지 않고
-`converters/pptx_to_markdown.py`에 `python-pptx`(이미 사용 중인 의존성)만으로
-직접 구현했다 — markitdown은 이미지 설명(캡셔닝)에 OpenAI 등 외부 LLM API를
-선택적으로 호출할 수 있는데, 이 프로젝트는 **회사 폐쇄망(외부 API 호출 불가)**
-환경에서 동작해야 하므로 그 경로 자체를 두지 않았다. 네트워크 호출이 전혀
-없고, 이미지도 캡셔닝 없이 PPTX 안의 그림 파일을 그대로 추출해 저장한다.
-
-```powershell
-python main.py pptx-to-md 사양서.pptx                # 사양서.md + 사양서_images/ 생성
-python main.py pptx-to-md 사양서.pptx -o out.md       # 출력 경로 지정
-python main.py pptx-to-md 사양서.pptx --no-images     # 이미지 추출 생략
-python main.py pptx-to-md 사양서.pptx --tables-only   # 표(사양 데이터)만 추출
-```
-
-`converters/pptx_to_markdown.py`는 `python-pptx` 외에 다른 의존성이 없어서,
-`main.py`(FastAPI/dotenv 등 웹 서버 의존성을 함께 불러옴)를 거치지 않고 이
-파일 하나만 직접 실행할 수도 있다 — 옵션은 동일하다.
-
-```powershell
-python converters\pptx_to_markdown.py 사양서.pptx --tables-only -o out.md
-```
-
-변환 결과는 `converters/markdown_to_spec.py`가 인식하는 표준 Specification
-포맷이 **아니다** — 슬라이드 구조(제목/본문 불릿/표/차트/노트)를 순서대로 그대로
-옮겨 적은 1차 변환 결과물이다. 이 결과물을 사람이 검토/정리해서
-`sample_specs/`의 표준 포맷으로 옮기거나, `build_rag_ollama.py --input-dir`에
-그대로 넣어 RAG 색인 원본으로 쓰면 된다.
-
-`--tables-only`는 사내에서 흔히 쓰는 "설치 위치 도면 + 설치 목적 설명 + 사양
-표"가 한 슬라이드에 섞인 문서에서, 실제 사양서에 필요한 표만 뽑고 도면
-placeholder 도형이나 설명 문단은 건너뛴다. 표가 하나도 없는 슬라이드는 통째로
-생략된다. "구분" 열처럼 여러 행에 걸쳐 세로 병합된 셀도 각 행에 값을 채워
-넣어(`H/W`, `H/W`, `H/W`, ... 처럼) 행 단위로 독립적인 사양 항목 표가 되도록
-정리한다.
-
-슬라이드 제목은 정식 PowerPoint "Title" placeholder가 있으면 그 값을 쓰고,
-없으면(사내 PPT는 레이아웃의 Title placeholder 대신 자유 배치한 텍스트 상자로
-제목을 넣는 경우가 많다) 슬라이드에서 텍스트가 있는 도형 중 가장 위쪽에
-배치된 것을 제목으로 추정한다. 완벽한 판별은 아니지만(제목이 항상 맨 위에
-있다고 가정하는 휴리스틱), 실제 문서 대부분에서 잘 맞는다.
+PPT(.pptx) 형태로 받은 장비 사양서를 Markdown으로 옮겨 적는 도구는 이
+프로젝트의 다른 코드(agent/renderers/FastAPI 등)에 전혀 의존하지 않아서
+별도 저장소 [orankim/ppt-to-markdown](https://github.com/orankim/ppt-to-markdown)로
+분리했다 — `python-pptx` 하나만 있으면 되고, PyInstaller로 exe를 만들어
+Python이 없는 폐쇄망 PC에도 그대로 배포할 수 있다. 사용법은 그 저장소의
+README를 참고.
 
 ### sample_specs 데이터 무결성 점검
 
