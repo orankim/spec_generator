@@ -801,9 +801,9 @@ PAGE_STYLE = """
         padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;
     }
     .confirm-block strong { display: block; font-size: var(--font-label-size); font-weight: var(--font-label-weight); margin-bottom: 2px; }
-    .confirm-pass { background: var(--primary-100); color: #1c6e7d; }
-    .confirm-fail { background: #fff5f5; color: #9b2c2c; }
-    .confirm-unknown { background: #fffaf0; color: #9c4221; }
+    .confirm-pass { background: var(--primary-100); color: #1c6e7d; border: 1px solid var(--primary-500); }
+    .confirm-fail { background: #fff5f5; color: #9b2c2c; border: 1px solid #feb2b2; }
+    .confirm-unknown { background: #fffaf0; color: #9c4221; border: 1px solid #fbd38d; }
 
     /* ===== Search progress ===== */
     .progress-list { list-style: none; margin: 0; padding: 0; }
