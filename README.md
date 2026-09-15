@@ -501,6 +501,14 @@ python main.py pptx-to-md 사양서.pptx --no-images     # 이미지 추출 생�
 python main.py pptx-to-md 사양서.pptx --tables-only   # 표(사양 데이터)만 추출
 ```
 
+`converters/pptx_to_markdown.py`는 `python-pptx` 외에 다른 의존성이 없어서,
+`main.py`(FastAPI/dotenv 등 웹 서버 의존성을 함께 불러옴)를 거치지 않고 이
+파일 하나만 직접 실행할 수도 있다 — 옵션은 동일하다.
+
+```powershell
+python converters\pptx_to_markdown.py 사양서.pptx --tables-only -o out.md
+```
+
 변환 결과는 `converters/markdown_to_spec.py`가 인식하는 표준 Specification
 포맷이 **아니다** — 슬라이드 구조(제목/본문 불릿/표/차트/노트)를 순서대로 그대로
 옮겨 적은 1차 변환 결과물이다. 이 결과물을 사람이 검토/정리해서

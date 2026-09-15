@@ -320,3 +320,30 @@ def convert_pptx_file(
 
     out_path.write_text(markdown, encoding="utf-8")
     return out_path
+
+
+def _main(argv: Optional[List[str]] = None) -> None:
+    """이 파일을 `python converters/pptx_to_markdown.py ...`로 직접 실행하기
+    위한 진입점. `python main.py pptx-to-md ...`(cli_commands.py)와 동일한
+    옵션을 지원하지만, main.py가 끌어오는 FastAPI/dotenv 등 웹 서버 의존성
+    없이 python-pptx만으로 동작한다 — 변환만 하고 싶을 때 더 가볍다.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="pptx_to_markdown.py", description="PPTX 사양서를 Markdown으로 변환 (오프라인, 외부 API 호출 없음)"
+    )
+    parser.add_argument("input", help="변환할 .pptx 파일 경로")
+    parser.add_argument("-o", "--output", default=None, help="출력 .md 경로 (기본값: 입력 파일과 같은 이름)")
+    parser.add_argument("--no-images", action="store_true", help="슬라이드 이미지를 추출하지 않음")
+    parser.add_argument("--tables-only", action="store_true", help="표(사양 데이터)만 추출하고 도면/설명 텍스트는 건너뜀")
+
+    args = parser.parse_args(argv)
+    out_path = convert_pptx_file(
+        args.input, args.output, extract_images=not args.no_images, tables_only=args.tables_only
+    )
+    print(f"Markdown 저장 완료: {out_path}")
+
+
+if __name__ == "__main__":
+    _main()

@@ -5,6 +5,8 @@ python-pptx로 PPTX를 즉석에서 만들어 변환기에 넣고, 슬라이드 
 전부 로컬에서 동작해야 하므로, 이 테스트도 별도 서버/모델 없이 항상 실행 가능해야
 한다.
 """
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -243,3 +245,22 @@ def test_real_title_placeholder_takes_priority_over_inference(sample_pptx: Path)
     않고 placeholder 값을 그대로 써야 한다 — 회귀 방지."""
     md = convert_pptx_to_markdown(sample_pptx, extract_images=False)
     assert "## Slide 1: 전극 검사기 사양" in md
+
+
+def test_runs_standalone_as_a_script(tmp_path: Path, sample_pptx: Path):
+    """`python converters/pptx_to_markdown.py ...`로 이 파일 하나만 직접 실행해도
+    (main.py/cli_commands.py를 거치지 않고, FastAPI/dotenv 등 웹 서버 의존성
+    없이) 변환이 되는지 확인한다."""
+    out_path = tmp_path / "standalone.md"
+    module_path = Path(__file__).resolve().parent.parent / "converters" / "pptx_to_markdown.py"
+
+    result = subprocess.run(
+        [sys.executable, str(module_path), str(sample_pptx), "-o", str(out_path), "--no-images"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert out_path.exists()
+    assert "전극 검사기 사양" in out_path.read_text(encoding="utf-8")
