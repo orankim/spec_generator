@@ -20,9 +20,11 @@ chromadb>=0.4.24
 
 # Data Validation & Parsing
 pydantic>=2.6.4
-# python-pptx: PPTX 생성/변환 기능(제거됨)이 아니라, sample_specs/에 .pptx 원본
-# 문서가 섞여 있을 경우 RAG가 이를 읽어 색인하기 위해 build_rag_ollama.py/agent/
-# spec_retriever.py가 여전히 사용한다.
+# python-pptx: (1) sample_specs/에 .pptx 원본 문서가 섞여 있을 경우 RAG가 이를
+# 읽어 색인하기 위해 build_rag_ollama.py/agent/spec_retriever.py가 사용하고,
+# (2) converters/pptx_to_markdown.py(PPTX 사양서 -> Markdown 변환 CLI,
+# `python main.py pptx-to-md`)가 사용한다. 두 용도 모두 외부 API 호출 없이
+# 완전히 로컬(폐쇄망)에서 동작한다.
 python-pptx>=0.6.23
 python-docx>=1.1.0
 

@@ -482,6 +482,30 @@ python -m pytest tests -v
 - 테스트 체계와 각 테스트가 무엇을 검증하는지 자세한 설명은 `TESTING.md`를
   참고하세요.
 
+### PPTX 사양서 -> Markdown 변환 도구
+
+PPT(.pptx) 형태로 받은 장비 사양서를 표준 Markdown으로 옮겨 적을 때 쓰는
+CLI다. [microsoft/markitdown](https://github.com/microsoft/markitdown)의
+PPTX 변환 방식(슬라이드 텍스트/표/이미지/노트를 순서대로 Markdown으로
+직렬화)을 참고했지만, markitdown 패키지 자체를 쓰지 않고
+`converters/pptx_to_markdown.py`에 `python-pptx`(이미 사용 중인 의존성)만으로
+직접 구현했다 — markitdown은 이미지 설명(캡셔닝)에 OpenAI 등 외부 LLM API를
+선택적으로 호출할 수 있는데, 이 프로젝트는 **회사 폐쇄망(외부 API 호출 불가)**
+환경에서 동작해야 하므로 그 경로 자체를 두지 않았다. 네트워크 호출이 전혀
+없고, 이미지도 캡셔닝 없이 PPTX 안의 그림 파일을 그대로 추출해 저장한다.
+
+```powershell
+python main.py pptx-to-md 사양서.pptx                # 사양서.md + 사양서_images/ 생성
+python main.py pptx-to-md 사양서.pptx -o out.md       # 출력 경로 지정
+python main.py pptx-to-md 사양서.pptx --no-images     # 이미지 추출 생략
+```
+
+변환 결과는 `converters/markdown_to_spec.py`가 인식하는 표준 Specification
+포맷이 **아니다** — 슬라이드 구조(제목/본문 불릿/표/차트/노트)를 순서대로 그대로
+옮겨 적은 1차 변환 결과물이다. 이 결과물을 사람이 검토/정리해서
+`sample_specs/`의 표준 포맷으로 옮기거나, `build_rag_ollama.py --input-dir`에
+그대로 넣어 RAG 색인 원본으로 쓰면 된다.
+
 ### sample_specs 데이터 무결성 점검
 
 ```powershell
