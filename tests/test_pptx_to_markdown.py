@@ -202,3 +202,44 @@ def test_full_mode_still_includes_narrative_shapes(tmp_path: Path):
     assert "검사기 그림" in md
     assert "양극 절연을 검사하여" in md
     assert "표 없는 슬라이드" in md
+
+
+def _build_freeform_title_pptx(path: Path) -> Path:
+    """사내 PPT처럼 정식 Title placeholder 없이, 자유 배치 텍스트 상자로 제목을
+    넣은 슬라이드(blank 레이아웃). 제목 상자가 맨 위(top이 가장 작음), 그 아래
+    요약 설명 한 줄, 더 아래 표 하나가 있다."""
+    prs = pptx.Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank: title placeholder 없음
+    assert slide.shapes.title is None
+
+    title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.15), Inches(9), Inches(0.5))
+    title_box.text_frame.text = "설비 구성 및 세부 사양"
+
+    summary_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.65), Inches(9), Inches(0.4))
+    summary_box.text_frame.text = "요약 설명 한 줄"
+
+    table_shape = slide.shapes.add_table(2, 2, Inches(0.4), Inches(1.2), Inches(4), Inches(1))
+    table_shape.table.cell(0, 0).text = "항목"
+    table_shape.table.cell(0, 1).text = "사양"
+    table_shape.table.cell(1, 0).text = "분해능"
+    table_shape.table.cell(1, 1).text = "0.8um"
+
+    prs.save(str(path))
+    return path
+
+
+def test_infers_title_from_topmost_textbox_when_no_placeholder(tmp_path: Path):
+    pptx_path = _build_freeform_title_pptx(tmp_path / "freeform_title.pptx")
+    md = convert_pptx_to_markdown(pptx_path, extract_images=False)
+    assert "## Slide 1: 설비 구성 및 세부 사양" in md
+    # 제목으로 쓰인 텍스트가 본문에 불릿으로 중복되면 안 됨
+    assert md.count("설비 구성 및 세부 사양") == 1
+    # 제목이 아닌 다른 텍스트 상자는 여전히 본문에 남아야 함
+    assert "- 요약 설명 한 줄" in md
+
+
+def test_real_title_placeholder_takes_priority_over_inference(sample_pptx: Path):
+    """정식 Title placeholder가 있으면(기존 sample_pptx fixture) 추정 로직을 타지
+    않고 placeholder 값을 그대로 써야 한다 — 회귀 방지."""
+    md = convert_pptx_to_markdown(sample_pptx, extract_images=False)
+    assert "## Slide 1: 전극 검사기 사양" in md

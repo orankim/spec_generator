@@ -141,6 +141,40 @@ def _extract_picture(shape, slide_idx: int, image_counter: List[int], images_dir
     return f"![{alt}]({images_dir.name}/{filename})"
 
 
+def _infer_title_shape(shapes):
+    """정식 Title placeholder가 없는 슬라이드에서 제목으로 보이는 도형을 추정한다.
+
+    사내 PPT는 레이아웃의 Title placeholder 대신 자유 배치한 텍스트 상자로
+    제목을 넣는 경우가 많다(이 경우 slide.shapes.title은 None이거나 비어
+    있다). 완벽하게 판별할 방법은 없지만, 실제 문서에서 제목은 거의 항상
+    슬라이드에서 가장 위쪽에 배치되므로 "텍스트가 있는 도형 중 top 좌표가
+    가장 작은 것"을 제목으로 간주하는 실용적인 근사치를 쓴다. 표/차트/사진은
+    제목일 수 없으므로 후보에서 제외한다.
+    """
+    candidates = []
+    for shape in shapes:
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            continue
+        if getattr(shape, "has_table", False) and shape.has_table:
+            continue
+        if getattr(shape, "has_chart", False) and shape.has_chart:
+            continue
+        if not (getattr(shape, "has_text_frame", False) and shape.has_text_frame):
+            continue
+        text = shape.text_frame.text.strip()
+        if not text:
+            continue
+        top = shape.top if shape.top is not None else 0
+        candidates.append((top, shape, text))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0])
+    _, shape, text = candidates[0]
+    return shape, text.splitlines()[0].strip()
+
+
 def _process_shapes(
     shapes,
     slide_idx: int,
@@ -200,6 +234,11 @@ def convert_pptx_to_markdown(
     건너뛴다. 사내 사양서 슬라이드가 "설치 위치 도면", "설치 목적" 같은 서술
     섹션과 실제 사양 표를 함께 담고 있을 때, 사양서로 쓸 값은 표뿐이므로 이
     옵션으로 표만 뽑아낼 수 있다. 표가 하나도 없는 슬라이드는 통째로 생략된다.
+
+    슬라이드 제목은 정식 Title placeholder(slide.shapes.title)가 있으면 그
+    값을 쓰고, 없거나 비어 있으면 _infer_title_shape()로 추정한다 — 사내 PPT는
+    레이아웃의 Title placeholder 대신 자유 배치한 텍스트 상자로 제목을 넣는
+    경우가 많기 때문이다(가장 위쪽 텍스트 도형을 제목으로 간주하는 휴리스틱).
     """
     pptx_path = Path(pptx_path)
     prs = Presentation(str(pptx_path))
@@ -221,6 +260,16 @@ def convert_pptx_to_markdown(
         # 비교가 항상 False) shape_id로 비교해야 제목 도형이 본문에서 중복
         # 렌더링되지 않는다.
         title_shape_id = title_shape.shape_id if title_shape is not None else None
+
+        if not title_text:
+            # 정식 Title placeholder가 없거나 비어 있는 슬라이드(자유 배치 PPT에서
+            # 흔함) — 가장 위쪽 텍스트 도형을 제목으로 추정한다.
+            inferred = _infer_title_shape(slide.shapes)
+            if inferred is not None:
+                inferred_shape, inferred_text = inferred
+                title_text = inferred_text
+                title_shape_id = inferred_shape.shape_id
+
         body_shapes = [s for s in slide.shapes if s.shape_id != title_shape_id]
         blocks = _process_shapes(body_shapes, slide_idx, image_counter, resolved_images_dir, tables_only)
 
