@@ -1104,7 +1104,21 @@ def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[Cand
     2순위: UNKNOWN 수가 적은 후보 (unknown_count 오름차순)
     3순위: FAIL 수가 적은 후보 (fail_count 오름차순)
     4순위: RAG similarity가 높은 후보 (-(c.rag_similarity_score or 0.0) 내림차순)
-    5순위: 후보 문서 순서 (candidate_id 오름차순)
+    5순위: 후보 문서 순서 (source_document 오름차순 — 예: "SPEC-003.md" < "SPEC-033.md")
+
+    5순위는 원래 candidate_id("cand-3", "cand-33", ... — build_candidates()가
+    source_document를 알파벳순 정렬한 뒤 그 순서대로 부여하는 문자열)를 그대로
+    비교했었다. 그런데 이 필드는 문자열이라 "cand-3" > "cand-26"처럼 자릿수가
+    다르면 사전식 비교가 숫자 크기와 어긋난다(파이썬 문자열 비교는 자릿수를
+    맞추지 않는다) — corpus가 10~52개일 때는 이 어긋남이 우연히 드러나지
+    않다가, 100개로 늘면서 실제로 엉뚱한 동점 후보가 선택되는 사례가 나타났다
+    (test_integration_10b: 정확히 1~500μm로 일치하는 SPEC-003.md 대신, 두
+    자리 인덱스를 배정받은 SPEC-033.md가 선택됨). source_document는 이
+    corpus에서 항상 3자리로 0-padding되어 있어("SPEC-003.md") 사전식 비교가
+    숫자 비교와 정확히 일치하므로, 문자열 비교라는 성격 자체는 그대로 두되
+    비교 대상 필드만 candidate_id에서 source_document로 바꿔 이 버그를
+    고친다 — 1~4순위(즉 "어떤 기준으로 동점을 가릴지"라는 랭킹 정책)는
+    전혀 건드리지 않는다.
 
     검토했으나 채택하지 않은 대안(QA 개선 작업 5절): fail_count와 RAG similarity 사이에
     -c.total_margin(요구조건 대비 성능 여유, 사용자가 실제로 요구한 항목의 margin만 합산 —
@@ -1130,6 +1144,6 @@ def select_best_candidate(candidates: List[CandidateEquipment]) -> Optional[Cand
             c.unknown_count,
             c.fail_count,
             -(c.rag_similarity_score or 0.0),
-            c.candidate_id,
+            c.source_document,
         ),
     )[0]
