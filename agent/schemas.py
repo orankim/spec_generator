@@ -633,7 +633,10 @@ class CandidateEquipment(BaseModel):
     unknown_count: int = 0
     fail_count: int = 0
     pass_count: int = 0
-    total_margin: float = Field(default=0.0, description="동점 후보 판정용 전체 성능 여유 합계")
+    total_margin: float = Field(
+        default=0.0,
+        description="요구조건 대비 성능 여유 합계(작을수록 더 타이트하게 맞음) — select_best_candidate의 4순위 동점 기준",
+    )
     rag_similarity_score: Optional[float] = Field(default=None, description="RAG 검색 유사도 점수 (0~1)")
     recommendation_reasons: List[str] = Field(default_factory=list, description="추천 이유 핵심 목록")
     unconfirmed_items: List[str] = Field(default_factory=list, description="사양서에서 확인하지 못해 확인이 필요한 항목 목록")
@@ -644,5 +647,16 @@ class CandidateEquipment(BaseModel):
             "PARTIAL: fail_count==0 and unknown_count>0(충족은 했지만 일부 확인 불가). "
             "FAIL: fail_count>0. select_best_candidate()가 이 순서로 후보를 우선순위화한다 — "
             "PASS 후보가 하나라도 있으면 PARTIAL/FAIL 후보를 최종 추천하지 않는다."
+        ),
+    )
+    near_duplicates: List[str] = Field(
+        default_factory=list,
+        description=(
+            "이 후보와 status/pass_count/unknown_count/fail_count 및 PASS한 항목 집합이 "
+            "완전히 동일한 다른 후보들(있다면) — '{manufacturer} {model} ({source_document})' "
+            "형식. select_best_candidate()가 이들 중 하나를 골라야 하더라도(예: total_margin/"
+            "rag_similarity_score 기준), 실제로는 여러 장비가 동등하게 유효한 선택지라는 뜻이므로 "
+            "빈 목록이 아니면 최종 추천 화면에 '다른 후보도 조건을 동일하게 만족합니다'처럼 "
+            "노출해야 한다."
         ),
     )

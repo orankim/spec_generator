@@ -49,6 +49,9 @@ class _CandidateView:
         self.pass_count = d["pass_count"]
         self.unknown_count = d["unknown_count"]
         self.fail_count = d["fail_count"]
+        # select_best_candidate()의 4순위 동점 기준(range-tightness) 도입 이후 추가된
+        # 필드 — 이 필드가 없는 과거 캐시(v1)와도 호환되도록 기본값 0.0을 둔다.
+        self.total_margin = d.get("total_margin", 0.0)
         self.rag_similarity_score = d["rag_similarity_score"]
         self.matches = d["matches"]
 
