@@ -379,13 +379,25 @@ def test_accuracy_comparison_is_deterministic(candidate_accuracy, expected):
 
 def test_evaluate_hard_requirements_has_no_llm_dependency():
     """evaluate_hard_requirements/candidate_matcher가 ollama_client를 import/호출하지 않는지 정적으로 확인한다."""
+    import importlib
+    import inspect
+    import pkgutil
+
     import agent.units as units_module
     import agent.candidate_matcher as candidate_matcher_module
 
     assert "ollama_client" not in dir(units_module)
     assert "ollama" not in units_module.__doc__.lower() or "llm" in units_module.__doc__.lower()
     # candidate_matcher는 ollama_client를 import하지 않는다(정적 검사).
-    import inspect
-    source = inspect.getsource(candidate_matcher_module)
-    assert "ollama_client" not in source
-    assert "parse_structured" not in source
+    # agent.candidate_matcher는 패키지(extraction/hard_requirements/inspection_items/
+    # core/ranking 서브모듈로 응집도 분리됨)이므로, inspect.getsource(package)는
+    # __init__.py의 재노출(re-export) 코드만 반환하고 실제 로직이 있는 서브모듈은
+    # 검사하지 않게 된다 — 그러면 이 테스트의 보호 범위가 조용히 좁아진다. 패키지
+    # 안의 모든 서브모듈 소스를 명시적으로 모아 검사해서 원래의 검사 범위를 유지한다.
+    sources = [inspect.getsource(candidate_matcher_module)]
+    for module_info in pkgutil.iter_modules(candidate_matcher_module.__path__):
+        submodule = importlib.import_module(f"agent.candidate_matcher.{module_info.name}")
+        sources.append(inspect.getsource(submodule))
+    combined_source = "\n".join(sources)
+    assert "ollama_client" not in combined_source
+    assert "parse_structured" not in combined_source
