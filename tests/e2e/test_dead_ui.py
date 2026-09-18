@@ -62,8 +62,13 @@ def test_conversation_search_input_actually_filters_list(agent_page: Page, mock_
 
 def test_conversation_list_item_click_actually_switches_active_conversation(agent_page: Page, mock_api):
     _send(agent_page, mock_api)
-    conv_item = agent_page.locator(".conv-item").first
-    assert "active" in (conv_item.get_attribute("class") or "")
+    # "active" 클래스는 대화 이름 버튼(.conv-item)이 아니라 그 부모 행
+    # (.conv-item-row)에 붙는다 — "..." 메뉴 버튼(.conv-item-menu-btn)이 추가되며
+    # .conv-item이 행 전체가 아니라 이름 버튼 하나만 가리키도록 나뉘었을 때
+    # (static/css/app.css의 .conv-item-row.active 규칙, static/js/app.js
+    # renderConvItemRow) 이 assertion만 이전 선택자로 남아 있던 버그.
+    conv_item_row = agent_page.locator(".conv-item-row").first
+    assert "active" in (conv_item_row.get_attribute("class") or "")
 
     agent_page.click("#newChatBtn")
     mock_api.mock("**/api/agent/analyze-requirement", make_analyze_response())

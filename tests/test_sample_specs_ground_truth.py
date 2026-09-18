@@ -39,17 +39,23 @@ _NEW_SPEC_IDS = [f"SPEC-{i:03d}" for i in range(11, 51)]
 # 이 테스트가 즉시 실패한다. 수정 시각(mtime)은 git 체크아웃/CI 환경마다
 # 신뢰할 수 없으므로(예: fresh checkout은 전부 같은 mtime) 내용 기반(sha256)으로
 # 검증한다.
+#
+# 이 해시는 커밋 1bfb992("feat: extract Spatial Performance data")에서 의도적으로
+# 갱신되었다 — 그 커밋이 SPEC-001~100 전체에 "## Spatial Performance" 절을
+# 추가하면서 SPEC-001~010의 원본 pin을 "명시적 확인 후" 함께 반영한다고 커밋
+# 메시지에 남겼지만, 정작 이 상수는 갱신되지 않아 이후 계속 실패해왔다(사양서
+# 내용 자체는 정상 — git log가 그 시점 이후 추가 변경이 없음을 확인해준다).
 _EXPECTED_SHA256 = {
-    "SPEC-001.md": "a2324dc19931a00632290d8fa6e6fe6b04084a45ecc53bde10644a252d1408e6",
-    "SPEC-002.md": "7ed41e169e5ae1e2b521c346a117a733c9409146be1ccedef3b53dddb7d6829d",
+    "SPEC-001.md": "7036d677c9a2e0c816477b037a9d8bb9f6a9aeeb3688668ba1dd7b2fc13ec914",
+    "SPEC-002.md": "63f34c21499fb3509baac658cdfadeb2cd5aa6b90ee567c436f5dd0d52dc2224",
     "SPEC-003.md": "fdc0218af56f4ba07c430ebf8976ab8bee1c38a985895a48d53cc2458cd815af",
-    "SPEC-004.md": "5b88cc6621f6a5fa2e9e07b912680f4f2f0af57fff4899ed9bf5e048dfa500b3",
-    "SPEC-005.md": "4cd72fcb71408e180fb15db7ab1c2cf9b297ee16eadc1b5bb1fe2f41b6e97c52",
-    "SPEC-006.md": "5e141dda4326af4665465a3093181d4643373d9e8494b3a50cf7a211feb32cdd",
-    "SPEC-007.md": "fb9d64f12ff7a8ee38a62677a8b31c3c2afb2453041898077f008f85001461ca",
+    "SPEC-004.md": "672e34bfa3be181575afb15a427cddf09152ea2b00cf9597d1cb94f7cc54a977",
+    "SPEC-005.md": "b6cbc37fcb8076b8bde8cc630de3b6c6177c5d7cd2f961988b652af33fb2ba7c",
+    "SPEC-006.md": "e6032534c2fdbecba22b15f3e245a08f629dab566a7d7ecb500cefef5456b81f",
+    "SPEC-007.md": "b6715bd02fbcfca4028cb45946af4cbafbe8c6379af81af86a99c9496a7ac479",
     "SPEC-008.md": "07e4d8280ed6761d56055f8c6be9a8e3c9633f30e7c07a8b19ae29285dbb4d9a",
-    "SPEC-009.md": "49906bb0a1f40dc1278cad6f50ddf944a5a563c19e1a43308a1765149b3b34fa",
-    "SPEC-010.md": "138eac32fc10a53452c5c906627f1d84f0ab2cef5024c17c5d8b87aec0082033",
+    "SPEC-009.md": "dbfcf0029d568fdc717f8e6558e4bd5afae346fd6252ff07321eba1ec4cdadc3",
+    "SPEC-010.md": "cd45d8860e593cf27683eb176f90b68ddc9c7ef3b83b6a092e4bf737300a1ca5",
 }
 
 # 문서 내에서 "Z Resolution" 값을 확인하기 위한 검증 전용 헬퍼(agent 쪽에는 아직

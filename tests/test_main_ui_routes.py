@@ -67,9 +67,13 @@ def test_agent_page_displays_measurement_range_and_accuracy(client):
     """
     회귀: "AI가 이해한 요구사항" 화면에 measurement_range/accuracy가 표시되지 않던
     문제 — renderRequirementSummary()가 이 필드들을 렌더링하는지 확인한다.
+
+    실제 렌더링 로직(renderRequirementSummaryCard)은 static/js/app.js에 있다
+    (main.py는 <script src="/static/js/app.js">로 참조만 한다 — web/ui_routes.py
+    참고) — "/static"이 main.py에 실제로 mount되어 이 파일을 서빙하는지까지
+    함께 검증하기 위해 그 경로로 가져온다.
     """
-    resp = client.get("/agent")
-    body = resp.text
+    body = client.get("/static/js/app.js").text
     assert "측정 범위" in body
     assert "요구 정확도" in body
     assert "req.measurement_range" in body

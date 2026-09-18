@@ -7,9 +7,11 @@ localStorage 같은 영속 저장소에 남길 방법이 없다). 그래서 실�
 시간(8시간) 이상 비활성 상태면 전체 대화 기록을 초기화"를 택했다(main.py의
 INACTIVITY_CLEAR_MS, pruneInactiveConversations(), boot()).
 
-이 테스트는 main.py가 렌더링하는 /agent 페이지의 실제 JS 소스에서 해당 함수를
-그대로 뽑아 Node.js로 실행해, 문자열 존재 여부가 아니라 실제 동작(8시간 이내면
-유지, 초과하면 비움)을 검증한다.
+이 테스트는 static/js/app.js(과거에는 main.py가 렌더링하는 /agent 페이지 안에
+Python 문자열로 인라인돼 있었으나, 프론트엔드/라우트 분리 리팩터로 정적 파일로
+옮겨졌다 — web/ui_routes.py 참고)의 실제 JS 소스에서 해당 함수를 그대로 뽑아
+Node.js로 실행해, 문자열 존재 여부가 아니라 실제 동작(8시간 이내면 유지, 초과하면
+비움)을 검증한다.
 """
 import json
 import re
@@ -24,15 +26,22 @@ def _client():
     return TestClient(main.app)
 
 
+def _app_js() -> str:
+    """main.py가 "/static"으로 mount한 static/js/app.js를 실제 HTTP 경로로 가져온다
+    (파일을 직접 읽지 않는 이유: 이 테스트의 목적은 "서버가 실제로 서빙하는 JS"를
+    검증하는 것이므로, 정적 파일 서빙 배선 자체도 함께 검증된다)."""
+    return _client().get("/static/js/app.js").text
+
+
 def _extract_js_function(body: str, name: str) -> str:
-    pattern = rf"function {name}\(.*?\n                \}}\n"
+    pattern = rf"function {name}\(.*?\n\}}\n"
     match = re.search(pattern, body, re.S)
-    assert match, f"{name} not found in rendered /agent page"
+    assert match, f"{name} not found in static/js/app.js"
     return match.group(0)
 
 
 def _run_prune(conversations, now_ms, inactivity_ms=8 * 60 * 60 * 1000):
-    body = _client().get("/agent").text
+    body = _app_js()
     prune_fn = _extract_js_function(body, "pruneInactiveConversations")
 
     script = f"""
@@ -49,8 +58,7 @@ def _run_prune(conversations, now_ms, inactivity_ms=8 * 60 * 60 * 1000):
 
 
 def test_agent_page_defines_8_hour_inactivity_threshold():
-    body = _client().get("/agent").text
-    assert "INACTIVITY_CLEAR_MS = 8 * 60 * 60 * 1000" in body
+    assert "INACTIVITY_CLEAR_MS = 8 * 60 * 60 * 1000" in _app_js()
 
 
 def test_recent_conversations_are_kept():
@@ -79,7 +87,6 @@ def test_empty_conversation_list_is_unaffected():
 
 
 def test_boot_wires_prune_into_state_and_persists_cleared_result():
-    body = _client().get("/agent").text
-    boot_fn = _extract_js_function(body, "boot")
+    boot_fn = _extract_js_function(_app_js(), "boot")
     assert "pruneInactiveConversations(loaded)" in boot_fn
     assert "saveConversations()" in boot_fn

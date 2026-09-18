@@ -1092,6 +1092,139 @@ def test_candidate_ranking_hard_requirement_precedence_over_similarity():
     assert best is cand_a
 
 
+def test_candidate_ranking_prefers_tighter_total_margin_over_similarity():
+    """4순위(total_margin, 오름차순 — 요구조건에 더 타이트하게 맞는 후보)는
+    5순위(RAG similarity)보다 우선한다: margin이 더 작은(더 타이트한) 후보가
+    similarity는 더 낮아도 선택되어야 한다."""
+    tighter_but_less_similar = CandidateEquipment(
+        candidate_id="cand-1",
+        source_document="SPEC-003.md",
+        pass_count=5,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        total_margin=0.0,
+        rag_similarity_score=0.10,
+    )
+    looser_but_more_similar = CandidateEquipment(
+        candidate_id="cand-2",
+        source_document="SPEC-033.md",
+        pass_count=5,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        total_margin=300.0,
+        rag_similarity_score=0.95,
+    )
+    best = select_best_candidate([tighter_but_less_similar, looser_but_more_similar])
+    assert best is tighter_but_less_similar
+
+
+def test_candidate_ranking_total_margin_precedence_over_fail_count_is_false_pass_count_wins_first():
+    """total_margin은 4순위일 뿐이다 — pass_count(1순위)가 더 많은 후보가 총 margin이
+    더 크더라도(=덜 타이트해도) 항상 우선한다."""
+    more_pass_looser_margin = CandidateEquipment(
+        candidate_id="cand-1",
+        source_document="SPEC-001.md",
+        pass_count=6,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        total_margin=500.0,
+    )
+    fewer_pass_tighter_margin = CandidateEquipment(
+        candidate_id="cand-2",
+        source_document="SPEC-002.md",
+        pass_count=5,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        total_margin=0.0,
+    )
+    best = select_best_candidate([more_pass_looser_margin, fewer_pass_tighter_margin])
+    assert best is more_pass_looser_margin
+
+
+def test_candidate_ranking_source_document_tiebreak_is_numeric_not_lexicographic():
+    """마지막(6순위) source_document 비교는 0-padding된 파일명 덕분에 사전식==숫자식
+    순서가 일치한다 — "SPEC-003.md"가 "SPEC-033.md"보다 먼저 온다(과거
+    candidate_id 문자열 비교("cand-3" vs "cand-26")는 자릿수가 다르면 이 순서가
+    깨졌었다)."""
+    spec_003 = CandidateEquipment(candidate_id="cand-3", source_document="SPEC-003.md", pass_count=5, status="PASS")
+    spec_033 = CandidateEquipment(candidate_id="cand-26", source_document="SPEC-033.md", pass_count=5, status="PASS")
+    best = select_best_candidate([spec_033, spec_003])  # 순서를 뒤집어 넣어도 결과가 같아야 한다
+    assert best is spec_003
+
+
+def test_near_duplicates_populated_when_pass_set_and_counts_match():
+    """PASS/UNKNOWN/FAIL 개수와 PASS한 field_key 집합이 완전히 같은 두 후보는
+    서로를 near_duplicates에 채운다(총 margin이 달라 select_best_candidate가
+    그중 하나를 고르더라도, 실제로는 두 장비 모두 근거상 동등한 대안이다)."""
+    match = CandidateFieldMatch(item="Measurement Range", field_key="measurement_range", hard=True, result="PASS")
+    exact_match = CandidateEquipment(
+        candidate_id="cand-1",
+        manufacturer="OCTVision",
+        model="OCT-E100",
+        source_document="SPEC-003.md",
+        matches=[match],
+        pass_count=1,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        total_margin=0.0,
+    )
+    looser_match = CandidateEquipment(
+        candidate_id="cand-2",
+        manufacturer="OCTInspect",
+        model="OI-1000",
+        source_document="SPEC-033.md",
+        matches=[match],
+        pass_count=1,
+        unknown_count=0,
+        fail_count=0,
+        status="PASS",
+        total_margin=300.0,
+    )
+    candidates = [exact_match, looser_match]
+    from agent.candidate_matcher import _annotate_near_duplicates
+
+    _annotate_near_duplicates(candidates)
+    assert exact_match.near_duplicates == ["OCTInspect OI-1000 (SPEC-033.md)"]
+    assert looser_match.near_duplicates == ["OCTVision OCT-E100 (SPEC-003.md)"]
+
+
+def test_near_duplicates_empty_when_pass_sets_differ():
+    """PASS한 항목 집합이 다르면(하나는 Measurement Range만, 하나는 Measurement
+    Range + Accuracy) pass_count가 같아도 근접 중복으로 취급하지 않는다."""
+    from agent.candidate_matcher import _annotate_near_duplicates
+
+    range_match = CandidateFieldMatch(item="Measurement Range", field_key="measurement_range", hard=True, result="PASS")
+    accuracy_match = CandidateFieldMatch(item="Accuracy", field_key="accuracy", hard=True, result="PASS")
+    cand_a = CandidateEquipment(
+        candidate_id="cand-1", source_document="SPEC-001.md", matches=[range_match], pass_count=1, status="PASS"
+    )
+    cand_b = CandidateEquipment(
+        candidate_id="cand-2", source_document="SPEC-002.md", matches=[accuracy_match], pass_count=1, status="PASS"
+    )
+    candidates = [cand_a, cand_b]
+    _annotate_near_duplicates(candidates)
+    assert cand_a.near_duplicates == []
+    assert cand_b.near_duplicates == []
+
+
+def test_near_duplicates_never_populated_for_fail_candidates():
+    """FAIL 후보는 서로 완전히 다른 이유로 탈락했더라도(PASS한 항목이 둘 다
+    없다는 이유만으로) 근접 중복으로 묶이면 안 된다 — "대안"이라는 의미가 없다."""
+    from agent.candidate_matcher import _annotate_near_duplicates
+
+    cand_a = CandidateEquipment(candidate_id="cand-1", source_document="SPEC-001.md", pass_count=0, fail_count=1, status="FAIL")
+    cand_b = CandidateEquipment(candidate_id="cand-2", source_document="SPEC-002.md", pass_count=0, fail_count=1, status="FAIL")
+    candidates = [cand_a, cand_b]
+    _annotate_near_duplicates(candidates)
+    assert cand_a.near_duplicates == []
+    assert cand_b.near_duplicates == []
+
+
 def test_coating_inspection_item_matching_pass():
     """coating 요구 시 Equipment Type / Defect Types / Notes 등에 명시적 근거가 있으면 PASS."""
     req = RequirementSchema(inspection_items=["coating"])

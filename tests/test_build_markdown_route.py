@@ -82,9 +82,12 @@ def test_agent_page_offers_markdown_download_not_pptx():
     찾은 CandidateEquipment 원본 사양 기반, LLM을 거치지 않음)을 호출한다 — 버튼
     클릭 시 아무 동작도 하지 않던 문제를 고치면서 함께 정리했다. build-markdown
     라우트 자체는 하위 호환을 위해 그대로 남겨뒀다(위 다른 테스트들이 계속 검증).
+
+    이 버튼/호출 로직은 static/js/app.js에 있다(main.py는 <script src="...">로
+    참조만 한다 — web/ui_routes.py 참고).
     """
     client = _client()
-    body = client.get("/agent").text
+    body = client.get("/static/js/app.js").text
     assert "마크다운 사양서" in body
     assert "PPTX 사양서" not in body
     assert "/api/agent/build-candidate-markdown" in body
